@@ -1,0 +1,2 @@
+-- Additional indexes (most indexes are created in their respective migration files)
+-- This file exists for any supplementary indexes needed
