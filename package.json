@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "docker compose -f docker-compose.dev.yml up",
     "db:migrate": "for f in services/api-gateway/migrations/*.sql; do psql $DATABASE_URL -f \"$f\"; done",
-    "test": "pnpm --recursive test",
+    "test": "pnpm -r run test",
     "test:python": "pytest tests/ -v --tb=short"
   }
 }

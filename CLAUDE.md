@@ -14,12 +14,12 @@ Vehicle access control platform for residential communities. Cloud microservices
 - [x] Step 6: Vehicle Service
 - [x] Step 7: Visitor/Pre-Approval Service
 - [x] Step 8: Gate Command Service + MQTT
-- [ ] Step 9: Notification Service
-- [ ] Step 10: Audit/Log Service
-- [ ] Step 11: Edge Node -- Relay and RFID Drivers
-- [ ] Step 12: Edge Node -- ANPR Camera Pipeline
-- [ ] Step 13: Edge Node -- Local Decision Engine
-- [ ] Step 14: Edge Node -- Offline Queue and Whitelist Sync
+- [x] Step 9: Notification Service
+- [x] Step 10: Audit/Log Service
+- [x] Step 11: Edge Node -- Relay and RFID Drivers
+- [x] Step 12: Edge Node -- ANPR Camera Pipeline
+- [x] Step 13: Edge Node -- Local Decision Engine
+- [x] Step 14: Edge Node -- Offline Queue and Whitelist Sync
 - [ ] Step 15: Admin Dashboard (Next.js)
 - [ ] Step 16: Resident Mobile App (React Native stub)
 - [ ] Step 17: AWS CDK Infrastructure
