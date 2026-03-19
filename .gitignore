@@ -11,3 +11,5 @@ pgdata/
 .venv/
 venv/
 spec_extracted.txt
+scripts/dev-tokens.txt
+*.docx
