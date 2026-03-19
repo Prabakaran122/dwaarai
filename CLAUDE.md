@@ -20,9 +20,9 @@ Vehicle access control platform for residential communities. Cloud microservices
 - [x] Step 12: Edge Node -- ANPR Camera Pipeline
 - [x] Step 13: Edge Node -- Local Decision Engine
 - [x] Step 14: Edge Node -- Offline Queue and Whitelist Sync
-- [ ] Step 15: Admin Dashboard (Next.js)
-- [ ] Step 16: Resident Mobile App (React Native stub)
-- [ ] Step 17: AWS CDK Infrastructure
+- [x] Step 15: Guard App (React Native — Android tablet)
+- [x] Step 16: Resident App (React Native — iOS + Android)
+- [x] Step 17: Admin Portal (Next.js 14)
 - [ ] Step 18: CI/CD Pipeline (GitHub Actions)
 - [ ] Step 19: Integration Tests
 - [ ] Step 20: Documentation and Final Wiring
