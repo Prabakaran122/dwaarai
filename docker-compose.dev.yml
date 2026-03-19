@@ -29,5 +29,66 @@ services:
     volumes:
       - "./infra/docker/mosquitto.conf:/mosquitto/config/mosquitto.conf"
 
+  anpr-service:
+    build:
+      context: ./services/anpr-service
+    ports:
+      - "8001:8001"
+    environment:
+      ANPR_CONFIDENCE_THRESHOLD: "0.75"
+      ANPR_USE_GPU: "false"
+    volumes:
+      - "./scripts/test_plates:/test_plates:ro"
+
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+    ports:
+      - "3000:3000"
+    env_file: [.env]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  vehicle-service:
+    build:
+      context: ./services/vehicle-service
+    ports:
+      - "3001:3001"
+    env_file: [.env]
+    depends_on: [api-gateway]
+
+  gate-command-service:
+    build:
+      context: ./services/gate-command-service
+    ports:
+      - "3003:3003"
+    env_file: [.env]
+    depends_on: [mosquitto]
+
+  # Edge emulator — simulates Raspberry Pi gate node
+  edge-emulator:
+    build:
+      context: ./edge
+      dockerfile: Dockerfile.dev
+    environment:
+      USE_GPIO_MOCK: "true"
+      USE_RFID_MOCK: "true"
+      USE_CAMERA_MOCK: "true"
+      MOCK_CAMERA_INTERVAL_SECONDS: "5"
+      GATE_ID: "gate-01"
+      COMMUNITY_ID: "dev-community-uuid"
+      DEVICE_TOKEN: "dev-device-token"
+      MQTT_BROKER: mosquitto
+      CLOUD_API_URL: "http://api-gateway:3000/api/v1"
+      ANPR_SERVICE_URL: "http://anpr-service:8001"
+      OFFLINE_DB_PATH: "/tmp/whitelist.db"
+      OFFLINE_QUEUE_PATH: "/tmp/queue.db"
+    volumes:
+      - "./scripts/test_plates:/app/scripts/test_plates:ro"
+    depends_on: [mosquitto, api-gateway, anpr-service]
+
 volumes:
   pgdata: {}

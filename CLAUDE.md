@@ -7,13 +7,13 @@ Vehicle access control platform for residential communities. Cloud microservices
 ## Build Step Checklist
 
 - [x] Step 1: Initialize Git Repo and Monorepo Scaffold
-- [ ] Step 2: Docker Compose Dev Environment
-- [ ] Step 3: PostgreSQL Schema and Migrations
-- [ ] Step 4: Shared Utilities Package
-- [ ] Step 5: API Gateway Service
-- [ ] Step 6: Vehicle Service
-- [ ] Step 7: Visitor/Pre-Approval Service
-- [ ] Step 8: Gate Command Service + MQTT
+- [x] Step 2: Docker Compose Dev Environment
+- [x] Step 3: PostgreSQL Schema and Migrations
+- [x] Step 4: Shared Utilities Package
+- [x] Step 5: API Gateway Service
+- [x] Step 6: Vehicle Service
+- [x] Step 7: Visitor/Pre-Approval Service
+- [x] Step 8: Gate Command Service + MQTT
 - [ ] Step 9: Notification Service
 - [ ] Step 10: Audit/Log Service
 - [ ] Step 11: Edge Node -- Relay and RFID Drivers
