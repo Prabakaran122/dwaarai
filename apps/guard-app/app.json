@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "CommunityGate Guard",
+    "slug": "communitygate-guard",
+    "version": "0.1.0",
+    "orientation": "landscape",
+    "platforms": ["android"],
+    "android": {
+      "package": "com.communitygate.guard"
+    }
+  }
+}
