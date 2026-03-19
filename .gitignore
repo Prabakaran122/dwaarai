@@ -1,0 +1,13 @@
+node_modules/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+build/
+.next/
+pgdata/
+*.db
+.venv/
+venv/
+spec_extracted.txt
