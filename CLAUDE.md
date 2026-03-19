@@ -23,6 +23,6 @@ Vehicle access control platform for residential communities. Cloud microservices
 - [x] Step 15: Guard App (React Native — Android tablet)
 - [x] Step 16: Resident App (React Native — iOS + Android)
 - [x] Step 17: Admin Portal (Next.js 14)
-- [ ] Step 18: CI/CD Pipeline (GitHub Actions)
-- [ ] Step 19: Integration Tests
-- [ ] Step 20: Documentation and Final Wiring
+- [x] Step 18: AWS CDK Infrastructure (6 stacks)
+- [x] Step 19: Pi Provisioning Script
+- [x] Step 20: CI/CD Pipeline (GitHub Actions)
