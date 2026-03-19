@@ -1,0 +1,19 @@
+{
+  "name": "audit-service",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "pg": "^8.13.0",
+    "pdfkit": "^0.15.0",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  }
+}
