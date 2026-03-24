@@ -20,45 +20,61 @@ router.get('/events', authenticateJWT(['admin']), async (req, res) => {
     const dateTo = req.query.date_to || null;
     const plateFilter = req.query.plate || null;
 
-    let sql = 'SELECT * FROM gate_events WHERE community_id = $1';
+    let sql = `SELECT ge.*, g.name AS gate_name
+      FROM gate_events ge
+      LEFT JOIN gates g ON ge.gate_id = g.id
+      WHERE ge.community_id = $1`;
     const params = [communityId];
 
     if (gateFilter) {
-      sql += ` AND gate_id = $${params.length + 1}`;
+      sql += ` AND ge.gate_id = $${params.length + 1}`;
       params.push(gateFilter);
     }
     if (methodFilter) {
-      sql += ` AND detection_method = $${params.length + 1}`;
+      sql += ` AND ge.detection_method = $${params.length + 1}`;
       params.push(methodFilter);
     }
     if (decisionFilter) {
-      sql += ` AND access_decision = $${params.length + 1}`;
+      sql += ` AND ge.access_decision = $${params.length + 1}`;
       params.push(decisionFilter);
     }
     if (dateFrom) {
-      sql += ` AND event_ts >= $${params.length + 1}`;
+      sql += ` AND ge.event_ts >= $${params.length + 1}`;
       params.push(dateFrom);
     }
     if (dateTo) {
-      sql += ` AND event_ts <= $${params.length + 1}`;
+      sql += ` AND ge.event_ts <= $${params.length + 1}`;
       params.push(dateTo);
     }
     if (plateFilter) {
-      sql += ` AND raw_value ILIKE $${params.length + 1}`;
+      sql += ` AND ge.raw_value ILIKE $${params.length + 1}`;
       params.push(`%${plateFilter}%`);
     }
     if (cursor) {
-      sql += ` AND event_ts < $${params.length + 1}`;
+      sql += ` AND ge.event_ts < $${params.length + 1}`;
       params.push(cursor);
     }
 
-    sql += ` ORDER BY event_ts DESC LIMIT $${params.length + 1}`;
+    sql += ` ORDER BY ge.event_ts DESC LIMIT $${params.length + 1}`;
     params.push(limit + 1);
 
     const rows = await queryRows(sql, params);
     const hasMore = rows.length > limit;
-    const data = hasMore ? rows.slice(0, limit) : rows;
-    const nextCursor = hasMore ? data[data.length - 1].event_ts.toISOString() : null;
+    const rawData = hasMore ? rows.slice(0, limit) : rows;
+    const nextCursor = hasMore ? rawData[rawData.length - 1].event_ts.toISOString() : null;
+
+    // Map DB columns to frontend-friendly field names
+    const data = rawData.map(row => ({
+      id: row.id,
+      timestamp: row.event_ts,
+      gate_name: row.gate_name || 'Unknown',
+      method: row.detection_method,
+      plate: row.raw_value || '',
+      decision: row.access_decision,
+      unit_number: row.matched_unit_number || '',
+      resident_name: row.resident_name || '',
+      confidence: row.anpr_confidence,
+    }));
 
     return success(res, { events: data, cursor: nextCursor, hasMore });
   } catch (err) {
@@ -109,6 +125,33 @@ router.get('/reports/daily', authenticateJWT(['admin']), async (req, res) => {
     return success(res, summary);
   } catch (err) {
     console.error('GET /reports/daily error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- GET /admin/dashboard/stats (JWT admin) ---------------------------------
+
+router.get('/admin/dashboard/stats', authenticateJWT(['admin']), async (req, res) => {
+  try {
+    const communityId = req.user.community_id;
+    const today = new Date().toISOString().slice(0, 10);
+    const dayStart = `${today}T00:00:00.000Z`;
+
+    const [vehicles, gates, todayEvents, passes] = await Promise.all([
+      queryRows('SELECT COUNT(*) AS count FROM vehicles WHERE community_id = $1', [communityId]),
+      queryRows("SELECT COUNT(*) AS count FROM gates WHERE community_id = $1 AND status = 'online'", [communityId]),
+      queryRows('SELECT COUNT(*) AS count FROM gate_events WHERE community_id = $1 AND event_ts >= $2', [communityId, dayStart]),
+      queryRows("SELECT COUNT(*) AS count FROM visitor_passes WHERE community_id = $1 AND status = 'active' AND valid_until > NOW()", [communityId]),
+    ]);
+
+    return success(res, {
+      totalVehicles: parseInt(vehicles[0]?.count || 0),
+      gatesOnline: parseInt(gates[0]?.count || 0),
+      todayEntries: parseInt(todayEvents[0]?.count || 0),
+      activePasses: parseInt(passes[0]?.count || 0),
+    });
+  } catch (err) {
+    console.error('GET /admin/dashboard/stats error:', err);
     return error(res, 'Internal server error', 500);
   }
 });

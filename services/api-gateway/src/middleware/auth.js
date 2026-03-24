@@ -1,7 +1,10 @@
 import jwt from 'jsonwebtoken';
 import { error } from './response.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-do-not-use-in-prod';
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'test' ? 'test-only-secret' : '');
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required. Set it before starting the server.');
+}
 
 export function authenticateJWT(roles = []) {
   return (req, res, next) => {
@@ -38,5 +41,6 @@ export function authenticateDevice(req, res, next) {
 }
 
 export function generateTestToken(payload, expiresIn = '24h') {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn });
+  const secret = process.env.JWT_SECRET || 'test-only-secret';
+  return jwt.sign(payload, secret, { expiresIn });
 }

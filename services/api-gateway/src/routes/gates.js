@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { authenticateJWT, authenticateDevice } from '../middleware/auth.js';
+import { publishGateCommand } from '../mqtt.js';
 
 const router = Router();
 
@@ -116,14 +117,30 @@ router.post('/gates/:id/command', authenticateJWT(['admin']), async (req, res) =
     }
 
     const eventId = uuidv4();
+    const ttl = Math.floor(Date.now() / 1000) + (parseInt(process.env.MQTT_COMMAND_TTL_SECONDS) || 30);
 
-    // Record the event (MQTT publishing is skipped in the gateway; edge devices poll or use websockets)
+    // Record the event
     await query(
       `INSERT INTO gate_events
          (id, community_id, gate_id, detection_method, raw_value, access_decision, event_ts)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
       [eventId, communityId, gateId, 'manual', parsed.data.action, 'allow']
     );
+
+    // Publish MQTT command to edge node
+    try {
+      await publishGateCommand(communityId, gateId, {
+        event_id: eventId,
+        action: parsed.data.action,
+        plate: parsed.data.plate || null,
+        unit_number: parsed.data.unit_number || null,
+        resident_name: parsed.data.resident_name || null,
+        ttl,
+        ts: Date.now() / 1000,
+      });
+    } catch (mqttErr) {
+      console.error('MQTT publish failed (event still recorded):', mqttErr);
+    }
 
     return success(res, {
       event_id: eventId,
@@ -146,6 +163,11 @@ router.post('/heartbeat', authenticateDevice, async (req, res) => {
     }
 
     const { gate_id, community_id, status } = parsed.data;
+
+    // Verify device token matches the claimed gate/community
+    if (gate_id !== req.device.gate_id || community_id !== req.device.community_id) {
+      return error(res, 'Device token does not match gate_id/community_id', 403);
+    }
 
     await query(
       'UPDATE gates SET last_seen = NOW(), status = $1 WHERE id = $2 AND community_id = $3',
@@ -170,6 +192,15 @@ router.post('/events/sync', authenticateDevice, async (req, res) => {
 
     const { events } = parsed.data;
     let inserted = 0;
+
+    // Verify all events belong to this device's community/gate
+    const deviceCommunity = req.device.community_id;
+    const deviceGate = req.device.gate_id;
+    for (const evt of events) {
+      if (evt.community_id !== deviceCommunity || evt.gate_id !== deviceGate) {
+        return error(res, 'Event community_id/gate_id does not match device token', 403);
+      }
+    }
 
     for (const evt of events) {
       await query(

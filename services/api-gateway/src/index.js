@@ -14,7 +14,12 @@ const PORT = process.env.PORT_API_GATEWAY || 3000;
 
 // Global middleware
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',')
+    : ['http://localhost:3001', 'http://localhost:3100', 'http://localhost:19006'],
+  credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(requestIdMiddleware);
 app.use(globalLimiter);

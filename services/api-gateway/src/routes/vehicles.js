@@ -43,7 +43,7 @@ const accessCheckSchema = z.object({
   value: z.string().min(1),
   confidence: z.number().min(0).max(1).optional(),
   snapshot_b64: z.string().optional(),
-  ts: z.string().optional(),
+  ts: z.union([z.string(), z.number()]).optional(),
 });
 
 const blacklistCreateSchema = z.object({
@@ -101,6 +101,7 @@ router.get('/vehicles', authenticateJWT(['resident', 'admin']), async (req, res)
     const community_id = user.community_id;
     const cursor = req.query.cursor || null;
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const plateSearch = req.query.plate || null;
 
     let sql, params;
     if (user.role === 'admin') {
@@ -109,6 +110,11 @@ router.get('/vehicles', authenticateJWT(['resident', 'admin']), async (req, res)
     } else {
       sql = 'SELECT * FROM vehicles WHERE community_id = $1 AND unit_id = $2 AND is_active = true';
       params = [community_id, user.unit_id];
+    }
+
+    if (plateSearch) {
+      sql += ` AND plate ILIKE $${params.length + 1}`;
+      params.push(`%${plateSearch}%`);
     }
 
     if (cursor) {
