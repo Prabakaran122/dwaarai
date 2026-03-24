@@ -45,22 +45,36 @@ _oq          = OfflineQueue(cfg.OFFLINE_QUEUE_PATH)
 _mqtt_client = None
 
 # ── Relay control ─────────────────────────────────────────────────────
+_close_timer: threading.Timer | None = None
+
 def open_gate(dur: float = None) -> bool:
-    global _is_open
+    global _is_open, _close_timer
     d = dur or cfg.RELAY_OPEN_SECONDS
     with _lock:
         if _is_open:
-            log.warning("Duplicate open ignored — gate already open")
+            # Extend the open duration by resetting the close timer
+            if _close_timer:
+                _close_timer.cancel()
+            _close_timer = threading.Timer(d, _close_gate)
+            _close_timer.daemon = True
+            _close_timer.start()
+            log.info(f"GATE OPEN extended ({d}s)")
             return False
         _is_open = True
         GPIO.output(cfg.RELAY_PIN, GPIO.HIGH)
+        _close_timer = threading.Timer(d, _close_gate)
+        _close_timer.daemon = True
+        _close_timer.start()
         log.info(f"GATE OPEN  ({d}s)")
-    time.sleep(d)
+    return True
+
+def _close_gate():
+    global _is_open, _close_timer
     with _lock:
         GPIO.output(cfg.RELAY_PIN, GPIO.LOW)
         _is_open = False
+        _close_timer = None
         log.info("GATE CLOSED")
-    return True
 
 # ── Access decision ───────────────────────────────────────────────────
 def _cloud_check(method, value, conf=None):
@@ -109,7 +123,8 @@ def _on_command(client, userdata, msg):
     try:
         cmd = json.loads(msg.payload)
         eid = cmd.get("event_id","")
-        if cmd.get("ttl",0) < time.time():
+        ttl = cmd.get("ttl")
+        if ttl is not None and ttl < time.time():
             log.warning(f"TTL expired — command {eid} rejected"); return
         now = time.time()
         if _seen_ids.get(eid,0) > now-60:
