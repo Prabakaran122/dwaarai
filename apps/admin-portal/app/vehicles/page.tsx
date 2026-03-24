@@ -26,8 +26,8 @@ export default function VehiclesPage() {
     setLoading(true);
     try {
       const params = search ? `?plate=${encodeURIComponent(search)}` : '';
-      const res = await apiFetch<{ data: Vehicle[] }>(`/vehicles${params}`);
-      setVehicles(res.data || []);
+      const res = await apiFetch<{ data: { vehicles: Vehicle[] } }>(`/vehicles${params}`);
+      setVehicles(res.data?.vehicles || []);
     } catch {
       setVehicles([]);
     } finally {
@@ -45,8 +45,11 @@ export default function VehiclesPage() {
     const formData = new FormData();
     formData.append('file', importFile);
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1'}/vehicles/import`, {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1';
+      const token = process.env.NEXT_PUBLIC_ADMIN_TOKEN || '';
+      await fetch(`${apiBase}/vehicles/bulk-import`, {
         method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
       });
       setShowImport(false);

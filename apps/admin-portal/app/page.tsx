@@ -25,7 +25,8 @@ interface GateStatus {
 
 async function getStats(): Promise<DashboardStats> {
   try {
-    return await apiFetch<DashboardStats>('/admin/dashboard/stats');
+    const res = await apiFetch<{ data: DashboardStats }>('/admin/dashboard/stats');
+    return res.data || { totalVehicles: 0, gatesOnline: 0, todayEntries: 0, activePasses: 0 };
   } catch {
     return { totalVehicles: 0, gatesOnline: 0, todayEntries: 0, activePasses: 0 };
   }
@@ -33,8 +34,8 @@ async function getStats(): Promise<DashboardStats> {
 
 async function getRecentEvents(): Promise<RecentEvent[]> {
   try {
-    const res = await apiFetch<{ data: RecentEvent[] }>('/events?limit=10');
-    return res.data || [];
+    const res = await apiFetch<{ data: { events: RecentEvent[] } }>('/events?limit=10');
+    return res.data?.events || [];
   } catch {
     return [];
   }
@@ -42,8 +43,8 @@ async function getRecentEvents(): Promise<RecentEvent[]> {
 
 async function getGateStatuses(): Promise<GateStatus[]> {
   try {
-    const res = await apiFetch<{ data: GateStatus[] }>('/gates');
-    return res.data || [];
+    const res = await apiFetch<{ data: { gates: GateStatus[] } }>('/gates');
+    return res.data?.gates || [];
   } catch {
     return [];
   }

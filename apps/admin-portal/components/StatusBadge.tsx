@@ -8,8 +8,11 @@ const colorMap: Record<string, string> = {
   offline: 'bg-red-100 text-red-800',
   active: 'bg-green-100 text-green-800',
   inactive: 'bg-gray-100 text-gray-800',
+  allow: 'bg-green-100 text-green-800',
   allowed: 'bg-green-100 text-green-800',
+  deny: 'bg-red-100 text-red-800',
   denied: 'bg-red-100 text-red-800',
+  guard_review: 'bg-yellow-100 text-yellow-800',
   pending: 'bg-yellow-100 text-yellow-800',
   expired: 'bg-orange-100 text-orange-800',
   permanent: 'bg-blue-100 text-blue-800',
@@ -24,6 +27,7 @@ const dotColorMap: Record<string, string> = {
 };
 
 export default function StatusBadge({ status, variant = 'default' }: StatusBadgeProps) {
+  if (!status) return <span className="text-xs text-gray-400">-</span>;
   const key = status.toLowerCase();
   const colors = colorMap[key] || 'bg-gray-100 text-gray-800';
 

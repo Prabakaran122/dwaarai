@@ -45,18 +45,18 @@ export default function EventsPage() {
       const params = new URLSearchParams();
       params.set('limit', '25');
       if (append && cursor) params.set('cursor', cursor);
-      if (filters.gate) params.set('gate', filters.gate);
-      if (filters.method) params.set('method', filters.method);
-      if (filters.decision) params.set('decision', filters.decision);
+      if (filters.gate) params.set('gate_id', filters.gate);
+      if (filters.method) params.set('detection_method', filters.method);
+      if (filters.decision) params.set('access_decision', filters.decision);
       if (filters.plate) params.set('plate', filters.plate);
-      if (filters.dateFrom) params.set('from', filters.dateFrom);
-      if (filters.dateTo) params.set('to', filters.dateTo);
+      if (filters.dateFrom) params.set('date_from', filters.dateFrom);
+      if (filters.dateTo) params.set('date_to', filters.dateTo);
 
-      const res = await apiFetch<{ data: EventEntry[]; cursor: string | null }>(`/events?${params}`);
-      const newEvents = res.data || [];
+      const res = await apiFetch<{ data: { events: EventEntry[]; cursor: string | null; hasMore: boolean } }>(`/events?${params}`);
+      const newEvents = res.data?.events || [];
       setEvents(append ? (prev) => [...prev, ...newEvents] : newEvents);
-      setCursor(res.cursor || null);
-      setHasMore(!!res.cursor);
+      setCursor(res.data?.cursor || null);
+      setHasMore(res.data?.hasMore || false);
     } catch {
       if (!append) setEvents([]);
     } finally {

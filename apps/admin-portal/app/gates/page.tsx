@@ -19,8 +19,8 @@ export default function GatesPage() {
 
   const fetchGates = async () => {
     try {
-      const res = await apiFetch<{ data: Gate[] }>('/gates');
-      setGates(res.data || []);
+      const res = await apiFetch<{ data: { gates: Gate[] } }>('/gates');
+      setGates(res.data?.gates || []);
     } catch {
       setGates([]);
     } finally {
@@ -34,13 +34,16 @@ export default function GatesPage() {
     return () => clearInterval(interval);
   }, []);
 
+  const [lastAction, setLastAction] = useState<Record<string, string>>({});
+
   const handleGateAction = async (gateId: string, action: 'open' | 'close') => {
     setActionLoading(gateId);
+    setLastAction((prev) => ({ ...prev, [gateId]: action }));
     try {
       await apiPost(`/gates/${gateId}/command`, { action });
-      await fetchGates();
     } catch (err) {
       console.error(`Failed to ${action} gate:`, err);
+      setLastAction((prev) => { const n = { ...prev }; delete n[gateId]; return n; });
     } finally {
       setActionLoading(null);
     }
@@ -93,16 +96,21 @@ export default function GatesPage() {
                   disabled={actionLoading === gate.id}
                   className="flex-1 px-3 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg disabled:opacity-50 transition-colors"
                 >
-                  {actionLoading === gate.id ? '...' : 'Open'}
+                  {actionLoading === gate.id ? 'Sending...' : 'Open'}
                 </button>
                 <button
                   onClick={() => handleGateAction(gate.id, 'close')}
                   disabled={actionLoading === gate.id}
                   className="flex-1 px-3 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 transition-colors"
                 >
-                  {actionLoading === gate.id ? '...' : 'Close'}
+                  {actionLoading === gate.id ? 'Sending...' : 'Close'}
                 </button>
               </div>
+              {lastAction[gate.id] && !actionLoading && (
+                <p className="text-xs text-green-600 mt-2 text-center">
+                  Command sent: {lastAction[gate.id]}
+                </p>
+              )}
             </div>
           ))}
         </div>
