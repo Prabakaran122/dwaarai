@@ -4,7 +4,7 @@
     "slug": "communitygate-guard",
     "version": "0.1.0",
     "orientation": "landscape",
-    "platforms": ["android"],
+    "platforms": ["android", "web"],
     "android": {
       "package": "com.communitygate.guard"
     }
