@@ -6,6 +6,7 @@ import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { authenticateJWT, authenticateDevice } from '../middleware/auth.js';
 import { deviceLimiter } from '../middleware/rateLimit.js';
+import { getCache, setCache, delCachePattern, getCacheStats } from '../db/redis.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -86,6 +87,12 @@ router.post('/vehicles', authenticateJWT(['resident', 'admin']), async (req, res
        RETURNING *`,
       [community_id, unit_id, resident_id, plate, plateDisplay, make || null, model || null, color || null, type, rfid_uid_hash || null]
     );
+
+    // Invalidate access cache for this plate/rfid
+    await delCachePattern(`access:*:anpr:${plate}`);
+    if (rfid_uid_hash) {
+      await delCachePattern(`access:*:rfid:${rfid_uid_hash}`);
+    }
 
     return success(res, vehicle, 201);
   } catch (err) {
@@ -185,6 +192,22 @@ router.put('/vehicles/:id', authenticateJWT(['resident', 'admin']), async (req, 
       `UPDATE vehicles SET ${setClauses.join(', ')} WHERE id = $${idx} RETURNING *`,
       values
     );
+
+    // Invalidate access cache for old plate/rfid
+    if (existing.plate) {
+      await delCachePattern(`access:*:anpr:${existing.plate}`);
+    }
+    if (existing.rfid_uid_hash) {
+      await delCachePattern(`access:*:rfid:${existing.rfid_uid_hash}`);
+    }
+    // Invalidate new plate/rfid if changed
+    if (updated.plate && updated.plate !== existing.plate) {
+      await delCachePattern(`access:*:anpr:${updated.plate}`);
+    }
+    if (updated.rfid_uid_hash && updated.rfid_uid_hash !== existing.rfid_uid_hash) {
+      await delCachePattern(`access:*:rfid:${updated.rfid_uid_hash}`);
+    }
+
     return success(res, updated);
   } catch (err) {
     console.error('PUT /vehicles/:id error:', err);
@@ -209,6 +232,15 @@ router.delete('/vehicles/:id', authenticateJWT(['admin']), async (req, res) => {
       'UPDATE vehicles SET is_active = false WHERE id = $1',
       [vehicleId]
     );
+
+    // Invalidate access cache for this vehicle
+    if (existing.plate) {
+      await delCachePattern(`access:*:anpr:${existing.plate}`);
+    }
+    if (existing.rfid_uid_hash) {
+      await delCachePattern(`access:*:rfid:${existing.rfid_uid_hash}`);
+    }
+
     return success(res, { id: vehicleId, is_active: false });
   } catch (err) {
     console.error('DELETE /vehicles/:id error:', err);
@@ -327,6 +359,28 @@ router.post('/access/check', authenticateDevice, deviceLimiter, async (req, res)
 
     const lookupValue = method === 'anpr' ? normalizePlate(value) : value;
 
+    // -- Redis cache lookup (skip OTP — those are stateful with use counts) ----
+    const cacheKey = `access:${community_id}:${method}:${lookupValue}`;
+    if (method !== 'otp') {
+      const cached = await getCache(cacheKey);
+      if (cached) {
+        const processingMs = Date.now() - startMs;
+        console.log(`Cache HIT: ${cacheKey} (${processingMs}ms)`);
+        // Log the gate event even on cache hit
+        await query(
+          `INSERT INTO gate_events (id, community_id, gate_id, detection_method, raw_value, matched_vehicle_id, matched_unit_id, matched_unit_number, resident_name, access_decision, deny_reason, anpr_confidence, processing_ms, event_ts)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          [eventId, community_id, gate_id, method, lookupValue, cached.vehicle_id || null, cached.unit_id || null, cached.unit_number || null, cached.resident_name || null, cached.decision, cached.reason || null, confidence || null, processingMs, eventTs]
+        );
+        return success(res, {
+          ...cached,
+          event_id: eventId,
+          cached: true,
+        });
+      }
+      console.log(`Cache MISS: ${cacheKey}`);
+    }
+
     // Check blacklist first
     let blacklisted = null;
     if (method === 'anpr') {
@@ -348,12 +402,14 @@ router.post('/access/check', authenticateDevice, deviceLimiter, async (req, res)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [eventId, community_id, gate_id, method, lookupValue, 'deny', 'blacklisted', confidence || null, processingMs, eventTs]
       );
-      return success(res, {
+      const denyResult = {
         decision: 'deny',
-        event_id: eventId,
         reason: 'blacklisted',
         message: 'Vehicle or RFID is blacklisted',
-      });
+      };
+      // Cache deny decisions for 60 seconds
+      await setCache(cacheKey, denyResult, 60);
+      return success(res, { ...denyResult, event_id: eventId });
     }
 
     // Look up vehicle by plate or RFID
@@ -418,16 +474,18 @@ router.post('/access/check', authenticateDevice, deviceLimiter, async (req, res)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [eventId, community_id, gate_id, method, lookupValue, vehicle.id, vehicle.unit_id, vehicle.unit_number, vehicle.resident_name, 'allow', confidence || null, processingMs, eventTs]
       );
-      return success(res, {
+      const allowResult = {
         decision: 'allow',
         method,
-        event_id: eventId,
         unit_id: vehicle.unit_id,
         unit_number: vehicle.unit_number,
         resident_name: vehicle.resident_name,
         vehicle_id: vehicle.id,
         message: 'Vehicle recognized',
-      });
+      };
+      // Cache allow decisions for 300 seconds (5 minutes)
+      await setCache(cacheKey, allowResult, 300);
+      return success(res, { ...allowResult, event_id: eventId });
     }
 
     // Not found -- guard review
@@ -437,12 +495,14 @@ router.post('/access/check', authenticateDevice, deviceLimiter, async (req, res)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [eventId, community_id, gate_id, method, lookupValue, 'guard_review', 'not_recognized', confidence || null, processingMs, eventTs]
     );
-    return success(res, {
+    const guardReviewResult = {
       decision: 'guard_review',
-      event_id: eventId,
       reason: 'not_recognized',
       message: 'Vehicle not recognized -- guard review required',
-    });
+    };
+    // Cache guard_review decisions for 60 seconds
+    await setCache(cacheKey, guardReviewResult, 60);
+    return success(res, { ...guardReviewResult, event_id: eventId });
   } catch (err) {
     console.error('POST /access/check error:', err);
     return error(res, 'Internal server error', 500);
@@ -468,6 +528,14 @@ router.post('/blacklist', authenticateJWT(['admin']), async (req, res) => {
        RETURNING *`,
       [user.community_id, plate, rfid_uid_hash || null, reason, user.sub]
     );
+
+    // Invalidate access cache for the blacklisted plate/rfid
+    if (plate) {
+      await delCachePattern(`access:*:anpr:${plate}`);
+    }
+    if (rfid_uid_hash) {
+      await delCachePattern(`access:*:rfid:${rfid_uid_hash}`);
+    }
 
     return success(res, entry, 201);
   } catch (err) {
@@ -497,6 +565,20 @@ router.delete('/blacklist/:id', authenticateJWT(['admin']), async (req, res) => 
     console.error('DELETE /blacklist/:id error:', err);
     return error(res, 'Internal server error', 500);
   }
+});
+
+// -- Cache Stats (admin only) ------------------------------------------------
+
+router.get('/cache/stats', authenticateJWT(['admin']), (req, res) => {
+  const stats = getCacheStats();
+  const total = stats.hits + stats.misses;
+  return success(res, {
+    hits: stats.hits,
+    misses: stats.misses,
+    total,
+    hit_rate: total > 0 ? (stats.hits / total * 100).toFixed(1) + '%' : '0%',
+    redis_connected: stats.connected,
+  });
 });
 
 export default router;

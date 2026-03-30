@@ -8,6 +8,7 @@ import vehicleRoutes from './routes/vehicles.js';
 import passRoutes from './routes/passes.js';
 import gateRoutes from './routes/gates.js';
 import eventRoutes from './routes/events.js';
+import authRoutes from './routes/auth.js';
 
 const app = express();
 const PORT = process.env.PORT_API_GATEWAY || 3000;
@@ -28,6 +29,7 @@ app.use(globalLimiter);
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // API routes
+app.use('/api/v1', authRoutes);
 app.use('/api/v1', vehicleRoutes);
 app.use('/api/v1', passRoutes);
 app.use('/api/v1', gateRoutes);
