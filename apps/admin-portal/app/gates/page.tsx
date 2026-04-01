@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import StatusBadge from '@/components/StatusBadge';
 import { apiFetch, apiPost } from '@/lib/api';
+import { getSocket } from '@/lib/socket';
 
 interface Gate {
   id: string;
@@ -12,10 +13,30 @@ interface Gate {
   direction: string;
 }
 
+interface GateStatusEvent {
+  gateId: string;
+  gateName: string;
+  status: string;
+  lastSeen: string;
+  ts: string;
+}
+
+interface GateCommandEvent {
+  gateId: string;
+  gateName: string;
+  action: string;
+  initiatedBy: string;
+  role: string;
+  plate: string | null;
+  residentName: string | null;
+  ts: string;
+}
+
 export default function GatesPage() {
   const [gates, setGates] = useState<Gate[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [lastAction, setLastAction] = useState<Record<string, string>>({});
 
   const fetchGates = async () => {
     try {
@@ -30,11 +51,38 @@ export default function GatesPage() {
 
   useEffect(() => {
     fetchGates();
-    const interval = setInterval(fetchGates, 10000);
-    return () => clearInterval(interval);
-  }, []);
 
-  const [lastAction, setLastAction] = useState<Record<string, string>>({});
+    const socket = getSocket();
+
+    const handleStatus = (data: GateStatusEvent) => {
+      setGates((prev) =>
+        prev.map((g) =>
+          g.id === data.gateId
+            ? { ...g, status: data.status, last_seen: data.lastSeen }
+            : g
+        )
+      );
+    };
+
+    const handleCommand = (data: GateCommandEvent) => {
+      setLastAction((prev) => ({
+        ...prev,
+        [data.gateId]: `${data.action} by ${data.initiatedBy}`,
+      }));
+    };
+
+    socket.on('gate:status', handleStatus);
+    socket.on('gate:command', handleCommand);
+
+    // Full refresh on reconnect (may have missed events)
+    socket.on('connect', fetchGates);
+
+    return () => {
+      socket.off('gate:status', handleStatus);
+      socket.off('gate:command', handleCommand);
+      socket.off('connect', fetchGates);
+    };
+  }, []);
 
   const handleGateAction = async (gateId: string, action: 'open' | 'close') => {
     setActionLoading(gateId);
@@ -43,7 +91,11 @@ export default function GatesPage() {
       await apiPost(`/gates/${gateId}/command`, { action });
     } catch (err) {
       console.error(`Failed to ${action} gate:`, err);
-      setLastAction((prev) => { const n = { ...prev }; delete n[gateId]; return n; });
+      setLastAction((prev) => {
+        const n = { ...prev };
+        delete n[gateId];
+        return n;
+      });
     } finally {
       setActionLoading(null);
     }
@@ -108,7 +160,7 @@ export default function GatesPage() {
               </div>
               {lastAction[gate.id] && !actionLoading && (
                 <p className="text-xs text-green-600 mt-2 text-center">
-                  Command sent: {lastAction[gate.id]}
+                  {lastAction[gate.id]}
                 </p>
               )}
             </div>
