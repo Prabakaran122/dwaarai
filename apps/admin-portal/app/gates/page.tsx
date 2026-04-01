@@ -104,8 +104,8 @@ export default function GatesPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-gray-900">Gates</h1>
-        <div className="text-center text-gray-400 py-12">Loading gates...</div>
+        <h1 className="text-2xl font-bold text-slate-100">Gates</h1>
+        <div className="text-center text-slate-500 py-12">Loading gates...</div>
       </div>
     );
   }
@@ -113,32 +113,38 @@ export default function GatesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Gates</h1>
+        <h1 className="text-2xl font-bold text-slate-100">Gates</h1>
         <button
           onClick={fetchGates}
-          className="px-4 py-2 text-sm font-medium text-gray-600 bg-white hover:bg-gray-50 border border-gray-300 rounded-lg transition-colors"
+          className="px-4 py-2 text-sm font-medium text-slate-300 glass-panel hover:bg-surface-hover border border-surface-border rounded-xl transition-all duration-300"
         >
           Refresh
         </button>
       </div>
 
       {gates.length === 0 ? (
-        <div className="bg-white rounded-lg shadow p-12 text-center text-gray-400">
+        <div className="glass-panel p-12 text-center text-slate-500">
           No gates configured
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {gates.map((gate) => (
-            <div key={gate.id} className="bg-white rounded-lg shadow p-6">
+            <div
+              key={gate.id}
+              className="glass-panel glass-panel-hover p-6 transition-all duration-300 relative overflow-hidden"
+            >
+              {/* Gradient top border accent */}
+              <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-glow-blue/40 via-glow-purple/40 to-transparent" />
+
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">{gate.name}</h3>
-                  <p className="text-sm text-gray-500 capitalize">{gate.direction}</p>
+                  <h3 className="text-lg font-semibold text-slate-100">{gate.name}</h3>
+                  <p className="text-sm text-slate-500 capitalize">{gate.direction}</p>
                 </div>
                 <StatusBadge status={gate.status} variant="dot" />
               </div>
 
-              <div className="text-xs text-gray-400 mb-4">
+              <div className="text-xs text-slate-500 mb-4">
                 Last seen: {gate.last_seen ? new Date(gate.last_seen).toLocaleString() : 'Never'}
               </div>
 
@@ -146,20 +152,20 @@ export default function GatesPage() {
                 <button
                   onClick={() => handleGateAction(gate.id, 'open')}
                   disabled={actionLoading === gate.id}
-                  className="flex-1 px-3 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg disabled:opacity-50 transition-colors"
+                  className="flex-1 px-3 py-2 text-sm font-medium text-white bg-glow-success rounded-xl disabled:opacity-50 transition-all duration-300 hover:shadow-[0_0_20px_rgba(34,197,94,0.3)]"
                 >
                   {actionLoading === gate.id ? 'Sending...' : 'Open'}
                 </button>
                 <button
                   onClick={() => handleGateAction(gate.id, 'close')}
                   disabled={actionLoading === gate.id}
-                  className="flex-1 px-3 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 transition-colors"
+                  className="flex-1 px-3 py-2 text-sm font-medium text-white bg-glow-danger rounded-xl disabled:opacity-50 transition-all duration-300 hover:shadow-[0_0_20px_rgba(239,68,68,0.3)]"
                 >
                   {actionLoading === gate.id ? 'Sending...' : 'Close'}
                 </button>
               </div>
               {lastAction[gate.id] && !actionLoading && (
-                <p className="text-xs text-green-600 mt-2 text-center">
+                <p className="text-xs text-status-success mt-2 text-center">
                   {lastAction[gate.id]}
                 </p>
               )}
