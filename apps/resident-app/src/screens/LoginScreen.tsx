@@ -12,12 +12,14 @@ import { requestOTP, verifyOTP } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 
 export default function LoginScreen() {
-  const { otpStep, phone, setPhone, setOtpStep, login } = useAuthStore();
+  const login = useAuthStore((s) => s.login);
+  const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
+  const [otpStep, setOtpStep] = useState<'phone' | 'otp'>('phone');
   const [loading, setLoading] = useState(false);
 
   const handleRequestOTP = async () => {
-    if (!phone.trim() || phone.length < 10) {
+    if (!phone.trim() || phone.trim().length < 10) {
       Alert.alert('Error', 'Please enter a valid phone number');
       return;
     }

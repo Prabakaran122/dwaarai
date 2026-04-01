@@ -11,17 +11,11 @@ interface AuthUser {
   unitNumber: string;
 }
 
-type OTPStep = 'phone' | 'otp';
-
 interface AuthState {
   token: string | null;
   user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  otpStep: OTPStep;
-  phone: string;
-  setPhone: (phone: string) => void;
-  setOtpStep: (step: OTPStep) => void;
   login: (token: string, user: AuthUser) => void;
   logout: () => void;
   rehydrate: () => Promise<void>;
@@ -41,15 +35,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
   isLoading: true,
-  otpStep: 'phone',
-  phone: '',
-
-  setPhone: (phone) => set({ phone }),
-  setOtpStep: (otpStep) => set({ otpStep }),
 
   login: (token, user) => {
     setAuthToken(token);
-    set({ token, user, isAuthenticated: true, otpStep: 'phone' });
+    set({ token, user, isAuthenticated: true });
     AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token, user })).catch(() => {});
   },
 
@@ -59,8 +48,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       token: null,
       user: null,
       isAuthenticated: false,
-      otpStep: 'phone',
-      phone: '',
     });
     AsyncStorage.removeItem(AUTH_STORAGE_KEY).catch(() => {});
   },

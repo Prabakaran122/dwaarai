@@ -21,7 +21,7 @@ function LoginScreen() {
   const login = useAuthStore((s) => s.login);
 
   const handleRequestOTP = async () => {
-    if (!phone.trim() || phone.length < 10) return;
+    if (!phone.trim() || phone.trim().length < 10) return;
     setErrorMsg('');
     setLoading(true);
     try {
