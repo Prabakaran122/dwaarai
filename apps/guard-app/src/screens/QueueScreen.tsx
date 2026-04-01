@@ -118,7 +118,7 @@ export default function QueueScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Pending Review</Text>
             <View style={styles.countBadge}>
-              <LinearGradient colors={colors.gradientWarning as unknown as string[]} style={styles.countGradient}>
+              <LinearGradient colors={colors.gradientWarning as [string, string]} style={styles.countGradient}>
                 <Text style={styles.countText}>{pendingEntries.length}</Text>
               </LinearGradient>
             </View>
@@ -164,15 +164,15 @@ export default function QueueScreen() {
       {/* Bottom stats + nav */}
       <View style={styles.bottomBar}>
         <View style={styles.stats}>
-          <LinearGradient colors={colors.gradientPrimary as unknown as string[]} style={styles.statCard}>
+          <LinearGradient colors={colors.gradientPrimary as [string, string]} style={styles.statCard}>
             <Text style={styles.statLabel}>PENDING</Text>
             <Text style={styles.statValue}>{pendingEntries.length}</Text>
           </LinearGradient>
-          <LinearGradient colors={colors.gradientAccent as unknown as string[]} style={styles.statCard}>
+          <LinearGradient colors={colors.gradientAccent as [string, string]} style={styles.statCard}>
             <Text style={styles.statLabel}>TODAY</Text>
             <Text style={styles.statValue}>{entries.length}</Text>
           </LinearGradient>
-          <LinearGradient colors={colors.gradientDanger as unknown as string[]} style={styles.statCard}>
+          <LinearGradient colors={colors.gradientDanger as [string, string]} style={styles.statCard}>
             <Text style={styles.statLabel}>DENIED</Text>
             <Text style={styles.statValue}>{deniedCount}</Text>
           </LinearGradient>

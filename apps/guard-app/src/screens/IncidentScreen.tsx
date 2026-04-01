@@ -63,7 +63,7 @@ export default function IncidentScreen() {
                   <TouchableOpacity key={t.key} onPress={() => setType(t.key)} activeOpacity={0.7}>
                     {isActive ? (
                       <LinearGradient
-                        colors={colors.gradientDanger as unknown as string[]}
+                        colors={colors.gradientDanger as [string, string]}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                         style={styles.chip}

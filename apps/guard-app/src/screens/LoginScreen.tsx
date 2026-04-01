@@ -45,7 +45,7 @@ export default function LoginScreen() {
         <GlowCard style={styles.card}>
           <View style={styles.logoRow}>
             <LinearGradient
-              colors={colors.gradientPrimary as unknown as string[]}
+              colors={colors.gradientPrimary as [string, string]}
               style={styles.logoCircle}
             >
               <MaterialCommunityIcons name="shield-check" size={32} color={colors.white} />
