@@ -115,14 +115,14 @@ export default function EventsPage() {
     {
       key: 'timestamp', label: 'Time', sortable: true,
       render: (row: EventEntry) => (
-        <span className="text-xs">{new Date(row.timestamp).toLocaleString()}</span>
+        <span className="text-xs text-slate-300">{new Date(row.timestamp).toLocaleString()}</span>
       ),
     },
     { key: 'gate_name', label: 'Gate', sortable: true },
     { key: 'method', label: 'Method', sortable: true },
     {
       key: 'plate', label: 'Plate',
-      render: (row: EventEntry) => <span className="font-mono">{row.plate}</span>,
+      render: (row: EventEntry) => <span className="font-mono text-slate-100">{row.plate}</span>,
     },
     {
       key: 'decision', label: 'Decision',
@@ -134,76 +134,76 @@ export default function EventsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Events</h1>
+      <h1 className="text-2xl font-bold text-slate-100">Events</h1>
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow p-4">
+      <div className="glass-panel p-4">
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <input
             type="text"
             placeholder="Plate search..."
             value={filters.plate}
             onChange={(e) => updateFilter('plate', e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            className="input-glow px-3 py-2 text-sm w-full"
           />
           <select
             value={filters.gate}
             onChange={(e) => updateFilter('gate', e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+            className="input-glow px-3 py-2 text-sm bg-transparent w-full"
           >
-            <option value="">All Gates</option>
-            <option value="main-entry">Main Entry</option>
-            <option value="main-exit">Main Exit</option>
-            <option value="visitor-entry">Visitor Entry</option>
+            <option value="" className="bg-navy-800">All Gates</option>
+            <option value="main-entry" className="bg-navy-800">Main Entry</option>
+            <option value="main-exit" className="bg-navy-800">Main Exit</option>
+            <option value="visitor-entry" className="bg-navy-800">Visitor Entry</option>
           </select>
           <select
             value={filters.method}
             onChange={(e) => updateFilter('method', e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+            className="input-glow px-3 py-2 text-sm bg-transparent w-full"
           >
-            <option value="">All Methods</option>
-            <option value="anpr">ANPR</option>
-            <option value="rfid">RFID</option>
-            <option value="manual">Manual</option>
-            <option value="visitor_pass">Visitor Pass</option>
+            <option value="" className="bg-navy-800">All Methods</option>
+            <option value="anpr" className="bg-navy-800">ANPR</option>
+            <option value="rfid" className="bg-navy-800">RFID</option>
+            <option value="manual" className="bg-navy-800">Manual</option>
+            <option value="visitor_pass" className="bg-navy-800">Visitor Pass</option>
           </select>
           <select
             value={filters.decision}
             onChange={(e) => updateFilter('decision', e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+            className="input-glow px-3 py-2 text-sm bg-transparent w-full"
           >
-            <option value="">All Decisions</option>
-            <option value="allowed">Allowed</option>
-            <option value="denied">Denied</option>
+            <option value="" className="bg-navy-800">All Decisions</option>
+            <option value="allowed" className="bg-navy-800">Allowed</option>
+            <option value="denied" className="bg-navy-800">Denied</option>
           </select>
           <input
             type="date"
             value={filters.dateFrom}
             onChange={(e) => updateFilter('dateFrom', e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            className="input-glow px-3 py-2 text-sm w-full"
           />
           <input
             type="date"
             value={filters.dateTo}
             onChange={(e) => updateFilter('dateTo', e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            className="input-glow px-3 py-2 text-sm w-full"
           />
         </div>
       </div>
 
       {/* Events Table */}
-      <div className="bg-white rounded-lg shadow">
+      <div className="glass-panel">
         {loading && events.length === 0 ? (
-          <div className="p-8 text-center text-gray-400">Loading events...</div>
+          <div className="p-8 text-center text-slate-500">Loading events...</div>
         ) : (
           <>
             <DataTable columns={columns} data={events} keyField="id" />
             {hasMore && (
-              <div className="p-4 text-center border-t border-gray-200">
+              <div className="p-4 text-center border-t border-surface-border">
                 <button
                   onClick={() => fetchEvents(true)}
                   disabled={loading}
-                  className="px-6 py-2 text-sm font-medium text-primary bg-blue-50 hover:bg-blue-100 rounded-lg disabled:opacity-50 transition-colors"
+                  className="px-6 py-2 text-sm font-medium text-glow-blue glass-panel hover:bg-surface-hover rounded-xl disabled:opacity-50 transition-all duration-300"
                 >
                   {loading ? 'Loading...' : 'Load More'}
                 </button>
