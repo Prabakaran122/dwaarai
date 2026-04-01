@@ -2,72 +2,80 @@
 
 import { useState } from 'react';
 
-interface Column<T> {
+interface Column {
   key: string;
   label: string;
   sortable?: boolean;
-  render?: (row: T) => React.ReactNode;
+  render?: (row: any) => React.ReactNode;
 }
 
-interface DataTableProps<T> {
-  columns: Column<T>[];
-  data: T[];
+interface DataTableProps {
+  columns: Column[];
+  data: any[];
   keyField: string;
-  onSort?: (key: string, direction: 'asc' | 'desc') => void;
 }
 
-export default function DataTable<T extends Record<string, unknown>>({
-  columns,
-  data,
-  keyField,
-  onSort,
-}: DataTableProps<T>) {
+export default function DataTable({ columns, data, keyField }: DataTableProps) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const handleSort = (key: string) => {
-    const newDir = sortKey === key && sortDir === 'asc' ? 'desc' : 'asc';
-    setSortKey(key);
-    setSortDir(newDir);
-    onSort?.(key, newDir);
+    if (sortKey === key) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
   };
+
+  const sorted = sortKey
+    ? [...data].sort((a, b) => {
+        const av = a[sortKey] ?? '';
+        const bv = b[sortKey] ?? '';
+        const cmp = String(av).localeCompare(String(bv));
+        return sortDir === 'asc' ? cmp : -cmp;
+      })
+    : data;
 
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          <tr>
+      <table className="w-full">
+        <thead>
+          <tr className="border-b border-surface-border">
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
-                  col.sortable ? 'cursor-pointer hover:text-gray-700 select-none' : ''
+                className={`px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500 ${
+                  col.sortable ? 'cursor-pointer hover:text-glow-blue transition-colors' : ''
                 }`}
                 onClick={() => col.sortable && handleSort(col.key)}
               >
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1.5">
                   {col.label}
                   {col.sortable && sortKey === col.key && (
-                    <span>{sortDir === 'asc' ? '\u2191' : '\u2193'}</span>
+                    <span className="text-glow-blue">{sortDir === 'asc' ? '↑' : '↓'}</span>
                   )}
                 </span>
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          {data.length === 0 ? (
+        <tbody>
+          {sorted.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="px-4 py-8 text-center text-gray-400">
+              <td colSpan={columns.length} className="px-4 py-12 text-center text-slate-600 text-sm">
                 No data available
               </td>
             </tr>
           ) : (
-            data.map((row) => (
-              <tr key={String(row[keyField])} className="hover:bg-gray-50">
+            sorted.map((row, i) => (
+              <tr
+                key={row[keyField] || i}
+                className="border-b border-surface-border/50 transition-colors hover:bg-surface-hover group"
+              >
                 {columns.map((col) => (
-                  <td key={col.key} className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
-                    {col.render ? col.render(row) : String(row[col.key] ?? '')}
+                  <td key={col.key} className="px-4 py-3 text-sm text-slate-300">
+                    {col.render ? col.render(row) : row[col.key]}
                   </td>
                 ))}
               </tr>
