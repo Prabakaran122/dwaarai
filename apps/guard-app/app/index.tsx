@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useAuthStore } from '../src/store/authStore';
 import { useQueueStore, type QueueEntry } from '../src/store/queueStore';
+import { login as apiLogin } from '../src/api/client';
 import VehicleCard from '../src/components/VehicleCard';
 import StatusBadge from '../src/components/StatusBadge';
 
@@ -18,16 +19,23 @@ function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
   const login = useAuthStore((s) => s.login);
 
-  const handleLogin = () => {
-    if (!username.trim()) return;
+  const handleLogin = async () => {
+    if (!username.trim() || !password.trim()) return;
+    setErrorMsg('');
     setLoading(true);
-    // Dev mode: auto-login with a mock token
-    setTimeout(() => {
-      login('dev-token', { name: username || 'Guard', role: 'guard', gateId: 'gate-01' });
+    try {
+      const res = await apiLogin(username.trim(), password);
+      const { token, user } = res.data.data;
+      login(token, user);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.response?.data?.error || 'Login failed';
+      setErrorMsg(typeof msg === 'string' ? msg : 'Login failed');
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   };
 
   return (
@@ -35,12 +43,15 @@ function LoginScreen() {
       <View style={loginStyles.card}>
         <Text style={loginStyles.title}>CommunityGate</Text>
         <Text style={loginStyles.subtitle}>Guard Station</Text>
+        {errorMsg ? <Text style={loginStyles.error}>{errorMsg}</Text> : null}
         <TextInput
           style={loginStyles.input}
           placeholder="Username"
           placeholderTextColor="#94a3b8"
           value={username}
           onChangeText={setUsername}
+          autoCapitalize="none"
+          autoCorrect={false}
         />
         <TextInput
           style={loginStyles.input}
@@ -74,6 +85,7 @@ const loginStyles = StyleSheet.create({
   input: { width: '100%', backgroundColor: '#334155', borderRadius: 8, padding: 14, fontSize: 16, color: '#fff', marginBottom: 16 },
   button: { width: '100%', backgroundColor: '#2563eb', borderRadius: 8, padding: 14, alignItems: 'center', marginTop: 8 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  error: { color: '#ef4444', fontSize: 14, marginBottom: 16, textAlign: 'center' },
 });
 
 // ── Queue Screen ──────────────────────────────────────────────────────
@@ -155,5 +167,20 @@ const queueStyles = StyleSheet.create({
 // ── Root ──────────────────────────────────────────────────────────────
 export default function Page() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isLoading = useAuthStore((s) => s.isLoading);
+  const rehydrate = useAuthStore((s) => s.rehydrate);
+
+  useEffect(() => {
+    rehydrate();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#2563eb" />
+      </View>
+    );
+  }
+
   return isAuthenticated ? <QueueView /> : <LoginScreen />;
 }
