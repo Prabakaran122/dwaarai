@@ -11,6 +11,7 @@ import {
 import { useAuthStore } from '../src/store/authStore';
 import { useQueueStore, type QueueEntry } from '../src/store/queueStore';
 import { login as apiLogin } from '../src/api/client';
+import { getSocket } from '../src/api/socket';
 import VehicleCard from '../src/components/VehicleCard';
 import StatusBadge from '../src/components/StatusBadge';
 
@@ -91,9 +92,41 @@ const loginStyles = StyleSheet.create({
 // ── Queue Screen ──────────────────────────────────────────────────────
 function QueueView() {
   const entries = useQueueStore((s) => s.entries);
+  const addEntry = useQueueStore((s) => s.addEntry);
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
   const [activeTab, setActiveTab] = useState<'queue' | 'otp' | 'incident'>('queue');
+
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleEvent = (data: {
+      id: string;
+      gateId: string;
+      detectionMethod: string;
+      rawValue: string;
+      accessDecision: string;
+      denyReason?: string;
+      matchedUnitNumber?: string;
+      residentName?: string;
+      anprConfidence?: number;
+      eventTs: string;
+    }) => {
+      const entry: QueueEntry = {
+        id: data.id,
+        plate: data.rawValue || 'Unknown',
+        method: data.detectionMethod as QueueEntry['method'],
+        decision: data.accessDecision as QueueEntry['decision'],
+        reason: data.denyReason || undefined,
+        timestamp: data.eventTs,
+      };
+      addEntry(entry);
+    };
+
+    socket.on('gate:event', handleEvent);
+    return () => { socket.off('gate:event', handleEvent); };
+  }, [addEntry]);
 
   const pendingEntries = entries.filter((e) => e.decision === 'guard_review');
   const recentEntries = entries.filter((e) => e.decision !== 'guard_review');

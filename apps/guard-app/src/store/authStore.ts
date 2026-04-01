@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { setAuthToken, clearAuthToken } from '../api/client';
+import { connectSocket, disconnectSocket } from '../api/socket';
 
 const AUTH_STORAGE_KEY = 'communitygate_guard_auth';
 
@@ -37,12 +38,14 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   login: (token, user) => {
     setAuthToken(token);
+    connectSocket(token);
     set({ token, user, isAuthenticated: true });
     AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token, user })).catch(() => {});
   },
 
   logout: () => {
     clearAuthToken();
+    disconnectSocket();
     set({ token: null, user: null, isAuthenticated: false });
     AsyncStorage.removeItem(AUTH_STORAGE_KEY).catch(() => {});
   },
@@ -54,6 +57,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         const { token, user } = JSON.parse(raw);
         if (token && !isTokenExpired(token)) {
           setAuthToken(token);
+          connectSocket(token);
           set({ token, user, isAuthenticated: true, isLoading: false });
           return;
         }
