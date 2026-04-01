@@ -1,154 +1,194 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
+import React, { useState, useRef } from 'react';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '../theme/colors';
+import { spacing, radius } from '../theme/spacing';
+import GlowCard from '../components/GlowCard';
+import GradientButton from '../components/GradientButton';
+import AnimatedEntry from '../components/AnimatedEntry';
 import { requestOTP, verifyOTP } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 
 export default function LoginScreen() {
   const login = useAuthStore((s) => s.login);
   const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState('');
   const [otpStep, setOtpStep] = useState<'phone' | 'otp'>('phone');
+  const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [focusedField, setFocusedField] = useState(false);
+  const inputRefs = useRef<(TextInput | null)[]>([]);
 
   const handleRequestOTP = async () => {
-    if (!phone.trim() || phone.trim().length < 10) {
-      Alert.alert('Error', 'Please enter a valid phone number');
-      return;
-    }
+    if (!phone.trim() || phone.trim().length < 10) return;
+    setErrorMsg('');
     setLoading(true);
     try {
       await requestOTP(phone.trim());
       setOtpStep('otp');
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.error || 'Failed to send OTP');
+      const msg = err?.response?.data?.error?.message || err?.response?.data?.error || 'Failed to send OTP';
+      setErrorMsg(typeof msg === 'string' ? msg : 'Failed to send OTP');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleVerifyOTP = async () => {
-    if (!otp.trim() || otp.length < 4) {
-      Alert.alert('Error', 'Please enter the OTP');
+  const handleDigitChange = (index: number, value: string) => {
+    const cleaned = value.replace(/\D/g, '');
+    if (!cleaned && value === '') {
+      const newDigits = [...digits];
+      newDigits[index] = '';
+      setDigits(newDigits);
+      if (index > 0) inputRefs.current[index - 1]?.focus();
       return;
     }
+    if (cleaned.length === 1) {
+      const newDigits = [...digits];
+      newDigits[index] = cleaned;
+      setDigits(newDigits);
+      if (index < 5) inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleKeyPress = (index: number, key: string) => {
+    if (key === 'Backspace' && !digits[index] && index > 0) {
+      const newDigits = [...digits];
+      newDigits[index - 1] = '';
+      setDigits(newDigits);
+      inputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const otp = digits.join('');
+
+  const handleVerifyOTP = async () => {
+    if (otp.length !== 6) return;
+    setErrorMsg('');
     setLoading(true);
     try {
-      const res = await verifyOTP(phone, otp.trim());
+      const res = await verifyOTP(phone.trim(), otp);
       const { token, user } = res.data.data;
       login(token, user);
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.error || 'Invalid OTP');
+      const msg = err?.response?.data?.error?.message || err?.response?.data?.error || 'Invalid or expired OTP';
+      setErrorMsg(typeof msg === 'string' ? msg : 'Invalid or expired OTP');
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.title}>CommunityGate</Text>
-        <Text style={styles.subtitle}>Resident Login</Text>
+  const handleChangeNumber = () => {
+    setOtpStep('phone');
+    setDigits(['', '', '', '', '', '']);
+    setErrorMsg('');
+  };
 
-        {otpStep === 'phone' ? (
-          <>
-            <TextInput
-              style={styles.input}
-              placeholder="Phone number"
-              placeholderTextColor="#94a3b8"
-              value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-              autoComplete="tel"
-            />
-            <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handleRequestOTP}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>Send OTP</Text>
-              )}
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <Text style={styles.phoneLabel}>OTP sent to {phone}</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter OTP"
-              placeholderTextColor="#94a3b8"
-              value={otp}
-              onChangeText={setOtp}
-              keyboardType="number-pad"
-              maxLength={6}
-            />
-            <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handleVerifyOTP}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>Verify</Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setOtpStep('phone')}>
-              <Text style={styles.backLink}>Change number</Text>
-            </TouchableOpacity>
-          </>
-        )}
-      </View>
-    </View>
+  return (
+    <LinearGradient colors={colors.gradientBg} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.container}>
+      <AnimatedEntry direction="up" duration={600}>
+        <GlowCard style={styles.card}>
+          <View style={styles.logoRow}>
+            <LinearGradient colors={colors.gradientPrimary as [string, string]} style={styles.logoCircle}>
+              <MaterialCommunityIcons name="cellphone" size={28} color={colors.white} />
+            </LinearGradient>
+          </View>
+          <Text style={styles.title}>CommunityGate</Text>
+          <Text style={styles.subtitle}>RESIDENT LOGIN</Text>
+
+          {errorMsg ? (
+            <AnimatedEntry direction="fade">
+              <Text style={styles.error}>{errorMsg}</Text>
+            </AnimatedEntry>
+          ) : null}
+
+          {otpStep === 'phone' ? (
+            <>
+              <View style={[styles.inputWrapper, focusedField && styles.inputFocused]}>
+                <MaterialCommunityIcons name="phone" size={18} color={colors.textMuted} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Phone number"
+                  placeholderTextColor={colors.textMuted}
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                  onFocus={() => setFocusedField(true)}
+                  onBlur={() => setFocusedField(false)}
+                />
+              </View>
+              <GradientButton
+                title="Send OTP"
+                onPress={handleRequestOTP}
+                icon="message-text"
+                loading={loading}
+                disabled={!phone.trim() || phone.trim().length < 10}
+              />
+            </>
+          ) : (
+            <>
+              <Text style={styles.otpSentLabel}>OTP sent to {phone}</Text>
+              <View style={styles.digitRow}>
+                {digits.map((digit, i) => (
+                  <View key={i} style={[styles.digitBox, digit ? styles.digitBoxFilled : null]}>
+                    <TextInput
+                      ref={(ref) => { inputRefs.current[i] = ref; }}
+                      style={styles.digitInput}
+                      value={digit}
+                      onChangeText={(v) => handleDigitChange(i, v)}
+                      onKeyPress={({ nativeEvent }) => handleKeyPress(i, nativeEvent.key)}
+                      keyboardType="number-pad"
+                      maxLength={1}
+                      textAlign="center"
+                      selectTextOnFocus
+                    />
+                  </View>
+                ))}
+              </View>
+              <GradientButton
+                title="Verify OTP"
+                onPress={handleVerifyOTP}
+                icon="check-circle"
+                loading={loading}
+                disabled={otp.length !== 6}
+              />
+              <TouchableOpacity onPress={handleChangeNumber} style={styles.changeLink}>
+                <Text style={styles.changeLinkText}>Change number</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </GlowCard>
+      </AnimatedEntry>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-    justifyContent: 'center',
-    alignItems: 'center',
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  card: { width: '85%', maxWidth: 360 },
+  logoRow: { alignItems: 'center', marginBottom: spacing.lg },
+  logoCircle: { width: 56, height: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 24, fontWeight: '800', color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.xs },
+  subtitle: { fontSize: 12, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing['2xl'], letterSpacing: 2 },
+  error: { color: colors.danger, fontSize: 13, textAlign: 'center', marginBottom: spacing.lg },
+  inputWrapper: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
+    borderRadius: radius.sm, borderWidth: 1, borderColor: colors.surfaceBorder,
+    marginBottom: spacing.lg, paddingHorizontal: spacing.md,
   },
-  card: {
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
-    padding: 32,
-    width: '85%',
-    maxWidth: 360,
-    alignItems: 'center',
+  inputFocused: { borderColor: 'rgba(99,102,241,0.5)' },
+  inputIcon: { marginRight: spacing.sm },
+  input: { flex: 1, padding: spacing.lg, fontSize: 16, color: colors.textPrimary },
+  otpSentLabel: { color: colors.textMuted, fontSize: 13, textAlign: 'center', marginBottom: spacing.lg },
+  digitRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl, justifyContent: 'center' },
+  digitBox: {
+    width: 44, height: 56, borderRadius: radius.md, borderWidth: 1,
+    borderColor: colors.surfaceBorder, backgroundColor: colors.surface,
+    justifyContent: 'center', alignItems: 'center',
   },
-  title: { fontSize: 28, fontWeight: '700', color: '#fff', marginBottom: 4 },
-  subtitle: { fontSize: 16, color: '#94a3b8', marginBottom: 32 },
-  phoneLabel: { fontSize: 14, color: '#94a3b8', marginBottom: 16 },
-  input: {
-    width: '100%',
-    backgroundColor: '#334155',
-    borderRadius: 8,
-    padding: 14,
-    fontSize: 16,
-    color: '#fff',
-    marginBottom: 16,
-  },
-  button: {
-    width: '100%',
-    backgroundColor: '#2563eb',
-    borderRadius: 8,
-    padding: 14,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  backLink: { color: '#60a5fa', marginTop: 16, fontSize: 14 },
+  digitBoxFilled: { borderColor: 'rgba(99,102,241,0.5)' },
+  digitInput: { fontSize: 24, fontWeight: '800', color: colors.textPrimary, width: '100%', height: '100%', textAlign: 'center' },
+  changeLink: { alignItems: 'center', marginTop: spacing.lg },
+  changeLinkText: { color: colors.textSecondary, fontSize: 14 },
 });
