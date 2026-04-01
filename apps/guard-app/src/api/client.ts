@@ -19,13 +19,17 @@ export function setAuthToken(token: string) {
   api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 }
 
+export function clearAuthToken() {
+  delete api.defaults.headers.common['Authorization'];
+}
+
 export function setDeviceToken(token: string) {
   api.defaults.headers.common['X-Device-Token'] = token;
 }
 
 // Auth
 export const login = (username: string, password: string) =>
-  api.post('/auth/login', { username, password });
+  api.post('/auth/guard-login', { username, password });
 
 // Gate operations
 export const getGates = () => api.get('/gates');
