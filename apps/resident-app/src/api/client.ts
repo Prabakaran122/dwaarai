@@ -19,12 +19,16 @@ export function setAuthToken(token: string) {
   api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 }
 
+export function clearAuthToken() {
+  delete api.defaults.headers.common['Authorization'];
+}
+
 // Auth — phone + OTP
 export const requestOTP = (phone: string) =>
-  api.post('/auth/otp/request', { phone });
+  api.post('/auth/resident-otp', { phone });
 
 export const verifyOTP = (phone: string, otp: string) =>
-  api.post('/auth/otp/verify', { phone, otp });
+  api.post('/auth/resident-verify', { phone, otp });
 
 // Vehicles
 export const getVehicles = () => api.get('/vehicles');
