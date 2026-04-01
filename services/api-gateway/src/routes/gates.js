@@ -5,6 +5,7 @@ import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { authenticateJWT, authenticateDevice } from '../middleware/auth.js';
 import { publishGateCommand } from '../mqtt.js';
+import { broadcast } from '../websocket.js';
 
 const router = Router();
 
@@ -108,7 +109,7 @@ router.post('/gates/:id/command', authenticateJWT(['admin']), async (req, res) =
     const communityId = user.community_id;
 
     const gate = await queryOne(
-      'SELECT id, community_id FROM gates WHERE id = $1 AND community_id = $2',
+      'SELECT id, community_id, name FROM gates WHERE id = $1 AND community_id = $2',
       [gateId, communityId]
     );
 
@@ -142,6 +143,17 @@ router.post('/gates/:id/command', authenticateJWT(['admin']), async (req, res) =
       console.error('MQTT publish failed (event still recorded):', mqttErr);
     }
 
+    broadcast(communityId, 'gate:command', {
+      gateId,
+      gateName: gate.name || null,
+      action: parsed.data.action,
+      initiatedBy: user.name,
+      role: user.role,
+      plate: parsed.data.plate || null,
+      residentName: parsed.data.resident_name || null,
+      ts: new Date().toISOString(),
+    });
+
     return success(res, {
       event_id: eventId,
       gate_id: gateId,
@@ -173,6 +185,18 @@ router.post('/heartbeat', authenticateDevice, async (req, res) => {
       'UPDATE gates SET last_seen = NOW(), status = $1 WHERE id = $2 AND community_id = $3',
       [status, gate_id, community_id]
     );
+
+    const gate = await queryOne(
+      'SELECT name FROM gates WHERE id = $1 AND community_id = $2',
+      [gate_id, community_id]
+    );
+    broadcast(community_id, 'gate:status', {
+      gateId: gate_id,
+      gateName: gate?.name || null,
+      status,
+      lastSeen: new Date().toISOString(),
+      ts: new Date().toISOString(),
+    });
 
     return success(res, { ack: true, config_delta: null });
   } catch (err) {
@@ -223,6 +247,18 @@ router.post('/events/sync', authenticateDevice, async (req, res) => {
         ]
       );
       inserted++;
+      broadcast(evt.community_id, 'gate:event', {
+        id: uuidv4(),
+        gateId: evt.gate_id,
+        detectionMethod: evt.detection_method,
+        rawValue: evt.raw_value || null,
+        accessDecision: evt.access_decision,
+        denyReason: evt.deny_reason || null,
+        matchedUnitNumber: evt.matched_unit_number || null,
+        residentName: evt.resident_name || null,
+        anprConfidence: evt.anpr_confidence ?? null,
+        eventTs: evt.event_ts,
+      });
     }
 
     return success(res, { inserted, total: events.length });
