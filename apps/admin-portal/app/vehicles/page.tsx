@@ -62,13 +62,13 @@ export default function VehiclesPage() {
 
   const columns = [
     { key: 'plate', label: 'Plate', sortable: true, render: (row: Vehicle) => (
-      <span className="font-mono font-medium">{row.plate}</span>
+      <span className="font-mono font-medium text-slate-100">{row.plate}</span>
     )},
     { key: 'owner_name', label: 'Owner', sortable: true },
     { key: 'unit_number', label: 'Unit', sortable: true },
     { key: 'type', label: 'Type', sortable: true },
     { key: 'rfid_tag', label: 'RFID', render: (row: Vehicle) => (
-      <span className="font-mono text-xs text-gray-500">{row.rfid_tag || '-'}</span>
+      <span className="font-mono text-xs text-slate-500">{row.rfid_tag || '-'}</span>
     )},
     { key: 'status', label: 'Status', render: (row: Vehicle) => (
       <StatusBadge status={row.status} />
@@ -78,15 +78,15 @@ export default function VehiclesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Vehicles</h1>
+        <h1 className="text-2xl font-bold text-slate-100">Vehicles</h1>
         <div className="flex gap-2">
           <button
             onClick={() => setShowImport(!showImport)}
-            className="px-4 py-2 text-sm font-medium text-primary bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+            className="px-4 py-2 text-sm font-medium text-glow-blue glass-panel border border-surface-border rounded-xl transition-all duration-300 hover:bg-surface-hover"
           >
             Bulk Import CSV
           </button>
-          <button className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-blue-700 rounded-lg transition-colors">
+          <button className="px-4 py-2 text-sm font-medium text-white bg-glow-primary rounded-xl transition-all duration-300 hover:shadow-[0_0_20px_rgba(99,102,241,0.3)]">
             Add Vehicle
           </button>
         </div>
@@ -94,50 +94,60 @@ export default function VehiclesPage() {
 
       {/* CSV Import Panel */}
       {showImport && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Import Vehicles from CSV</h3>
+        <div className="glass-panel p-6">
+          <h3 className="text-sm font-semibold text-slate-300 mb-3">Import Vehicles from CSV</h3>
           <div className="flex items-center gap-4">
             <input
               type="file"
               accept=".csv"
               onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-              className="block text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-primary hover:file:bg-blue-100"
+              className="block text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-surface file:text-glow-blue file:border file:border-surface-border hover:file:bg-surface-hover transition-all duration-300"
             />
             <button
               onClick={handleImport}
               disabled={!importFile}
-              className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-4 py-2 text-sm font-medium text-white bg-glow-success rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:shadow-[0_0_20px_rgba(34,197,94,0.3)]"
             >
               Upload
             </button>
             <button
               onClick={() => { setShowImport(false); setImportFile(null); }}
-              className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700"
+              className="px-4 py-2 text-sm text-slate-500 hover:text-slate-300 transition-all duration-300"
             >
               Cancel
             </button>
           </div>
-          <p className="text-xs text-gray-400 mt-2">
+          <p className="text-xs text-slate-500 mt-2">
             CSV format: plate, owner_name, unit_number, type, rfid_tag
           </p>
         </div>
       )}
 
       {/* Search */}
-      <div className="bg-white rounded-lg shadow p-4">
-        <input
-          type="text"
-          placeholder="Search by plate number..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full md:w-96 px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-        />
+      <div className="glass-panel p-4">
+        <div className="relative w-full md:w-96">
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search by plate number..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="input-glow w-full pl-9 pr-4 py-2 text-sm"
+          />
+        </div>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-lg shadow">
+      <div className="glass-panel">
         {loading ? (
-          <div className="p-8 text-center text-gray-400">Loading vehicles...</div>
+          <div className="p-8 text-center text-slate-500">Loading vehicles...</div>
         ) : (
           <DataTable columns={columns} data={vehicles} keyField="id" />
         )}
