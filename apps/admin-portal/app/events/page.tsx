@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import DataTable from '@/components/DataTable';
 import StatusBadge from '@/components/StatusBadge';
 import { apiFetch } from '@/lib/api';
+import { getSocket } from '@/lib/socket';
 
 interface EventEntry {
   id: string;
@@ -23,6 +24,19 @@ interface Filters {
   plate: string;
   dateFrom: string;
   dateTo: string;
+}
+
+interface GateEventSocket {
+  id: string;
+  gateId: string;
+  detectionMethod: string;
+  rawValue: string;
+  accessDecision: string;
+  denyReason: string | null;
+  matchedUnitNumber: string | null;
+  residentName: string | null;
+  anprConfidence: number | null;
+  eventTs: string;
 }
 
 export default function EventsPage() {
@@ -69,6 +83,28 @@ export default function EventsPage() {
     fetchEvents(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
+
+  // Live event updates via Socket.io
+  useEffect(() => {
+    const socket = getSocket();
+
+    const handleEvent = (data: GateEventSocket) => {
+      const newEvent: EventEntry = {
+        id: data.id,
+        timestamp: data.eventTs,
+        gate_name: '',
+        method: data.detectionMethod,
+        plate: data.rawValue || '',
+        decision: data.accessDecision,
+        unit_number: data.matchedUnitNumber || '',
+        resident_name: data.residentName || '',
+      };
+      setEvents((prev) => [newEvent, ...prev]);
+    };
+
+    socket.on('gate:event', handleEvent);
+    return () => { socket.off('gate:event', handleEvent); };
+  }, []);
 
   const updateFilter = (key: keyof Filters, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
