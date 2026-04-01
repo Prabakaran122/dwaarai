@@ -9,20 +9,22 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className="flex min-h-screen bg-gray-100">
+    <html lang="en" className="dark">
+      <body className="flex min-h-screen bg-navy-900">
         <Sidebar />
-        <div className="flex-1 flex flex-col">
-          <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-800">CommunityGate Administration</h2>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-500">Admin User</span>
-              <div className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center text-sm font-medium">
+        <div className="flex-1 flex flex-col min-h-screen">
+          <header className="sticky top-0 z-10 glass-panel border-0 border-b border-surface-border px-6 py-3 flex items-center justify-between" style={{ borderRadius: 0 }}>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-widest">Administration</h2>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="text-xs text-slate-500">Admin User</div>
+              <div className="w-8 h-8 rounded-lg bg-glow-primary flex items-center justify-center text-xs font-bold text-white">
                 A
               </div>
             </div>
           </header>
-          <main className="flex-1 p-6">{children}</main>
+          <main className="flex-1 p-6 mesh-bg overflow-auto">{children}</main>
         </div>
       </body>
     </html>

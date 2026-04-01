@@ -16,34 +16,50 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 bg-primary text-white min-h-screen flex flex-col">
-      <div className="p-6 border-b border-blue-700">
-        <h1 className="text-xl font-bold">CommunityGate</h1>
-        <p className="text-blue-200 text-sm mt-1">Admin Portal</p>
+    <aside className="w-64 min-h-screen flex flex-col border-r border-surface-border" style={{ background: 'linear-gradient(180deg, #0c1222 0%, #0f0d2e 100%)' }}>
+      <div className="p-6 border-b border-surface-border">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-glow-primary flex items-center justify-center">
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+          <div>
+            <h1 className="text-base font-bold text-slate-100 tracking-tight">CommunityGate</h1>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-glow-purple font-semibold">Command Center</p>
+          </div>
+        </div>
       </div>
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 p-3 space-y-1">
         {navItems.map((item) => {
           const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${
                 isActive
-                  ? 'bg-blue-700 text-white'
-                  : 'text-blue-100 hover:bg-blue-700/50 hover:text-white'
+                  ? 'bg-glow-primary text-white shadow-lg shadow-glow-blue/20'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-surface-hover'
               }`}
             >
-              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${isActive ? 'text-white' : 'text-slate-500 group-hover:text-glow-blue'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
               </svg>
               {item.label}
+              {isActive && (
+                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white animate-pulse-slow" />
+              )}
             </Link>
           );
         })}
       </nav>
-      <div className="p-4 border-t border-blue-700 text-blue-200 text-xs">
-        v0.1.0
+      <div className="p-4 border-t border-surface-border">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-status-success animate-pulse" />
+          <span className="text-[11px] text-slate-500">System Online</span>
+        </div>
+        <div className="text-[10px] text-slate-600 mt-1">v0.1.0</div>
       </div>
     </aside>
   );
