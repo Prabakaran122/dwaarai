@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,20 +9,46 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useAuthStore } from '../src/store/authStore';
+import { requestOTP, verifyOTP } from '../src/api/client';
 
 // ── Login Screen ──────────────────────────────────────────────────────
 function LoginScreen() {
   const [phone, setPhone] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpStep, setOtpStep] = useState<'phone' | 'otp'>('phone');
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
   const login = useAuthStore((s) => s.login);
 
-  const handleLogin = () => {
-    if (!phone.trim()) return;
+  const handleRequestOTP = async () => {
+    if (!phone.trim() || phone.length < 10) return;
+    setErrorMsg('');
     setLoading(true);
-    setTimeout(() => {
-      login('dev-token', { id: 'r1', name: 'Priya Sharma', phone, unitNumber: '301' });
+    try {
+      await requestOTP(phone.trim());
+      setOtpStep('otp');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.response?.data?.error || 'Failed to send OTP';
+      setErrorMsg(typeof msg === 'string' ? msg : 'Failed to send OTP');
+    } finally {
       setLoading(false);
-    }, 500);
+    }
+  };
+
+  const handleVerifyOTP = async () => {
+    if (!otp.trim() || otp.length < 6) return;
+    setErrorMsg('');
+    setLoading(true);
+    try {
+      const res = await verifyOTP(phone.trim(), otp.trim());
+      const { token, user } = res.data.data;
+      login(token, user);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.response?.data?.error || 'Invalid or expired OTP';
+      setErrorMsg(typeof msg === 'string' ? msg : 'Invalid or expired OTP');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -30,25 +56,58 @@ function LoginScreen() {
       <View style={loginStyles.card}>
         <Text style={loginStyles.title}>CommunityGate</Text>
         <Text style={loginStyles.subtitle}>Resident Login</Text>
-        <TextInput
-          style={loginStyles.input}
-          placeholder="Phone number"
-          placeholderTextColor="#94a3b8"
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
-        />
-        <TouchableOpacity
-          style={[loginStyles.button, loading && { opacity: 0.6 }]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={loginStyles.buttonText}>Get OTP</Text>
-          )}
-        </TouchableOpacity>
+        {errorMsg ? <Text style={loginStyles.error}>{errorMsg}</Text> : null}
+
+        {otpStep === 'phone' ? (
+          <>
+            <TextInput
+              style={loginStyles.input}
+              placeholder="Phone number"
+              placeholderTextColor="#94a3b8"
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+            />
+            <TouchableOpacity
+              style={[loginStyles.button, loading && { opacity: 0.6 }]}
+              onPress={handleRequestOTP}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={loginStyles.buttonText}>Get OTP</Text>
+              )}
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={loginStyles.phoneLabel}>OTP sent to {phone}</Text>
+            <TextInput
+              style={loginStyles.input}
+              placeholder="Enter 6-digit OTP"
+              placeholderTextColor="#94a3b8"
+              value={otp}
+              onChangeText={setOtp}
+              keyboardType="number-pad"
+              maxLength={6}
+            />
+            <TouchableOpacity
+              style={[loginStyles.button, loading && { opacity: 0.6 }]}
+              onPress={handleVerifyOTP}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={loginStyles.buttonText}>Verify OTP</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setOtpStep('phone'); setErrorMsg(''); }}>
+              <Text style={loginStyles.backLink}>Change number</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     </View>
   );
@@ -62,6 +121,9 @@ const loginStyles = StyleSheet.create({
   input: { width: '100%', backgroundColor: '#f1f5f9', borderRadius: 8, padding: 14, fontSize: 16, color: '#1e293b', marginBottom: 16, borderWidth: 1, borderColor: '#e2e8f0' },
   button: { width: '100%', backgroundColor: '#2563eb', borderRadius: 8, padding: 14, alignItems: 'center', marginTop: 8 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  error: { color: '#ef4444', fontSize: 14, marginBottom: 16, textAlign: 'center' },
+  phoneLabel: { fontSize: 14, color: '#94a3b8', marginBottom: 16 },
+  backLink: { color: '#60a5fa', marginTop: 16, fontSize: 14 },
 });
 
 // ── Home (Tabs) ───────────────────────────────────────────────────────
@@ -203,5 +265,20 @@ const appStyles = StyleSheet.create({
 // ── Root ──────────────────────────────────────────────────────────────
 export default function Page() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isLoading = useAuthStore((s) => s.isLoading);
+  const rehydrate = useAuthStore((s) => s.rehydrate);
+
+  useEffect(() => {
+    rehydrate();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#f8fafc', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#2563eb" />
+      </View>
+    );
+  }
+
   return isAuthenticated ? <ResidentApp /> : <LoginScreen />;
 }
