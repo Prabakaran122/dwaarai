@@ -1,39 +1,29 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-  ScrollView,
-} from 'react-native';
+import { View, Text, TextInput, ScrollView, StyleSheet, Alert, TouchableOpacity } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '../theme/colors';
+import { spacing, radius } from '../theme/spacing';
+import GlowCard from '../components/GlowCard';
+import GradientButton from '../components/GradientButton';
+import AnimatedEntry from '../components/AnimatedEntry';
 import { createIncident } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 
 const INCIDENT_TYPES = [
-  'unauthorized_entry',
-  'tailgating',
-  'suspicious_person',
-  'vehicle_damage',
-  'equipment_malfunction',
-  'other',
-] as const;
-
-const TYPE_LABELS: Record<(typeof INCIDENT_TYPES)[number], string> = {
-  unauthorized_entry: 'Unauthorized Entry',
-  tailgating: 'Tailgating',
-  suspicious_person: 'Suspicious Person',
-  vehicle_damage: 'Vehicle Damage',
-  equipment_malfunction: 'Equipment Malfunction',
-  other: 'Other',
-};
+  { key: 'unauthorized_entry', label: 'Unauthorized Entry', icon: 'account-alert' as const },
+  { key: 'tailgating', label: 'Tailgating', icon: 'car-multiple' as const },
+  { key: 'suspicious_person', label: 'Suspicious Person', icon: 'eye' as const },
+  { key: 'vehicle_damage', label: 'Vehicle Damage', icon: 'car-wrench' as const },
+  { key: 'equipment_malfunction', label: 'Equipment Fault', icon: 'cog-off' as const },
+  { key: 'other', label: 'Other', icon: 'dots-horizontal' as const },
+];
 
 export default function IncidentScreen() {
-  const [type, setType] = useState<string>(INCIDENT_TYPES[0]);
+  const [type, setType] = useState(INCIDENT_TYPES[0].key);
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
+  const [focused, setFocused] = useState(false);
   const gateId = useAuthStore((s) => s.user?.gateId ?? '');
 
   const handleSubmit = async () => {
@@ -41,152 +31,133 @@ export default function IncidentScreen() {
       Alert.alert('Error', 'Please enter a description');
       return;
     }
-
     setLoading(true);
     try {
       await createIncident({ type, description: description.trim(), gateId });
       Alert.alert('Success', 'Incident logged successfully');
       setDescription('');
-      setType(INCIDENT_TYPES[0]);
+      setType(INCIDENT_TYPES[0].key);
     } catch (err: any) {
       const msg = err?.response?.data?.error || 'Failed to log incident';
-      Alert.alert('Error', msg);
+      Alert.alert('Error', typeof msg === 'string' ? msg : 'Failed to log incident');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-    >
-      <View style={styles.card}>
-        <Text style={styles.title}>Log Security Incident</Text>
+    <LinearGradient colors={colors.gradientBg} style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <AnimatedEntry direction="fade" duration={500}>
+          <GlowCard variant="danger" style={styles.card}>
+            <View style={styles.titleRow}>
+              <MaterialCommunityIcons name="alert" size={24} color={colors.danger} />
+              <Text style={styles.title}>Report Incident</Text>
+            </View>
 
-        <Text style={styles.label}>Incident Type</Text>
-        <View style={styles.typeGrid}>
-          {INCIDENT_TYPES.map((t) => (
-            <TouchableOpacity
-              key={t}
-              style={[styles.typeChip, type === t && styles.typeChipActive]}
-              onPress={() => setType(t)}
-            >
-              <Text
-                style={[
-                  styles.typeChipText,
-                  type === t && styles.typeChipTextActive,
-                ]}
-              >
-                {TYPE_LABELS[t]}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+            <Text style={styles.label}>INCIDENT TYPE</Text>
+            <View style={styles.chipGrid}>
+              {INCIDENT_TYPES.map((t) => {
+                const isActive = type === t.key;
+                return (
+                  <TouchableOpacity key={t.key} onPress={() => setType(t.key)} activeOpacity={0.7}>
+                    {isActive ? (
+                      <LinearGradient
+                        colors={colors.gradientDanger as unknown as string[]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.chip}
+                      >
+                        <MaterialCommunityIcons name={t.icon} size={16} color={colors.white} />
+                        <Text style={styles.chipTextActive}>{t.label}</Text>
+                      </LinearGradient>
+                    ) : (
+                      <View style={styles.chipInactive}>
+                        <MaterialCommunityIcons name={t.icon} size={16} color={colors.textMuted} />
+                        <Text style={styles.chipText}>{t.label}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
-        <Text style={styles.label}>Description</Text>
-        <TextInput
-          style={styles.textArea}
-          placeholder="Describe the incident..."
-          placeholderTextColor="#94a3b8"
-          value={description}
-          onChangeText={setDescription}
-          multiline
-          numberOfLines={5}
-          textAlignVertical="top"
-        />
+            <Text style={styles.label}>DESCRIPTION</Text>
+            <TextInput
+              style={[styles.textArea, focused && styles.textAreaFocused]}
+              placeholder="Describe the incident..."
+              placeholderTextColor={colors.textMuted}
+              value={description}
+              onChangeText={setDescription}
+              multiline
+              numberOfLines={5}
+              textAlignVertical="top"
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+            />
 
-        <TouchableOpacity
-          style={[styles.submitBtn, loading && styles.disabled]}
-          onPress={handleSubmit}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.submitText}>Submit Incident Report</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+            <GradientButton
+              title="Submit Report"
+              icon="alert"
+              variant="danger"
+              onPress={handleSubmit}
+              loading={loading}
+              disabled={!description.trim()}
+            />
+          </GlowCard>
+        </AnimatedEntry>
+      </ScrollView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f1f5f9',
-  },
-  content: {
-    padding: 24,
-    alignItems: 'center',
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 32,
-    width: 600,
-    elevation: 3,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1e293b',
-    marginBottom: 24,
-  },
+  container: { flex: 1 },
+  scroll: { padding: spacing['2xl'], alignItems: 'center' },
+  card: { width: 600 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing['2xl'] },
+  title: { color: colors.textPrimary, fontSize: 20, fontWeight: '800' },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#475569',
-    marginBottom: 8,
-  },
-  typeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 20,
-  },
-  typeChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#f1f5f9',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  typeChipActive: {
-    backgroundColor: '#1e40af',
-    borderColor: '#1e40af',
-  },
-  typeChipText: {
-    fontSize: 13,
-    color: '#475569',
-    fontWeight: '500',
-  },
-  typeChipTextActive: {
-    color: '#fff',
-  },
-  textArea: {
-    backgroundColor: '#f1f5f9',
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 15,
-    color: '#1e293b',
-    minHeight: 120,
-    marginBottom: 24,
-  },
-  submitBtn: {
-    backgroundColor: '#dc2626',
-    borderRadius: 10,
-    padding: 16,
-    alignItems: 'center',
-  },
-  disabled: {
-    opacity: 0.6,
-  },
-  submitText: {
-    color: '#fff',
-    fontSize: 16,
+    color: colors.textMuted,
+    fontSize: 11,
     fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: spacing.sm,
+  },
+  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing['2xl'] },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+  },
+  chipInactive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.surfaceBorder,
+    backgroundColor: colors.surface,
+  },
+  chipText: { color: colors.textMuted, fontSize: 13, fontWeight: '500' },
+  chipTextActive: { color: colors.white, fontSize: 13, fontWeight: '600' },
+  textArea: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    fontSize: 15,
+    color: colors.textPrimary,
+    minHeight: 120,
+    marginBottom: spacing['2xl'],
+    borderWidth: 1,
+    borderColor: colors.surfaceBorder,
+  },
+  textAreaFocused: {
+    borderColor: 'rgba(239,68,68,0.4)',
   },
 });
