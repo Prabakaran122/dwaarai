@@ -226,16 +226,24 @@ router.post('/events/sync', authenticateDevice, async (req, res) => {
       }
     }
 
+    // Look up gate name for broadcast
+    const gate = await queryOne(
+      'SELECT name FROM gates WHERE id = $1 AND community_id = $2',
+      [deviceGate, deviceCommunity]
+    );
+
     for (const evt of events) {
+      const eventId = uuidv4();
       await query(
         `INSERT INTO gate_events
-           (community_id, gate_id, detection_method, raw_value,
+           (id, community_id, gate_id, detection_method, raw_value,
             matched_vehicle_id, matched_pass_id, matched_unit_id,
             matched_unit_number, resident_name, access_decision,
             deny_reason, anpr_confidence, snapshot_s3_key,
             processing_ms, is_offline_event, synced_at, event_ts)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,true,NOW(),$15)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,true,NOW(),$16)`,
         [
+          eventId,
           evt.community_id, evt.gate_id, evt.detection_method,
           evt.raw_value || null,
           evt.matched_vehicle_id || null, evt.matched_pass_id || null,
@@ -248,8 +256,9 @@ router.post('/events/sync', authenticateDevice, async (req, res) => {
       );
       inserted++;
       broadcast(evt.community_id, 'gate:event', {
-        id: uuidv4(),
+        id: eventId,
         gateId: evt.gate_id,
+        gateName: gate?.name || null,
         detectionMethod: evt.detection_method,
         rawValue: evt.raw_value || null,
         accessDecision: evt.access_decision,

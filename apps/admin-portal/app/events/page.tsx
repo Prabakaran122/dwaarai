@@ -29,6 +29,7 @@ interface Filters {
 interface GateEventSocket {
   id: string;
   gateId: string;
+  gateName: string | null;
   detectionMethod: string;
   rawValue: string;
   accessDecision: string;
@@ -92,7 +93,7 @@ export default function EventsPage() {
       const newEvent: EventEntry = {
         id: data.id,
         timestamp: data.eventTs,
-        gate_name: '',
+        gate_name: data.gateName || '',
         method: data.detectionMethod,
         plate: data.rawValue || '',
         decision: data.accessDecision,
