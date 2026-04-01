@@ -16,9 +16,24 @@ export function authenticateJWT(roles = []) {
       const token = authHeader.slice(7);
       const decoded = jwt.verify(token, JWT_SECRET);
       req.user = decoded;
-      if (roles.length && !roles.includes(decoded.role)) {
-        return error(res, 'Insufficient permissions', 403);
+
+      // Role checking: 'admin' role accepts both super_admin and community_admin
+      if (roles.length) {
+        const userRole = decoded.role;
+        const hasRole = roles.some(r =>
+          r === userRole ||
+          (r === 'admin' && (userRole === 'super_admin' || userRole === 'community_admin'))
+        );
+        if (!hasRole) {
+          return error(res, 'Insufficient permissions', 403);
+        }
       }
+
+      // For super_admin viewing a specific community, allow override via header
+      if (decoded.role === 'super_admin' && req.headers['x-community-id']) {
+        decoded.community_id = req.headers['x-community-id'];
+      }
+
       next();
     } catch (err) {
       return error(res, 'Invalid or expired token', 401);

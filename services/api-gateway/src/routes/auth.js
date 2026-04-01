@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
 import { queryOne } from '../db/queries.js';
@@ -36,6 +37,11 @@ const residentOtpSchema = z.object({
 const residentVerifySchema = z.object({
   phone: z.string().min(10).max(15),
   otp: z.string().length(6),
+});
+
+const adminLoginSchema = z.object({
+  username: z.string().min(1).max(100),
+  password: z.string().min(1).max(200),
 });
 
 // -- Helper: sign JWT ---------------------------------------------------------
@@ -218,6 +224,53 @@ router.post('/auth/resident-verify', loginLimiter, async (req, res) => {
     });
   } catch (err) {
     console.error('POST /auth/resident-verify error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- POST /auth/admin-login -------------------------------------------------
+
+router.post('/auth/admin-login', loginLimiter, async (req, res) => {
+  try {
+    const parsed = adminLoginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return error(res, 'Validation error', 400, parsed.error.issues);
+    }
+
+    const { username, password } = parsed.data;
+
+    const admin = await queryOne(
+      'SELECT id, name, username, password_hash, role, community_id FROM admins WHERE username = $1 AND is_active = true',
+      [username]
+    );
+
+    if (!admin) {
+      return error(res, 'Invalid credentials', 401);
+    }
+
+    const passwordValid = await bcrypt.compare(password, admin.password_hash);
+    if (!passwordValid) {
+      return error(res, 'Invalid credentials', 401);
+    }
+
+    const token = signToken({
+      sub: admin.id,
+      role: admin.role,
+      community_id: admin.community_id || null,
+      name: admin.name,
+    });
+
+    return success(res, {
+      token,
+      user: {
+        id: admin.id,
+        name: admin.name,
+        role: admin.role,
+        communityId: admin.community_id || null,
+      },
+    });
+  } catch (err) {
+    console.error('POST /auth/admin-login error:', err);
     return error(res, 'Internal server error', 500);
   }
 });

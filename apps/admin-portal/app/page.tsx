@@ -1,3 +1,6 @@
+'use client';
+
+import { useState, useEffect } from 'react';
 import { apiFetch } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
 
@@ -23,39 +26,28 @@ interface GateStatus {
   status: string;
 }
 
-async function getStats(): Promise<DashboardStats> {
-  try {
-    const res = await apiFetch<{ data: DashboardStats }>('/admin/dashboard/stats');
-    return res.data || { totalVehicles: 0, gatesOnline: 0, todayEntries: 0, activePasses: 0 };
-  } catch {
-    return { totalVehicles: 0, gatesOnline: 0, todayEntries: 0, activePasses: 0 };
-  }
-}
+export default function DashboardPage() {
+  const [stats, setStats] = useState<DashboardStats>({ totalVehicles: 0, gatesOnline: 0, todayEntries: 0, activePasses: 0 });
+  const [recentEvents, setRecentEvents] = useState<RecentEvent[]>([]);
+  const [gates, setGates] = useState<GateStatus[]>([]);
+  const [loading, setLoading] = useState(true);
 
-async function getRecentEvents(): Promise<RecentEvent[]> {
-  try {
-    const res = await apiFetch<{ data: { events: RecentEvent[] } }>('/events?limit=10');
-    return res.data?.events || [];
-  } catch {
-    return [];
-  }
-}
-
-async function getGateStatuses(): Promise<GateStatus[]> {
-  try {
-    const res = await apiFetch<{ data: { gates: GateStatus[] } }>('/gates');
-    return res.data?.gates || [];
-  } catch {
-    return [];
-  }
-}
-
-export default async function DashboardPage() {
-  const [stats, recentEvents, gates] = await Promise.all([
-    getStats(),
-    getRecentEvents(),
-    getGateStatuses(),
-  ]);
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [statsRes, eventsRes, gatesRes] = await Promise.all([
+          apiFetch<{ data: DashboardStats }>('/admin/dashboard/stats').catch(() => ({ data: { totalVehicles: 0, gatesOnline: 0, todayEntries: 0, activePasses: 0 } })),
+          apiFetch<{ data: { events: RecentEvent[] } }>('/events?limit=10').catch(() => ({ data: { events: [] } })),
+          apiFetch<{ data: { gates: GateStatus[] } }>('/gates').catch(() => ({ data: { gates: [] } })),
+        ]);
+        setStats(statsRes.data || { totalVehicles: 0, gatesOnline: 0, todayEntries: 0, activePasses: 0 });
+        setRecentEvents(eventsRes.data?.events || []);
+        setGates(gatesRes.data?.gates || []);
+      } catch {}
+      finally { setLoading(false); }
+    }
+    fetchData();
+  }, []);
 
   const statCards = [
     {
@@ -104,6 +96,15 @@ export default async function DashboardPage() {
       ),
     },
   ];
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-slate-100">Dashboard</h1>
+        <div className="text-center text-slate-500 py-12">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

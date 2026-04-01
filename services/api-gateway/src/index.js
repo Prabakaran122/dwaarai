@@ -10,6 +10,7 @@ import passRoutes from './routes/passes.js';
 import gateRoutes from './routes/gates.js';
 import eventRoutes from './routes/events.js';
 import authRoutes from './routes/auth.js';
+import adminRoutes from './routes/admin.js';
 import { initWebSocket } from './websocket.js';
 
 const app = express();
@@ -38,6 +39,7 @@ app.use('/api/v1', vehicleRoutes);
 app.use('/api/v1', passRoutes);
 app.use('/api/v1', gateRoutes);
 app.use('/api/v1', eventRoutes);
+app.use('/api/v1', adminRoutes);
 
 // Error handler
 app.use(errorHandler);
