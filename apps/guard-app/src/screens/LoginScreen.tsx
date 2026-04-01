@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, TextInput, StyleSheet, ActivityIndicator } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '../theme/colors';
+import { spacing, radius } from '../theme/spacing';
+import GlowCard from '../components/GlowCard';
+import GradientButton from '../components/GradientButton';
+import AnimatedEntry from '../components/AnimatedEntry';
 import { login as apiLogin } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 
@@ -15,115 +14,160 @@ export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [focusedField, setFocusedField] = useState<string | null>(null);
   const login = useAuthStore((s) => s.login);
 
   const handleLogin = async () => {
-    if (!username.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter username and password');
-      return;
-    }
-
+    if (!username.trim() || !password.trim()) return;
+    setErrorMsg('');
     setLoading(true);
     try {
       const res = await apiLogin(username.trim(), password);
       const { token, user } = res.data.data;
       login(token, user);
     } catch (err: any) {
-      const msg = err?.response?.data?.error || 'Login failed';
-      Alert.alert('Login Failed', msg);
+      const msg = err?.response?.data?.error?.message || err?.response?.data?.error || 'Login failed';
+      setErrorMsg(typeof msg === 'string' ? msg : 'Login failed');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.title}>CommunityGate</Text>
-        <Text style={styles.subtitle}>Guard Station</Text>
+    <LinearGradient
+      colors={colors.gradientBg}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.container}
+    >
+      <AnimatedEntry direction="up" duration={600}>
+        <GlowCard style={styles.card}>
+          <View style={styles.logoRow}>
+            <LinearGradient
+              colors={colors.gradientPrimary as unknown as string[]}
+              style={styles.logoCircle}
+            >
+              <MaterialCommunityIcons name="shield-check" size={32} color={colors.white} />
+            </LinearGradient>
+          </View>
+          <Text style={styles.title}>CommunityGate</Text>
+          <Text style={styles.subtitle}>Guard Station</Text>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Username"
-          placeholderTextColor="#94a3b8"
-          value={username}
-          onChangeText={setUsername}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="#94a3b8"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
+          {errorMsg ? (
+            <AnimatedEntry direction="fade">
+              <Text style={styles.error}>{errorMsg}</Text>
+            </AnimatedEntry>
+          ) : null}
 
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Sign In</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-    </View>
+          <View style={[styles.inputWrapper, focusedField === 'username' && styles.inputFocused]}>
+            <MaterialCommunityIcons name="account" size={18} color={colors.textMuted} style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Username"
+              placeholderTextColor={colors.textMuted}
+              value={username}
+              onChangeText={setUsername}
+              autoCapitalize="none"
+              autoCorrect={false}
+              onFocus={() => setFocusedField('username')}
+              onBlur={() => setFocusedField(null)}
+            />
+          </View>
+
+          <View style={[styles.inputWrapper, focusedField === 'password' && styles.inputFocused]}>
+            <MaterialCommunityIcons name="lock" size={18} color={colors.textMuted} style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor={colors.textMuted}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              onFocus={() => setFocusedField('password')}
+              onBlur={() => setFocusedField(null)}
+            />
+          </View>
+
+          <View style={styles.buttonWrapper}>
+            <GradientButton
+              title="Sign In"
+              onPress={handleLogin}
+              icon="login"
+              loading={loading}
+              disabled={!username.trim() || !password.trim()}
+            />
+          </View>
+        </GlowCard>
+      </AnimatedEntry>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
     justifyContent: 'center',
     alignItems: 'center',
   },
   card: {
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
-    padding: 40,
     width: 400,
+  },
+  logoRow: {
     alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  logoCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: 4,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#94a3b8',
-    marginBottom: 32,
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing['2xl'],
+    textTransform: 'uppercase',
+    letterSpacing: 2,
+  },
+  error: {
+    color: colors.danger,
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.surfaceBorder,
+    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.md,
+  },
+  inputFocused: {
+    borderColor: 'rgba(99,102,241,0.5)',
+  },
+  inputIcon: {
+    marginRight: spacing.sm,
   },
   input: {
-    width: '100%',
-    backgroundColor: '#334155',
-    borderRadius: 8,
-    padding: 14,
+    flex: 1,
+    padding: spacing.lg,
     fontSize: 16,
-    color: '#fff',
-    marginBottom: 16,
+    color: colors.textPrimary,
   },
-  button: {
-    width: '100%',
-    backgroundColor: '#2563eb',
-    borderRadius: 8,
-    padding: 14,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  buttonWrapper: {
+    marginTop: spacing.sm,
   },
 });
