@@ -23,6 +23,15 @@ class Config:
     RFID_RESET_PIN:  int   = int(os.getenv("RFID_RESET_PIN", "25"))
     RFID_DEBOUNCE:   float = float(os.getenv("RFID_DEBOUNCE_SECONDS", "3"))
 
+    GATE_TYPE:       str   = os.getenv("GATE_TYPE", "entry")
+    UHF_READER_PORT: str   = os.getenv("UHF_READER_PORT", "/dev/ttyUSB0")
+    UHF_READER_BAUD: int   = int(os.getenv("UHF_READER_BAUD", "115200"))
+    UHF_DEBOUNCE:    float = float(os.getenv("UHF_DEBOUNCE_SECONDS", "8"))
+    UHF_RSSI_THRESHOLD: float = float(os.getenv("UHF_RSSI_THRESHOLD", "-60"))
+    USE_UHF_MOCK:    bool  = os.getenv("USE_UHF_MOCK", "true").lower()=="true"
+    FASTAG_CORRELATION_WINDOW: float = float(os.getenv("FASTAG_CORRELATION_WINDOW_SECONDS", "5"))
+    EXIT_PRESENCE_PIN: int = int(os.getenv("EXIT_PRESENCE_GPIO_PIN", "27"))
+
     OFFLINE_DB_PATH:    str = os.getenv("OFFLINE_DB_PATH",    "/tmp/whitelist.db")
     OFFLINE_QUEUE_PATH: str = os.getenv("OFFLINE_QUEUE_PATH", "/tmp/event_queue.db")
     WHITELIST_SYNC_INTERVAL: int = int(os.getenv("WHITELIST_SYNC_INTERVAL_SECONDS","300"))
@@ -30,6 +39,9 @@ class Config:
 
     ANPR_SERVICE_URL: str   = os.getenv("ANPR_SERVICE_URL", "http://localhost:8001")
     ANPR_THRESHOLD:   float = float(os.getenv("ANPR_CONFIDENCE_THRESHOLD","0.75"))
+    ANPR_CAPTURE_INTERVAL: float = float(os.getenv("ANPR_CAPTURE_INTERVAL_SECONDS", "1.0"))
+    ANPR_MOTION_THRESHOLD: float = float(os.getenv("ANPR_MOTION_THRESHOLD", "5000"))
+    ANPR_COOLDOWN:    float = float(os.getenv("ANPR_COOLDOWN_SECONDS", "8"))
 
     USE_GPIO_MOCK:   bool = os.getenv("USE_GPIO_MOCK",   "true").lower()=="true"
     USE_RFID_MOCK:   bool = os.getenv("USE_RFID_MOCK",   "true").lower()=="true"
