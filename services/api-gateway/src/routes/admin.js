@@ -28,6 +28,23 @@ const createAdminSchema = z.object({
   community_id: z.string().uuid(),
 });
 
+const createCardSchema = z.object({
+  community_id: z.string().uuid(),
+  uid_hash: z.string().length(64),
+  card_number: z.string().max(50).optional(),
+  issued_to_unit: z.string().uuid().optional(),
+  card_type: z.enum(['resident', 'visitor', 'staff', 'master']).default('resident'),
+  expires_at: z.string().datetime().optional(),
+});
+
+const updateCardSchema = z.object({
+  card_number: z.string().max(50).optional(),
+  issued_to_unit: z.string().uuid().nullable().optional(),
+  card_type: z.enum(['resident', 'visitor', 'staff', 'master']).optional(),
+  is_active: z.boolean().optional(),
+  expires_at: z.string().datetime().nullable().optional(),
+});
+
 // -- GET /admin/communities ---------------------------------------------------
 
 router.get('/admin/communities', superOnly, async (req, res) => {
@@ -186,6 +203,117 @@ router.delete('/admin/community-admins/:id', superOnly, async (req, res) => {
     return success(res, { deactivated: admin.id });
   } catch (err) {
     console.error('DELETE /admin/community-admins/:id error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- GET /admin/rfid-cards ---------------------------------------------------
+
+router.get('/admin/rfid-cards', superOnly, async (req, res) => {
+  try {
+    const communityFilter = req.query.community_id;
+    const activeOnly = req.query.active !== 'false';
+    let sql = `
+      SELECT rc.*, u.unit_number, c.name as community_name
+      FROM rfid_cards rc
+      LEFT JOIN units u ON rc.issued_to_unit = u.id
+      LEFT JOIN communities c ON rc.community_id = c.id
+    `;
+    const conditions = [];
+    const values = [];
+    if (communityFilter) {
+      values.push(communityFilter);
+      conditions.push(`rc.community_id = $${values.length}`);
+    }
+    if (activeOnly) {
+      conditions.push('rc.is_active = true');
+    }
+    if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
+    sql += ' ORDER BY rc.issued_at DESC';
+    const cards = await queryRows(sql, values);
+    return success(res, { cards });
+  } catch (err) {
+    console.error('GET /admin/rfid-cards error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- POST /admin/rfid-cards --------------------------------------------------
+
+router.post('/admin/rfid-cards', superOnly, async (req, res) => {
+  try {
+    const parsed = createCardSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return error(res, 'Validation error', 400, parsed.error.issues);
+    }
+    const { community_id, uid_hash, card_number, issued_to_unit, card_type, expires_at } = parsed.data;
+
+    // Check uniqueness
+    const existing = await queryOne('SELECT id FROM rfid_cards WHERE uid_hash = $1', [uid_hash]);
+    if (existing) return error(res, 'Card UID already registered', 409);
+
+    // Verify community
+    const community = await queryOne('SELECT id FROM communities WHERE id = $1', [community_id]);
+    if (!community) return error(res, 'Community not found', 404);
+
+    const card = await queryOne(
+      `INSERT INTO rfid_cards (community_id, uid_hash, card_number, issued_to_unit, card_type, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [community_id, uid_hash, card_number || null, issued_to_unit || null, card_type, expires_at || null]
+    );
+    return success(res, { card }, 201);
+  } catch (err) {
+    console.error('POST /admin/rfid-cards error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- PUT /admin/rfid-cards/:id -----------------------------------------------
+
+router.put('/admin/rfid-cards/:id', superOnly, async (req, res) => {
+  try {
+    const parsed = updateCardSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return error(res, 'Validation error', 400, parsed.error.issues);
+    }
+    const fields = parsed.data;
+    const sets = [];
+    const values = [];
+    let idx = 1;
+    for (const [key, val] of Object.entries(fields)) {
+      if (val !== undefined) {
+        sets.push(`${key} = $${idx}`);
+        values.push(val);
+        idx++;
+      }
+    }
+    if (sets.length === 0) return error(res, 'No fields to update', 400);
+    values.push(req.params.id);
+    const card = await queryOne(
+      `UPDATE rfid_cards SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
+      values
+    );
+    if (!card) return error(res, 'Card not found', 404);
+    return success(res, { card });
+  } catch (err) {
+    console.error('PUT /admin/rfid-cards/:id error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- DELETE /admin/rfid-cards/:id (deactivate) -------------------------------
+
+router.delete('/admin/rfid-cards/:id', superOnly, async (req, res) => {
+  try {
+    const card = await queryOne(
+      'UPDATE rfid_cards SET is_active = false WHERE id = $1 RETURNING id, uid_hash',
+      [req.params.id]
+    );
+    if (!card) return error(res, 'Card not found', 404);
+    return success(res, { deactivated: card.id });
+  } catch (err) {
+    console.error('DELETE /admin/rfid-cards/:id error:', err);
     return error(res, 'Internal server error', 500);
   }
 });

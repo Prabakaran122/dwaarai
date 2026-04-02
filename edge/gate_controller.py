@@ -167,12 +167,15 @@ def main():
     start_sync()   # whitelist sync scheduler
     start_mqtt()
     # RFID
-    rfid = RFIDImpl(on_tap_callback=lambda e: handle_detection("rfid",e["uid_hash"]))
+    rfid_cb = lambda e: handle_detection("rfid", e["uid_hash"])
     if cfg.USE_RFID_MOCK:
+        rfid = RFIDImpl(on_tap_callback=rfid_cb)
         rfid.run_scenario([{"card":"RESIDENT_301","delay":8},
                            {"card":"VISITOR_TEMP","delay":12},
                            {"card":"UNKNOWN","delay":15}], loop=True)
     else:
+        rfid = RFIDImpl(on_tap_callback=rfid_cb, debounce=cfg.RFID_DEBOUNCE,
+                        spi_bus=cfg.RFID_SPI_BUS, reset_pin=cfg.RFID_RESET_PIN)
         threading.Thread(target=rfid.run, daemon=True).start()
     # Camera / ANPR
     if cfg.USE_CAMERA_MOCK:
