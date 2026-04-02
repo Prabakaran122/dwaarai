@@ -267,4 +267,89 @@ describe('API Gateway', () => {
     expect(json.data.vehicle_id).toBe('v-1');
     expect(json.data.resident_name).toBe('Priya Sharma');
   });
+
+  it('POST /api/v1/access/check FASTag with known TID returns allow', async () => {
+    const deviceToken = generateTestToken({ gate_id: 'gate-01', community_id: 'c1' });
+    queryOne
+      .mockResolvedValueOnce(null)  // blacklist
+      .mockResolvedValueOnce({      // vehicle by fastag_tid_hash
+        id: 'v-fastag-1',
+        unit_id: 'unit-301',
+        unit_number: '301',
+        resident_name: 'Priya Sharma',
+      });
+    const { status, json } = await request('POST', '/api/v1/access/check', {
+      headers: { 'x-device-token': deviceToken },
+      body: {
+        community_id: '00000000-0000-0000-0000-000000000000',
+        gate_id: '00000000-0000-0000-0000-000000000001',
+        method: 'fastag',
+        value: 'd'.repeat(64),
+      },
+    });
+    expect(status).toBe(200);
+    expect(json.data.decision).toBe('allow');
+    expect(json.data.vehicle_id).toBe('v-fastag-1');
+  });
+
+  it('POST /api/v1/access/check FASTag unknown TID returns guard_review', async () => {
+    const deviceToken = generateTestToken({ gate_id: 'gate-01', community_id: 'c1' });
+    queryOne
+      .mockResolvedValueOnce(null)   // blacklist
+      .mockResolvedValueOnce(null)   // vehicle
+      .mockResolvedValueOnce(null);  // rfid_cards
+    const { status, json } = await request('POST', '/api/v1/access/check', {
+      headers: { 'x-device-token': deviceToken },
+      body: {
+        community_id: '00000000-0000-0000-0000-000000000000',
+        gate_id: '00000000-0000-0000-0000-000000000001',
+        method: 'fastag',
+        value: 'e'.repeat(64),
+      },
+    });
+    expect(status).toBe(200);
+    expect(json.data.decision).toBe('guard_review');
+  });
+
+  it('POST /api/v1/vehicles/auto-pair links FASTag to vehicle', async () => {
+    const deviceToken = generateTestToken({ gate_id: 'gate-01', community_id: 'c1' });
+    queryOne
+      .mockResolvedValueOnce({ id: 'v-1', fastag_tid_hash: null })  // find vehicle by plate
+      .mockResolvedValueOnce(null)                                     // check existing FASTag
+      .mockResolvedValueOnce({ id: 'v-1', plate: 'KA05MF1234', fastag_tid_hash: 'f'.repeat(64) }); // update
+    const { status, json } = await request('POST', '/api/v1/vehicles/auto-pair', {
+      headers: { 'x-device-token': deviceToken },
+      body: {
+        community_id: '00000000-0000-0000-0000-000000000000',
+        plate: 'KA05MF1234',
+        fastag_tid_hash: 'f'.repeat(64),
+      },
+    });
+    expect(status).toBe(200);
+    expect(json.data.auto_paired).toBe(true);
+  });
+
+  it('POST /api/v1/vehicles/register-at-gate creates vehicle with FASTag', async () => {
+    const guardToken = generateTestToken({ sub: 'g1', role: 'guard', community_id: 'c1' });
+    queryOne
+      .mockResolvedValueOnce({ id: 'unit-301' })   // find unit
+      .mockResolvedValueOnce(null)                    // no existing vehicle
+      .mockResolvedValueOnce({                        // insert vehicle
+        id: 'v-new',
+        plate: 'KA05MF1234',
+        fastag_tid_hash: 'g'.repeat(64),
+        community_id: '00000000-0000-0000-0000-000000000000',
+      });
+    const { status, json } = await request('POST', '/api/v1/vehicles/register-at-gate', {
+      headers: { Authorization: `Bearer ${guardToken}` },
+      body: {
+        community_id: '00000000-0000-0000-0000-000000000000',
+        plate: 'KA05MF1234',
+        fastag_tid_hash: 'g'.repeat(64),
+        unit_number: '301',
+      },
+    });
+    expect(status).toBe(201);
+    expect(json.data.created).toBe(true);
+  });
 });

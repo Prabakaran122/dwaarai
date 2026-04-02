@@ -20,8 +20,12 @@ def env(monkeypatch):
 def db(tmp_path):
     path = str(tmp_path / "whitelist.db")
     with sqlite3.connect(path) as c:
-        c.execute("CREATE TABLE whitelist(plate TEXT,rfid_uid_hash TEXT,unit_id TEXT,unit_number TEXT,resident_name TEXT)")
-        c.execute("CREATE TABLE blacklist_cache(plate TEXT,rfid_uid_hash TEXT)")
+        c.execute("""CREATE TABLE whitelist(plate TEXT,rfid_uid_hash TEXT,fastag_tid_hash TEXT,
+            unit_id TEXT,unit_number TEXT,resident_name TEXT)""")
+        c.execute("CREATE INDEX idx_wl_p ON whitelist(plate)")
+        c.execute("CREATE INDEX idx_wl_r ON whitelist(rfid_uid_hash)")
+        c.execute("CREATE INDEX idx_wl_f ON whitelist(fastag_tid_hash)")
+        c.execute("""CREATE TABLE blacklist_cache(plate TEXT,rfid_uid_hash TEXT,fastag_tid_hash TEXT)""")
         c.execute("CREATE TABLE sync_meta(id INT PRIMARY KEY,last_sync REAL)")
         c.execute("INSERT INTO sync_meta VALUES(1,?)", (time.time(),))
         c.execute("""CREATE TABLE rfid_cards_cache(
@@ -34,12 +38,12 @@ def db(tmp_path):
         # Expired visitor card
         c.execute("INSERT INTO rfid_cards_cache VALUES(?,?,?,?,?)",
                   ("expired_card_hash_64chars_padded_0000000000000000000000000000", "visitor", "u-vis", "V-01", 1000000000.0))
-        # Residents
-        c.execute("INSERT INTO whitelist VALUES(?,?,?,?,?)", ("KA05MF1234", None, "u301", "301", "Priya Sharma"))
-        c.execute("INSERT INTO whitelist VALUES(?,?,?,?,?)", (None, "a3f9c2d4e5f6", "u205", "205", "Rajan Kumar"))
-        c.execute("INSERT INTO whitelist VALUES(?,?,?,?,?)", ("KA05EB2345", "b1c2d3e4f5a6", "u107", "107", "Anil Nair"))
+        # Residents (with FASTag)
+        c.execute("INSERT INTO whitelist VALUES(?,?,?,?,?,?)", ("KA05MF1234", None, "fastag_hash_301", "u301", "301", "Priya Sharma"))
+        c.execute("INSERT INTO whitelist VALUES(?,?,?,?,?,?)", (None, "a3f9c2d4e5f6", None, "u205", "205", "Rajan Kumar"))
+        c.execute("INSERT INTO whitelist VALUES(?,?,?,?,?,?)", ("KA05EB2345", "b1c2d3e4f5a6", "fastag_hash_107", "u107", "107", "Anil Nair"))
         # Blacklist
-        c.execute("INSERT INTO blacklist_cache VALUES(?,?)", ("DL01ZZ9999", None))
+        c.execute("INSERT INTO blacklist_cache VALUES(?,?,?)", ("DL01ZZ9999", None, None))
     return path
 
 
@@ -128,6 +132,34 @@ class TestRFIDCardFallback:
         assert result["resident_name"] == "Rajan Kumar"
         # Should NOT have card_type — it came from vehicle whitelist
         assert "card_type" not in result
+
+
+class TestFASTagAccess:
+
+    def test_known_fastag_found_locally(self, db):
+        from edge.whitelist_sync import load_local
+        result = load_local(db, "fastag", "fastag_hash_301")
+        assert result is not None
+        assert result["unit_number"] == "301"
+        assert result["resident_name"] == "Priya Sharma"
+
+    def test_unknown_fastag_not_found(self, db):
+        from edge.whitelist_sync import load_local
+        result = load_local(db, "fastag", "unknown_fastag_hash")
+        assert result is None
+
+    def test_blacklisted_fastag(self, db):
+        """Add a blacklisted FASTag and verify it's detected."""
+        with sqlite3.connect(db) as c:
+            c.execute("INSERT INTO blacklist_cache VALUES(?,?,?)", (None, None, "blacklisted_fastag"))
+        from edge.whitelist_sync import is_blacklisted_local
+        assert is_blacklisted_local(db, "fastag", "blacklisted_fastag")
+        assert not is_blacklisted_local(db, "fastag", "fastag_hash_301")
+
+    def test_existing_anpr_and_rfid_still_work(self, db):
+        from edge.whitelist_sync import load_local
+        assert load_local(db, "anpr", "KA05MF1234") is not None
+        assert load_local(db, "rfid", "a3f9c2d4e5f6") is not None
 
 
 class TestBlacklist:
