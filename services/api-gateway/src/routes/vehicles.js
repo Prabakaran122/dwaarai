@@ -7,6 +7,7 @@ import { success, error } from '../middleware/response.js';
 import { authenticateJWT, authenticateDevice } from '../middleware/auth.js';
 import { deviceLimiter } from '../middleware/rateLimit.js';
 import { getCache, setCache, delCachePattern, getCacheStats } from '../db/redis.js';
+import { broadcast } from '../websocket.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -423,6 +424,10 @@ router.post('/access/check', authenticateDevice, deviceLimiter, async (req, res)
       };
       // Cache deny decisions for 60 seconds
       await setCache(cacheKey, denyResult, 60);
+      broadcast(community_id, 'gate:event', {
+        id: eventId, gateId: gate_id, detectionMethod: method, rawValue: lookupValue,
+        accessDecision: 'deny', denyReason: 'blacklisted', eventTs: eventTs,
+      });
       return success(res, { ...denyResult, event_id: eventId });
     }
 
@@ -514,6 +519,11 @@ router.post('/access/check', authenticateDevice, deviceLimiter, async (req, res)
         message: 'Vehicle recognized',
       };
       await setCache(cacheKey, allowResult, 300);
+      broadcast(community_id, 'gate:event', {
+        id: eventId, gateId: gate_id, detectionMethod: method, rawValue: lookupValue,
+        accessDecision: 'allow', matchedUnitNumber: vehicle.unit_number,
+        residentName: vehicle.resident_name, anprConfidence: confidence, eventTs: eventTs,
+      });
       return success(res, { ...allowResult, event_id: eventId });
     }
 
@@ -535,6 +545,11 @@ router.post('/access/check', authenticateDevice, deviceLimiter, async (req, res)
         message: 'RFID card recognized',
       };
       await setCache(cacheKey, allowResult, 300);
+      broadcast(community_id, 'gate:event', {
+        id: eventId, gateId: gate_id, detectionMethod: method, rawValue: lookupValue,
+        accessDecision: 'allow', matchedUnitNumber: rfidCard.unit_number,
+        residentName: rfidCard.resident_name, eventTs: eventTs,
+      });
       return success(res, { ...allowResult, event_id: eventId });
     }
 
@@ -552,6 +567,12 @@ router.post('/access/check', authenticateDevice, deviceLimiter, async (req, res)
     };
     // Cache guard_review decisions for 60 seconds
     await setCache(cacheKey, guardReviewResult, 60);
+    broadcast(community_id, 'gate:event', {
+      id: eventId, gateId: gate_id, detectionMethod: method, rawValue: lookupValue,
+      accessDecision: 'guard_review', denyReason: 'not_recognized',
+      anprConfidence: confidence, fastagTidHash: method === 'fastag' ? lookupValue : null,
+      eventTs: eventTs,
+    });
     return success(res, { ...guardReviewResult, event_id: eventId });
   } catch (err) {
     console.error('POST /access/check error:', err);
@@ -658,6 +679,11 @@ router.post('/vehicles/auto-pair', authenticateDevice, async (req, res) => {
     await delCachePattern(`access:*:anpr:${normalizedPlate}`);
 
     console.log(`FASTag auto-paired: ${normalizedPlate} -> ${fastag_tid_hash.slice(0, 12)}...`);
+    broadcast(community_id, 'fastag:paired', {
+      plate: normalizedPlate,
+      unitNumber: updated.unit_number || null,
+      fastagTidHash: fastag_tid_hash,
+    });
     return success(res, { vehicle: updated, auto_paired: true });
   } catch (err) {
     console.error('POST /vehicles/auto-pair error:', err);
