@@ -40,11 +40,13 @@ const updateVehicleSchema = z.object({
 const accessCheckSchema = z.object({
   community_id: z.string().uuid(),
   gate_id: z.string().uuid(),
-  method: z.enum(['anpr', 'rfid', 'otp']),
+  method: z.enum(['anpr', 'rfid', 'fastag', 'otp']),
   value: z.string().min(1),
   confidence: z.number().min(0).max(1).optional(),
   snapshot_b64: z.string().optional(),
   ts: z.union([z.string(), z.number()]).optional(),
+  correlation_id: z.string().uuid().optional(),
+  direction: z.enum(['entry', 'exit']).default('entry'),
 });
 
 const blacklistCreateSchema = z.object({
@@ -323,7 +325,7 @@ router.get('/whitelist/sync', authenticateDevice, async (req, res) => {
     const community_id = device.community_id;
 
     const vehicles = await queryRows(
-      `SELECT v.plate, v.rfid_uid_hash, v.unit_id, u.unit_number, r.name AS resident_name
+      `SELECT v.plate, v.rfid_uid_hash, v.fastag_tid_hash, v.unit_id, u.unit_number, r.name AS resident_name
        FROM vehicles v
        JOIN units u ON v.unit_id = u.id
        LEFT JOIN residents r ON v.resident_id = r.id
@@ -399,9 +401,10 @@ router.post('/access/check', authenticateDevice, deviceLimiter, async (req, res)
         'SELECT id FROM blacklist WHERE community_id = $1 AND plate = $2 AND is_active = true',
         [community_id, lookupValue]
       );
-    } else if (method === 'rfid') {
+    } else if (method === 'rfid' || method === 'fastag') {
+      const col = method === 'fastag' ? 'fastag_tid_hash' : 'rfid_uid_hash';
       blacklisted = await queryOne(
-        'SELECT id FROM blacklist WHERE community_id = $1 AND rfid_uid_hash = $2 AND is_active = true',
+        `SELECT id FROM blacklist WHERE community_id = $1 AND ${col} = $2 AND is_active = true`,
         [community_id, lookupValue]
       );
     }
@@ -434,13 +437,14 @@ router.post('/access/check', authenticateDevice, deviceLimiter, async (req, res)
          WHERE v.community_id = $1 AND v.plate = $2 AND v.is_active = true`,
         [community_id, lookupValue]
       );
-    } else if (method === 'rfid') {
+    } else if (method === 'rfid' || method === 'fastag') {
+      const col = method === 'fastag' ? 'fastag_tid_hash' : 'rfid_uid_hash';
       vehicle = await queryOne(
         `SELECT v.id, v.unit_id, u.unit_number, r.name AS resident_name
          FROM vehicles v
          JOIN units u ON v.unit_id = u.id
          LEFT JOIN residents r ON v.resident_id = r.id
-         WHERE v.community_id = $1 AND v.rfid_uid_hash = $2 AND v.is_active = true`,
+         WHERE v.community_id = $1 AND v.${col} = $2 AND v.is_active = true`,
         [community_id, lookupValue]
       );
     } else if (method === 'otp') {
@@ -480,7 +484,7 @@ router.post('/access/check', authenticateDevice, deviceLimiter, async (req, res)
 
     // -- RFID card fallback (standalone cards not linked to vehicles) ----------
     let rfidCard = null;
-    if (!vehicle && method === 'rfid') {
+    if (!vehicle && (method === 'rfid' || method === 'fastag')) {
       rfidCard = await queryOne(
         `SELECT rc.id, rc.issued_to_unit AS unit_id, u.unit_number, rc.card_type,
                 COALESCE(u.unit_number, 'N/A') AS resident_name
@@ -609,6 +613,114 @@ router.delete('/blacklist/:id', authenticateJWT(['admin']), async (req, res) => 
     return success(res, { id: blId, is_active: false });
   } catch (err) {
     console.error('DELETE /blacklist/:id error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- FASTag Auto-Pair (device token) -----------------------------------------
+
+router.post('/vehicles/auto-pair', authenticateDevice, async (req, res) => {
+  try {
+    const autoPairSchema = z.object({
+      community_id: z.string().uuid(),
+      plate: z.string().min(1).max(20),
+      fastag_tid_hash: z.string().length(64),
+    });
+    const parsed = autoPairSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return error(res, 'Validation error', 400, parsed.error.issues);
+    }
+    const { community_id, plate, fastag_tid_hash } = parsed.data;
+    const normalizedPlate = normalizePlate(plate);
+
+    const vehicle = await queryOne(
+      'SELECT id, fastag_tid_hash FROM vehicles WHERE community_id = $1 AND plate = $2 AND is_active = true',
+      [community_id, normalizedPlate]
+    );
+    if (!vehicle) {
+      return error(res, 'Vehicle not found for plate', 404);
+    }
+
+    const existing = await queryOne(
+      'SELECT id, plate FROM vehicles WHERE community_id = $1 AND fastag_tid_hash = $2 AND is_active = true AND id != $3',
+      [community_id, fastag_tid_hash, vehicle.id]
+    );
+    if (existing) {
+      return error(res, `FASTag already linked to vehicle ${existing.plate}`, 409);
+    }
+
+    const updated = await queryOne(
+      'UPDATE vehicles SET fastag_tid_hash = $1 WHERE id = $2 RETURNING *',
+      [fastag_tid_hash, vehicle.id]
+    );
+
+    await delCachePattern(`access:*:fastag:${fastag_tid_hash}`);
+    await delCachePattern(`access:*:anpr:${normalizedPlate}`);
+
+    console.log(`FASTag auto-paired: ${normalizedPlate} -> ${fastag_tid_hash.slice(0, 12)}...`);
+    return success(res, { vehicle: updated, auto_paired: true });
+  } catch (err) {
+    console.error('POST /vehicles/auto-pair error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- Register Vehicle at Gate (guard JWT) ------------------------------------
+
+router.post('/vehicles/register-at-gate', authenticateJWT(['guard', 'admin']), async (req, res) => {
+  try {
+    const registerSchema = z.object({
+      community_id: z.string().uuid(),
+      plate: z.string().min(1).max(20),
+      fastag_tid_hash: z.string().length(64).optional(),
+      unit_number: z.string().min(1).max(30),
+    });
+    const parsed = registerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return error(res, 'Validation error', 400, parsed.error.issues);
+    }
+    const { community_id, plate, fastag_tid_hash, unit_number } = parsed.data;
+    const normalizedPlate = normalizePlate(plate);
+
+    const unit = await queryOne(
+      'SELECT id FROM units WHERE community_id = $1 AND unit_number = $2',
+      [community_id, unit_number]
+    );
+    if (!unit) {
+      return error(res, `Unit ${unit_number} not found`, 404);
+    }
+
+    const existing = await queryOne(
+      'SELECT id FROM vehicles WHERE community_id = $1 AND plate = $2 AND is_active = true',
+      [community_id, normalizedPlate]
+    );
+    if (existing) {
+      if (fastag_tid_hash) {
+        const updated = await queryOne(
+          'UPDATE vehicles SET fastag_tid_hash = $1 WHERE id = $2 RETURNING *',
+          [fastag_tid_hash, existing.id]
+        );
+        await delCachePattern(`access:*:fastag:${fastag_tid_hash}`);
+        return success(res, { vehicle: updated, created: false });
+      }
+      return error(res, 'Vehicle already registered', 409);
+    }
+
+    const vehicle = await queryOne(
+      `INSERT INTO vehicles (community_id, unit_id, plate, plate_display, fastag_tid_hash)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [community_id, unit.id, normalizedPlate, plate.trim(), fastag_tid_hash || null]
+    );
+
+    await delCachePattern(`access:*:anpr:${normalizedPlate}`);
+    if (fastag_tid_hash) {
+      await delCachePattern(`access:*:fastag:${fastag_tid_hash}`);
+    }
+
+    return success(res, { vehicle, created: true }, 201);
+  } catch (err) {
+    console.error('POST /vehicles/register-at-gate error:', err);
     return error(res, 'Internal server error', 500);
   }
 });
