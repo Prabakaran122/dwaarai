@@ -17,7 +17,7 @@ vi.mock('../../src/db/pool.js', () => ({
 // Now import the app and helpers
 const { default: app } = await import('../index.js');
 const { generateTestToken } = await import('../middleware/auth.js');
-const { queryRows } = await import('../db/queries.js');
+const { queryRows, queryOne } = await import('../db/queries.js');
 
 // Minimal supertest-like helper using native fetch with the app listening on a random port
 let server;
@@ -195,5 +195,76 @@ describe('API Gateway', () => {
     expect(status).toBe(200);
     expect(json.data.date).toBe('2026-01-15');
     expect(json.data.total_events).toBe(0);
+  });
+
+  it('POST /api/v1/access/check RFID with card-only (no vehicle) returns allow', async () => {
+    const deviceToken = generateTestToken({ gate_id: 'gate-01', community_id: 'c1' });
+    queryOne
+      .mockResolvedValueOnce(null)  // blacklist
+      .mockResolvedValueOnce(null)  // vehicle
+      .mockResolvedValueOnce({      // rfid_card
+        id: 'card-1',
+        unit_id: 'unit-staff-1',
+        unit_number: 'S-01',
+        card_type: 'staff',
+        resident_name: 'S-01',
+      });
+    const { status, json } = await request('POST', '/api/v1/access/check', {
+      headers: { 'x-device-token': deviceToken },
+      body: {
+        community_id: '00000000-0000-0000-0000-000000000000',
+        gate_id: '00000000-0000-0000-0000-000000000001',
+        method: 'rfid',
+        value: 'a'.repeat(64),
+      },
+    });
+    expect(status).toBe(200);
+    expect(json.data.decision).toBe('allow');
+    expect(json.data.card_type).toBe('staff');
+    expect(json.data.vehicle_id).toBeNull();
+  });
+
+  it('POST /api/v1/access/check RFID with expired card returns guard_review', async () => {
+    const deviceToken = generateTestToken({ gate_id: 'gate-01', community_id: 'c1' });
+    queryOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    const { status, json } = await request('POST', '/api/v1/access/check', {
+      headers: { 'x-device-token': deviceToken },
+      body: {
+        community_id: '00000000-0000-0000-0000-000000000000',
+        gate_id: '00000000-0000-0000-0000-000000000001',
+        method: 'rfid',
+        value: 'b'.repeat(64),
+      },
+    });
+    expect(status).toBe(200);
+    expect(json.data.decision).toBe('guard_review');
+  });
+
+  it('POST /api/v1/access/check RFID with vehicle-linked RFID returns allow', async () => {
+    const deviceToken = generateTestToken({ gate_id: 'gate-01', community_id: 'c1' });
+    queryOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'v-1',
+        unit_id: 'unit-301',
+        unit_number: '301',
+        resident_name: 'Priya Sharma',
+      });
+    const { status, json } = await request('POST', '/api/v1/access/check', {
+      headers: { 'x-device-token': deviceToken },
+      body: {
+        community_id: '00000000-0000-0000-0000-000000000000',
+        gate_id: '00000000-0000-0000-0000-000000000001',
+        method: 'rfid',
+        value: 'c'.repeat(64),
+      },
+    });
+    expect(status).toBe(200);
+    expect(json.data.decision).toBe('allow');
+    expect(json.data.vehicle_id).toBe('v-1');
+    expect(json.data.resident_name).toBe('Priya Sharma');
   });
 });

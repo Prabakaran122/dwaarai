@@ -24,6 +24,16 @@ def db(tmp_path):
         c.execute("CREATE TABLE blacklist_cache(plate TEXT,rfid_uid_hash TEXT)")
         c.execute("CREATE TABLE sync_meta(id INT PRIMARY KEY,last_sync REAL)")
         c.execute("INSERT INTO sync_meta VALUES(1,?)", (time.time(),))
+        c.execute("""CREATE TABLE rfid_cards_cache(
+            uid_hash TEXT, card_type TEXT, unit_id TEXT,
+            unit_number TEXT, expires_at REAL)""")
+        c.execute("CREATE INDEX idx_rcc_uid ON rfid_cards_cache(uid_hash)")
+        # Staff card — no vehicle, no expiry
+        c.execute("INSERT INTO rfid_cards_cache VALUES(?,?,?,?,?)",
+                  ("staff_card_hash_64chars_padded_000000000000000000000000000000", "staff", "u-staff", "S-01", None))
+        # Expired visitor card
+        c.execute("INSERT INTO rfid_cards_cache VALUES(?,?,?,?,?)",
+                  ("expired_card_hash_64chars_padded_0000000000000000000000000000", "visitor", "u-vis", "V-01", 1000000000.0))
         # Residents
         c.execute("INSERT INTO whitelist VALUES(?,?,?,?,?)", ("KA05MF1234", None, "u301", "301", "Priya Sharma"))
         c.execute("INSERT INTO whitelist VALUES(?,?,?,?,?)", (None, "a3f9c2d4e5f6", "u205", "205", "Rajan Kumar"))
@@ -94,6 +104,30 @@ class TestRFIDAccess:
     def test_unknown_rfid_offline_guard_review(self, db):
         from edge.whitelist_sync import load_local
         assert load_local(db, "rfid", "000000000000") is None
+
+
+class TestRFIDCardFallback:
+
+    def test_standalone_rfid_card_found_in_cache(self, db):
+        from edge.whitelist_sync import load_local
+        result = load_local(db, "rfid", "staff_card_hash_64chars_padded_000000000000000000000000000000")
+        assert result is not None
+        assert result["unit_number"] == "S-01"
+        assert result["card_type"] == "staff"
+
+    def test_expired_rfid_card_not_found(self, db):
+        from edge.whitelist_sync import load_local
+        result = load_local(db, "rfid", "expired_card_hash_64chars_padded_0000000000000000000000000000")
+        assert result is None
+
+    def test_vehicle_rfid_takes_priority_over_card(self, db):
+        """Vehicle whitelist match should return vehicle info, not card info."""
+        from edge.whitelist_sync import load_local
+        result = load_local(db, "rfid", "a3f9c2d4e5f6")
+        assert result is not None
+        assert result["resident_name"] == "Rajan Kumar"
+        # Should NOT have card_type — it came from vehicle whitelist
+        assert "card_type" not in result
 
 
 class TestBlacklist:
@@ -190,3 +224,28 @@ class TestWhitelistSync:
                 sync_from_cloud()
         from edge.whitelist_sync import load_local
         assert load_local(db, "anpr", "TN22AB1234") is not None
+
+    def test_whitelist_sync_populates_rfid_cards_cache(self, db):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"data":{
+            "vehicles": [],
+            "blacklist": [],
+            "rfid_cards": [
+                {"uid_hash": "sync_test_hash_padded_0000000000000000000000000000000000000000",
+                 "card_type": "staff", "unit_id": "u-s1", "unit_number": "S-10",
+                 "expires_at": "2027-12-31T00:00:00Z"}
+            ]
+        }}
+        with patch("requests.get", return_value=mock_resp):
+            from edge.whitelist_sync import sync_from_cloud
+            with patch("edge.whitelist_sync.cfg") as mock_cfg:
+                mock_cfg.OFFLINE_DB_PATH = db
+                mock_cfg.CLOUD_API_URL = "http://localhost:3000/api/v1"
+                mock_cfg.DEVICE_TOKEN = "test-token"
+                mock_cfg.COMMUNITY_ID = "test-community"
+                sync_from_cloud()
+        from edge.whitelist_sync import load_local
+        result = load_local(db, "rfid", "sync_test_hash_padded_0000000000000000000000000000000000000000")
+        assert result is not None
+        assert result["unit_number"] == "S-10"
+        assert result["card_type"] == "staff"
