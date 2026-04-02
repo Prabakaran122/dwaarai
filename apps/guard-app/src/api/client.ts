@@ -52,4 +52,12 @@ export const createIncident = (data: {
   gateId: string;
 }) => api.post('/incidents', data);
 
+// FASTag — Register vehicle at gate (guard action)
+export const registerVehicleAtGate = (data: {
+  community_id: string;
+  plate: string;
+  unit_number: string;
+  fastag_tid_hash?: string;
+}) => api.post('/vehicles/register-at-gate', data);
+
 export default api;

@@ -3,11 +3,16 @@ import { create } from 'zustand';
 export interface QueueEntry {
   id: string;
   plate: string;
-  method: 'anpr' | 'rfid' | 'otp' | 'manual';
+  method: 'anpr' | 'rfid' | 'fastag' | 'otp' | 'manual';
   decision: 'allow' | 'deny' | 'guard_review';
   reason?: string;
   timestamp: string;
   snapshot?: string;
+  fastagTidHash?: string;
+  unitNumber?: string;
+  residentName?: string;
+  autoPaired?: boolean;
+  alertType?: 'unknown_vehicle' | 'auto_paired' | 'fastag_mismatch';
 }
 
 interface QueueState {

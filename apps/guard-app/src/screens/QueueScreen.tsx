@@ -21,6 +21,7 @@ type NavProp = NativeStackNavigationProp<RootStackParamList, 'Queue'>;
 const methodIcons: Record<string, { icon: string; color: string; gradient: readonly [string, string] }> = {
   anpr: { icon: 'camera', color: colors.info, gradient: ['rgba(99,102,241,0.3)', 'rgba(139,92,246,0.1)'] },
   rfid: { icon: 'card-bulleted', color: colors.success, gradient: ['rgba(34,197,94,0.3)', 'rgba(16,185,129,0.1)'] },
+  fastag: { icon: 'car-wireless', color: '#06b6d4', gradient: ['rgba(6,182,212,0.3)', 'rgba(20,184,166,0.1)'] },
   manual: { icon: 'account', color: colors.warning, gradient: ['rgba(251,191,36,0.3)', 'rgba(245,158,11,0.1)'] },
   otp: { icon: 'numeric', color: '#c084fc', gradient: ['rgba(168,85,247,0.3)', 'rgba(139,92,246,0.1)'] },
 };

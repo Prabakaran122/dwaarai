@@ -26,6 +26,9 @@ function AuthenticatedApp() {
       matchedUnitNumber?: string;
       residentName?: string;
       anprConfidence?: number;
+      fastagTidHash?: string;
+      autoPaired?: boolean;
+      alertType?: string;
       eventTs: string;
     }) => {
       const entry: QueueEntry = {
@@ -35,12 +38,43 @@ function AuthenticatedApp() {
         decision: data.accessDecision as QueueEntry['decision'],
         reason: data.denyReason || undefined,
         timestamp: data.eventTs,
+        fastagTidHash: data.fastagTidHash,
+        unitNumber: data.matchedUnitNumber,
+        residentName: data.residentName,
+        autoPaired: data.autoPaired,
+        alertType: data.alertType as QueueEntry['alertType'],
       };
       addEntry(entry);
     };
 
     socket.on('gate:event', handleEvent);
-    return () => { socket.off('gate:event', handleEvent); };
+    socket.on('fastag:paired', (data: { plate: string; unitNumber: string }) => {
+      addEntry({
+        id: `paired-${Date.now()}`,
+        plate: data.plate,
+        method: 'fastag',
+        decision: 'allow',
+        timestamp: new Date().toISOString(),
+        alertType: 'auto_paired',
+        unitNumber: data.unitNumber,
+      });
+    });
+    socket.on('fastag:mismatch', (data: { plate: string; rawValue: string }) => {
+      addEntry({
+        id: `mismatch-${Date.now()}`,
+        plate: data.plate || data.rawValue,
+        method: 'fastag',
+        decision: 'guard_review',
+        reason: 'FASTag mismatch — different tag for known vehicle',
+        timestamp: new Date().toISOString(),
+        alertType: 'fastag_mismatch',
+      });
+    });
+    return () => {
+      socket.off('gate:event', handleEvent);
+      socket.off('fastag:paired');
+      socket.off('fastag:mismatch');
+    };
   }, [addEntry]);
 
   return <QueueScreen />;
