@@ -336,7 +336,18 @@ router.get('/whitelist/sync', authenticateDevice, async (req, res) => {
       [community_id]
     );
 
-    return success(res, { vehicles, blacklist: blacklisted });
+    // Active, non-expired RFID cards for offline cache
+    const rfidCards = await queryRows(
+      `SELECT rc.uid_hash, rc.card_type, rc.issued_to_unit AS unit_id,
+              u.unit_number, rc.expires_at
+       FROM rfid_cards rc
+       LEFT JOIN units u ON rc.issued_to_unit = u.id
+       WHERE rc.community_id = $1 AND rc.is_active = true
+         AND (rc.expires_at IS NULL OR rc.expires_at > NOW())`,
+      [community_id]
+    );
+
+    return success(res, { vehicles, blacklist: blacklisted, rfid_cards: rfidCards });
   } catch (err) {
     console.error('GET /whitelist/sync error:', err);
     return error(res, 'Internal server error', 500);
@@ -467,6 +478,21 @@ router.post('/access/check', authenticateDevice, deviceLimiter, async (req, res)
       }
     }
 
+    // -- RFID card fallback (standalone cards not linked to vehicles) ----------
+    let rfidCard = null;
+    if (!vehicle && method === 'rfid') {
+      rfidCard = await queryOne(
+        `SELECT rc.id, rc.issued_to_unit AS unit_id, u.unit_number, rc.card_type,
+                COALESCE(u.unit_number, 'N/A') AS resident_name
+         FROM rfid_cards rc
+         LEFT JOIN units u ON rc.issued_to_unit = u.id
+         WHERE rc.community_id = $1 AND rc.uid_hash = $2
+           AND rc.is_active = true
+           AND (rc.expires_at IS NULL OR rc.expires_at > NOW())`,
+        [community_id, lookupValue]
+      );
+    }
+
     if (vehicle) {
       const processingMs = Date.now() - startMs;
       await query(
@@ -483,7 +509,27 @@ router.post('/access/check', authenticateDevice, deviceLimiter, async (req, res)
         vehicle_id: vehicle.id,
         message: 'Vehicle recognized',
       };
-      // Cache allow decisions for 300 seconds (5 minutes)
+      await setCache(cacheKey, allowResult, 300);
+      return success(res, { ...allowResult, event_id: eventId });
+    }
+
+    if (rfidCard) {
+      const processingMs = Date.now() - startMs;
+      await query(
+        `INSERT INTO gate_events (id, community_id, gate_id, detection_method, raw_value, matched_unit_id, matched_unit_number, resident_name, access_decision, processing_ms, event_ts)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [eventId, community_id, gate_id, method, lookupValue, rfidCard.unit_id, rfidCard.unit_number, rfidCard.resident_name, 'allow', processingMs, eventTs]
+      );
+      const allowResult = {
+        decision: 'allow',
+        method,
+        unit_id: rfidCard.unit_id,
+        unit_number: rfidCard.unit_number,
+        resident_name: rfidCard.resident_name,
+        vehicle_id: null,
+        card_type: rfidCard.card_type,
+        message: 'RFID card recognized',
+      };
       await setCache(cacheKey, allowResult, 300);
       return success(res, { ...allowResult, event_id: eventId });
     }
