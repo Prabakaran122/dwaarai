@@ -383,7 +383,7 @@ router.post('/access/check', authenticateDevice, deviceLimiter, async (req, res)
         // Log the gate event even on cache hit
         await query(
           `INSERT INTO gate_events (id, community_id, gate_id, detection_method, raw_value, matched_vehicle_id, matched_unit_id, matched_unit_number, resident_name, access_decision, deny_reason, anpr_confidence, processing_ms, event_ts)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
           [eventId, community_id, gate_id, method, lookupValue, cached.vehicle_id || null, cached.unit_id || null, cached.unit_number || null, cached.resident_name || null, cached.decision, cached.reason || null, confidence || null, processingMs, eventTs]
         );
         return success(res, {
