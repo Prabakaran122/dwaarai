@@ -9,6 +9,7 @@ export interface Vehicle {
   type: string;
   rfidTag?: string;
   fastagTidHash?: string;
+  lastEntryAt?: string;
   createdAt: string;
 }
 
@@ -21,6 +22,20 @@ interface VehicleState {
   remove: (id: string) => Promise<void>;
 }
 
+function mapVehicle(raw: any): Vehicle {
+  return {
+    id: raw.id,
+    plate: raw.plate_display || raw.plate,
+    make: raw.make || '',
+    model: raw.model || '',
+    type: raw.type || 'car',
+    rfidTag: raw.rfid_uid_hash,
+    fastagTidHash: raw.fastag_tid_hash,
+    lastEntryAt: raw.last_entry_at || undefined,
+    createdAt: raw.created_at,
+  };
+}
+
 export const useVehicleStore = create<VehicleState>((set) => ({
   vehicles: [],
   loading: false,
@@ -28,19 +43,23 @@ export const useVehicleStore = create<VehicleState>((set) => ({
     set({ loading: true });
     try {
       const res = await api.getVehicles();
-      set({ vehicles: res.data.data });
+      const raw = res.data.data;
+      const vehicles = Array.isArray(raw) ? raw.map(mapVehicle) : [];
+      set({ vehicles });
     } finally {
       set({ loading: false });
     }
   },
   add: async (data) => {
     const res = await api.createVehicle(data);
-    set((s) => ({ vehicles: [...s.vehicles, res.data.data] }));
+    const vehicle = mapVehicle(res.data.data);
+    set((s) => ({ vehicles: [...s.vehicles, vehicle] }));
   },
   update: async (id, data) => {
     const res = await api.updateVehicle(id, data);
+    const vehicle = mapVehicle(res.data.data);
     set((s) => ({
-      vehicles: s.vehicles.map((v) => (v.id === id ? res.data.data : v)),
+      vehicles: s.vehicles.map((v) => (v.id === id ? vehicle : v)),
     }));
   },
   remove: async (id) => {
