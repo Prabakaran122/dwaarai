@@ -4,11 +4,12 @@ import { setAuthToken, clearAuthToken } from '../api/client';
 
 const AUTH_STORAGE_KEY = 'communitygate_resident_auth';
 
-interface AuthUser {
+export interface AuthUser {
   id: string;
   name: string;
   phone: string;
   unitNumber: string;
+  communityName?: string;
 }
 
 interface AuthState {
@@ -16,9 +17,11 @@ interface AuthState {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  showRegister: boolean;
   login: (token: string, user: AuthUser) => void;
   logout: () => void;
   rehydrate: () => Promise<void>;
+  setShowRegister: (show: boolean) => void;
 }
 
 function isTokenExpired(token: string): boolean {
@@ -35,10 +38,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
   isLoading: true,
+  showRegister: false,
 
   login: (token, user) => {
     setAuthToken(token);
-    set({ token, user, isAuthenticated: true });
+    set({ token, user, isAuthenticated: true, showRegister: false });
     AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token, user })).catch(() => {});
   },
 
@@ -69,4 +73,6 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
     set({ isLoading: false });
   },
+
+  setShowRegister: (show) => set({ showRegister: show }),
 }));
