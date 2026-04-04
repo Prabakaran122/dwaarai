@@ -81,9 +81,37 @@ def is_blacklisted_local(db, method, value) -> bool:
     with sqlite3.connect(db) as c:
         return c.execute(f"SELECT 1 FROM blacklist_cache WHERE {col}=?",(value,)).fetchone() is not None
 
-def start_sync():
+def push_cards_to_c3(db, c3):
+    """Push all FASTag TID hashes from whitelist to C3 controller."""
+    if not c3 or not c3.is_connected():
+        log.warning("C3 not connected — skipping card push")
+        return 0
+    with sqlite3.connect(db) as c:
+        rows = c.execute("SELECT fastag_tid_hash FROM whitelist WHERE fastag_tid_hash IS NOT NULL AND fastag_tid_hash != ''").fetchall()
+    cards = [r[0] for r in rows]
+    count = c3.sync_cards(cards)
+    # Also push blocked cards
+    with sqlite3.connect(db) as c:
+        blocked = c.execute("SELECT fastag_tid_hash FROM blacklist_cache WHERE fastag_tid_hash IS NOT NULL AND fastag_tid_hash != ''").fetchall()
+    for b in blocked:
+        c3.block_card(b[0])
+    log.info(f"Pushed {count} cards + {len(blocked)} blocked to C3")
+    return count
+
+_c3_ref = None
+
+def start_sync(c3=None):
+    global _c3_ref
+    _c3_ref = c3
     _init_db(); sync_from_cloud()
-    schedule.every(cfg.WHITELIST_SYNC_INTERVAL).seconds.do(sync_from_cloud)
+    if _c3_ref:
+        push_cards_to_c3(cfg.OFFLINE_DB_PATH, _c3_ref)
+    schedule.every(cfg.WHITELIST_SYNC_INTERVAL).seconds.do(_sync_and_push)
     def _loop():
         while True: schedule.run_pending(); time.sleep(10)
     threading.Thread(target=_loop, daemon=True).start()
+
+def _sync_and_push():
+    sync_from_cloud()
+    if _c3_ref:
+        push_cards_to_c3(cfg.OFFLINE_DB_PATH, _c3_ref)
