@@ -23,12 +23,22 @@ export function clearAuthToken() {
   delete api.defaults.headers.common['Authorization'];
 }
 
-// Auth — phone + OTP
+// Auth — phone + OTP (existing login)
 export const requestOTP = (phone: string) =>
   api.post('/auth/resident-otp', { phone });
 
 export const verifyOTP = (phone: string, otp: string) =>
   api.post('/auth/resident-verify', { phone, otp });
+
+// Auth — self-registration
+export const registerResident = (data: {
+  community_code: string;
+  phone: string;
+  unit_number: string;
+}) => api.post('/auth/resident-register', data);
+
+export const verifyRegistration = (phone: string, otp: string) =>
+  api.post('/auth/resident-register-verify', { phone, otp });
 
 // Vehicles
 export const getVehicles = () => api.get('/vehicles');
@@ -51,16 +61,17 @@ export const deleteVehicle = (id: string) => api.delete(`/vehicles/${id}`);
 export const getPasses = () => api.get('/passes');
 
 export const createPass = (data: {
-  visitorName: string;
-  visitorPhone: string;
-  validFrom: string;
-  validUntil: string;
+  visitor_name: string;
+  visitor_mobile?: string;
+  visitor_vehicle?: string;
+  valid_from: string;
+  valid_until: string;
 }) => api.post('/passes', data);
 
 export const revokePass = (id: string) => api.delete(`/passes/${id}`);
 
-// Events
-export const getEvents = (params?: Record<string, string>) =>
-  api.get('/events', { params });
+// Events — resident unit events
+export const getMyUnitEvents = (params?: Record<string, string>) =>
+  api.get('/events/my-unit', { params });
 
 export default api;
