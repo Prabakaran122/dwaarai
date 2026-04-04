@@ -7,16 +7,39 @@ import { spacing, radius } from '../theme/spacing';
 import GlowCard from '../components/GlowCard';
 import GradientButton from '../components/GradientButton';
 import PlateText from '../components/PlateText';
-import StatusPill from '../components/StatusPill';
 import IconBadge from '../components/IconBadge';
 import AnimatedEntry from '../components/AnimatedEntry';
 import { useVehicleStore, Vehicle } from '../store/vehicleStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const typeIcons: Record<string, string> = {
   car: 'car',
   bike: 'motorbike',
   truck: 'truck',
 };
+
+const BANNER_KEY = 'communitygate_fastag_banner_dismissed';
+
+function FastagBadge({ vehicle }: { vehicle: Vehicle }) {
+  if (vehicle.fastagTidHash) {
+    return (
+      <View style={[badgeStyles.pill, { backgroundColor: 'rgba(6,182,212,0.15)' }]}>
+        <MaterialCommunityIcons name="car-wireless" size={12} color="#06b6d4" />
+        <Text style={[badgeStyles.text, { color: '#06b6d4' }]}>FASTag Linked</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={[badgeStyles.pill, { backgroundColor: colors.surface }]}>
+      <Text style={[badgeStyles.text, { color: colors.textMuted }]}>No FASTag</Text>
+    </View>
+  );
+}
+
+const badgeStyles = StyleSheet.create({
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill },
+  text: { fontSize: 10, fontWeight: '700' },
+});
 
 export default function VehiclesScreen() {
   const { vehicles, loading, fetch, add, update, remove } = useVehicleStore();
@@ -26,8 +49,17 @@ export default function VehiclesScreen() {
   const [make, setMake] = useState('');
   const [model, setModel] = useState('');
   const [type, setType] = useState('car');
+  const [showBanner, setShowBanner] = useState(false);
 
-  useEffect(() => { fetch(); }, []);
+  useEffect(() => {
+    fetch();
+    AsyncStorage.getItem(BANNER_KEY).then((v) => { if (!v) setShowBanner(true); });
+  }, []);
+
+  const dismissBanner = () => {
+    setShowBanner(false);
+    AsyncStorage.setItem(BANNER_KEY, '1').catch(() => {});
+  };
 
   const resetForm = () => { setPlate(''); setMake(''); setModel(''); setType('car'); setEditing(null); setShowForm(false); };
 
@@ -44,10 +76,10 @@ export default function VehiclesScreen() {
     } catch (err: any) { Alert.alert('Error', err?.response?.data?.error || 'Save failed'); }
   };
 
-  const handleDelete = (id: string) => {
-    Alert.alert('Remove Vehicle', 'Are you sure?', [
+  const handleDelete = (v: Vehicle) => {
+    Alert.alert('Remove Vehicle', `Remove ${v.plate}? This will unlink any FASTag.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => remove(id) },
+      { text: 'Remove', style: 'destructive', onPress: () => remove(v.id) },
     ]);
   };
 
@@ -59,43 +91,63 @@ export default function VehiclesScreen() {
         refreshing={loading}
         onRefresh={fetch}
         contentContainerStyle={styles.list}
-        renderItem={({ item, index }) => (
-          <AnimatedEntry direction="left" delay={index * 80}>
-            <GlowCard style={styles.vehicleCard}>
-              <TouchableOpacity onPress={() => openEdit(item)} onLongPress={() => handleDelete(item.id)} activeOpacity={0.7}>
-                <View style={styles.vehicleRow}>
-                  <IconBadge
-                    icon={(typeIcons[item.type] || 'car') as any}
-                    color={colors.info}
-                    gradientColors={['rgba(99,102,241,0.3)', 'rgba(139,92,246,0.1)']}
-                    size={36}
-                  />
-                  <View style={styles.vehicleInfo}>
-                    <PlateText plate={item.plate} size="md" />
-                    <Text style={styles.vehicleDetail}>{item.make} {item.model}</Text>
+        ListHeaderComponent={
+          showBanner ? (
+            <AnimatedEntry direction="fade">
+              <GlowCard variant="success" style={styles.bannerCard}>
+                <View style={styles.bannerRow}>
+                  <MaterialCommunityIcons name="car-wireless" size={24} color={colors.success} />
+                  <View style={styles.bannerText}>
+                    <Text style={styles.bannerTitle}>Your FASTag links automatically!</Text>
+                    <Text style={styles.bannerDesc}>Just drive through the gate — your FASTag will be detected and linked to this vehicle. No setup needed.</Text>
                   </View>
-                  <View style={styles.vehicleMeta}>
-                    {item.fastagTidHash ? (
-                      <View style={[styles.rfidPill, { backgroundColor: 'rgba(6,182,212,0.15)' }]}>
-                        <MaterialCommunityIcons name="car-wireless" size={12} color="#06b6d4" />
-                        <Text style={[styles.rfidText, { color: '#06b6d4' }]}> FASTag</Text>
-                      </View>
-                    ) : (
-                      <View style={[styles.rfidPill, { backgroundColor: colors.surface }]}>
-                        <Text style={[styles.rfidText, { color: colors.textMuted }]}>No FASTag</Text>
-                      </View>
-                    )}
-                    <Text style={styles.vehicleType}>{item.type}</Text>
-                  </View>
+                  <TouchableOpacity onPress={dismissBanner}>
+                    <MaterialCommunityIcons name="close" size={18} color={colors.textMuted} />
+                  </TouchableOpacity>
                 </View>
-              </TouchableOpacity>
-            </GlowCard>
-          </AnimatedEntry>
-        )}
+              </GlowCard>
+            </AnimatedEntry>
+          ) : null
+        }
+        renderItem={({ item, index }) => {
+          const lastEntry = item.lastEntryAt
+            ? `Last entered: ${new Date(item.lastEntryAt).toLocaleDateString([], { month: 'short', day: 'numeric' })} ${new Date(item.lastEntryAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+            : '';
+
+          return (
+            <AnimatedEntry direction="left" delay={index * 80}>
+              <GlowCard style={styles.vehicleCard}>
+                <TouchableOpacity onPress={() => openEdit(item)} onLongPress={() => handleDelete(item)} activeOpacity={0.7}>
+                  <View style={styles.vehicleRow}>
+                    <IconBadge
+                      icon={(typeIcons[item.type] || 'car') as any}
+                      color={colors.info}
+                      gradientColors={['rgba(99,102,241,0.3)', 'rgba(139,92,246,0.1)']}
+                      size={40}
+                    />
+                    <View style={styles.vehicleInfo}>
+                      <PlateText plate={item.plate} size="lg" />
+                      {(item.make || item.model) ? (
+                        <Text style={styles.vehicleDetail}>{item.make} {item.model}</Text>
+                      ) : null}
+                      {lastEntry ? (
+                        <Text style={styles.lastEntry}>{lastEntry}</Text>
+                      ) : null}
+                    </View>
+                    <View style={styles.vehicleMeta}>
+                      <FastagBadge vehicle={item} />
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              </GlowCard>
+            </AnimatedEntry>
+          );
+        }}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <MaterialCommunityIcons name="car" size={48} color={colors.textMuted} />
             <Text style={styles.emptyText}>No vehicles registered</Text>
+            <Text style={styles.emptySubtext}>Tap + to add your first vehicle</Text>
           </View>
         }
       />
@@ -113,10 +165,10 @@ export default function VehiclesScreen() {
           <GlowCard style={styles.modalCard}>
             <Text style={styles.modalTitle}>{editing ? 'Edit Vehicle' : 'Add Vehicle'}</Text>
             <TextInput style={styles.input} placeholder="Plate number" placeholderTextColor={colors.textMuted} value={plate} onChangeText={setPlate} autoCapitalize="characters" />
-            <TextInput style={styles.input} placeholder="Make" placeholderTextColor={colors.textMuted} value={make} onChangeText={setMake} />
-            <TextInput style={styles.input} placeholder="Model" placeholderTextColor={colors.textMuted} value={model} onChangeText={setModel} />
+            <TextInput style={styles.input} placeholder="Make (optional)" placeholderTextColor={colors.textMuted} value={make} onChangeText={setMake} />
+            <TextInput style={styles.input} placeholder="Model (optional)" placeholderTextColor={colors.textMuted} value={model} onChangeText={setModel} />
             <View style={styles.typeChips}>
-              {['car', 'bike', 'truck'].map((t) => (
+              {(['car', 'bike', 'truck'] as const).map((t) => (
                 <TouchableOpacity key={t} onPress={() => setType(t)}>
                   {type === t ? (
                     <LinearGradient colors={colors.gradientPrimary as [string, string]} style={styles.chip}>
@@ -150,16 +202,20 @@ export default function VehiclesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   list: { padding: spacing.lg, paddingBottom: 100 },
+  bannerCard: { marginBottom: spacing.lg },
+  bannerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  bannerText: { flex: 1 },
+  bannerTitle: { fontSize: 14, fontWeight: '700', color: colors.success, marginBottom: spacing.xs },
+  bannerDesc: { fontSize: 12, color: colors.textMuted, lineHeight: 18 },
   vehicleCard: { marginBottom: spacing.md },
   vehicleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   vehicleInfo: { flex: 1, gap: spacing.xs },
   vehicleDetail: { color: colors.textMuted, fontSize: 13 },
-  vehicleMeta: { alignItems: 'flex-end', gap: spacing.xs },
-  vehicleType: { color: colors.textMuted, fontSize: 11, textTransform: 'capitalize' },
-  rfidPill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill },
-  rfidText: { fontSize: 10, fontWeight: '700' },
-  emptyState: { alignItems: 'center', gap: spacing.md, marginTop: spacing['5xl'] },
-  emptyText: { color: colors.textMuted, fontSize: 14 },
+  lastEntry: { color: colors.textSecondary, fontSize: 11 },
+  vehicleMeta: { alignItems: 'flex-end' },
+  emptyState: { alignItems: 'center', gap: spacing.sm, marginTop: spacing['5xl'] },
+  emptyText: { color: colors.textMuted, fontSize: 16, fontWeight: '600' },
+  emptySubtext: { color: colors.textMuted, fontSize: 13 },
   fabWrap: { position: 'absolute', right: 20, bottom: 24 },
   fab: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
