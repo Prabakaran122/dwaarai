@@ -83,6 +83,70 @@ router.get('/events', authenticateJWT(['admin']), async (req, res) => {
   }
 });
 
+// -- GET /events/my-unit (JWT resident) --------------------------------------
+
+router.get('/events/my-unit', authenticateJWT(['resident']), async (req, res) => {
+  try {
+    const user = req.user;
+    const community_id = user.community_id;
+    const unit_id = user.unit_id;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const cursor = req.query.cursor || null;
+    const dateFrom = req.query.date_from || null;
+    const dateTo = req.query.date_to || null;
+    const methodFilter = req.query.detection_method || null;
+
+    let sql = `SELECT ge.*, g.name AS gate_name
+      FROM gate_events ge
+      LEFT JOIN gates g ON ge.gate_id = g.id
+      WHERE ge.community_id = $1
+        AND ge.matched_unit_id = $2`;
+    const params = [community_id, unit_id];
+
+    if (dateFrom) {
+      sql += ` AND ge.event_ts >= $${params.length + 1}`;
+      params.push(dateFrom);
+    }
+    if (dateTo) {
+      sql += ` AND ge.event_ts <= $${params.length + 1}`;
+      params.push(dateTo);
+    }
+    if (methodFilter) {
+      sql += ` AND ge.detection_method = $${params.length + 1}`;
+      params.push(methodFilter);
+    }
+    if (cursor) {
+      sql += ` AND ge.event_ts < $${params.length + 1}`;
+      params.push(cursor);
+    }
+
+    sql += ` ORDER BY ge.event_ts DESC LIMIT $${params.length + 1}`;
+    params.push(limit + 1);
+
+    const rows = await queryRows(sql, params);
+    const hasMore = rows.length > limit;
+    const rawData = hasMore ? rows.slice(0, limit) : rows;
+    const nextCursor = hasMore ? rawData[rawData.length - 1].event_ts.toISOString() : null;
+
+    const data = rawData.map(row => ({
+      id: row.id,
+      timestamp: row.event_ts,
+      gate_name: row.gate_name || 'Unknown',
+      method: row.detection_method,
+      plate: row.raw_value || '',
+      decision: row.access_decision,
+      direction: row.direction || 'entry',
+      resident_name: row.resident_name || '',
+      confidence: row.anpr_confidence,
+    }));
+
+    return success(res, data);
+  } catch (err) {
+    console.error('GET /events/my-unit error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
 // -- GET /reports/daily (JWT admin) ------------------------------------------
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
