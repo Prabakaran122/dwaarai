@@ -115,23 +115,33 @@ router.get('/vehicles', authenticateJWT(['resident', 'admin']), async (req, res)
 
     let sql, params;
     if (user.role === 'admin') {
-      sql = 'SELECT * FROM vehicles WHERE community_id = $1 AND is_active = true';
+      sql = `SELECT v.*,
+               (SELECT ge.event_ts FROM gate_events ge
+                WHERE ge.matched_vehicle_id = v.id
+                ORDER BY ge.event_ts DESC LIMIT 1) AS last_entry_at
+             FROM vehicles v
+             WHERE v.community_id = $1 AND v.is_active = true`;
       params = [community_id];
     } else {
-      sql = 'SELECT * FROM vehicles WHERE community_id = $1 AND unit_id = $2 AND is_active = true';
+      sql = `SELECT v.*,
+               (SELECT ge.event_ts FROM gate_events ge
+                WHERE ge.matched_vehicle_id = v.id
+                ORDER BY ge.event_ts DESC LIMIT 1) AS last_entry_at
+             FROM vehicles v
+             WHERE v.community_id = $1 AND v.unit_id = $2 AND v.is_active = true`;
       params = [community_id, user.unit_id];
     }
 
     if (plateSearch) {
-      sql += ` AND plate ILIKE $${params.length + 1}`;
+      sql += ` AND v.plate ILIKE $${params.length + 1}`;
       params.push(`%${plateSearch}%`);
     }
 
     if (cursor) {
-      sql += ` AND created_at < $${params.length + 1}`;
+      sql += ` AND v.created_at < $${params.length + 1}`;
       params.push(cursor);
     }
-    sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`;
+    sql += ` ORDER BY v.created_at DESC LIMIT $${params.length + 1}`;
     params.push(limit + 1);
 
     const rows = await queryRows(sql, params);
@@ -139,7 +149,7 @@ router.get('/vehicles', authenticateJWT(['resident', 'admin']), async (req, res)
     const data = hasMore ? rows.slice(0, limit) : rows;
     const nextCursor = hasMore ? data[data.length - 1].created_at.toISOString() : null;
 
-    return success(res, { vehicles: data, nextCursor });
+    return success(res, data);
   } catch (err) {
     console.error('GET /vehicles error:', err);
     return error(res, 'Internal server error', 500);
