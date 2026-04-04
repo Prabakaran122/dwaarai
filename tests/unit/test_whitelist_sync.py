@@ -29,8 +29,8 @@ class TestWhitelistSync:
             mock_cfg.OFFLINE_DB_PATH = wl_db
             _init_db()
         with sqlite3.connect(wl_db) as c:
-            c.execute("INSERT INTO whitelist VALUES(?,?,?,?,?)",
-                      ("KA05MF1234", None, "u301", "301", "Priya Sharma"))
+            c.execute("INSERT INTO whitelist VALUES(?,?,?,?,?,?)",
+                      ("KA05MF1234", None, None, "u301", "301", "Priya Sharma"))
         result = load_local(wl_db, "anpr", "KA05MF1234")
         assert result is not None
         assert result["unit_number"] == "301"
@@ -49,7 +49,7 @@ class TestWhitelistSync:
             mock_cfg.OFFLINE_DB_PATH = wl_db
             _init_db()
         with sqlite3.connect(wl_db) as c:
-            c.execute("INSERT INTO blacklist_cache VALUES(?,?)", ("DL01ZZ9999", None))
+            c.execute("INSERT INTO blacklist_cache VALUES(?,?,?)", ("DL01ZZ9999", None, None))
         assert is_blacklisted_local(wl_db, "anpr", "DL01ZZ9999") is True
         assert is_blacklisted_local(wl_db, "anpr", "KA05MF1234") is False
 
