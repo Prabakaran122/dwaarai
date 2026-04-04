@@ -12,6 +12,7 @@ import { useAuthStore } from '../store/authStore';
 
 export default function LoginScreen() {
   const login = useAuthStore((s) => s.login);
+  const setShowRegister = useAuthStore((s) => s.setShowRegister);
   const [phone, setPhone] = useState('');
   const [otpStep, setOtpStep] = useState<'phone' | 'otp'>('phone');
   const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
@@ -158,6 +159,9 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </>
           )}
+          <TouchableOpacity onPress={() => setShowRegister(true)} style={styles.changeLink}>
+            <Text style={styles.registerLinkText}>First time? Register with community code</Text>
+          </TouchableOpacity>
         </GlowCard>
       </AnimatedEntry>
     </LinearGradient>
@@ -191,4 +195,5 @@ const styles = StyleSheet.create({
   digitInput: { fontSize: 24, fontWeight: '800', color: colors.textPrimary, width: '100%', height: '100%', textAlign: 'center' },
   changeLink: { alignItems: 'center', marginTop: spacing.lg },
   changeLinkText: { color: colors.textSecondary, fontSize: 14 },
+  registerLinkText: { color: colors.success, fontSize: 14, fontWeight: '500' },
 });
