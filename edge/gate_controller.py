@@ -21,12 +21,7 @@ if cfg.USE_C3_MOCK:
 else:
     from edge.c3_controller import C3Controller as C3Impl
 
-# ── Camera: mock or real ─────────────────────────────────────────────
-if cfg.USE_CAMERA_MOCK:
-    from edge.emulators.camera_mock import CameraMock as CameraImpl
-    log.warning("CAMERA MOCK active")
-else:
-    from edge.anpr_client import ANPRClient as CameraImpl
+from edge.anpr_receiver import ANPRReceiver
 
 import paho.mqtt.client as mqtt
 import requests
@@ -184,6 +179,20 @@ def handle_anpr_detection(plate: str, confidence: float = None):
                  "anpr_confidence": confidence, "is_offline_event": not _online,
                  "event_ts": time.time()})
 
+# ── ANPR camera event handler ─────────────────────────────────────────
+def _handle_anpr_event(plate: str, confidence: float = None):
+    """Called when ANPR camera sends a plate event via HTTP."""
+    if cfg.GATE_TYPE == "exit":
+        # Exit gate: just log for audit
+        log.info(f"EXIT audit: plate={plate}")
+        _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
+                     "detection_method": "anpr", "raw_value": plate,
+                     "access_decision": "allow", "anpr_confidence": confidence,
+                     "is_offline_event": not _online, "event_ts": time.time()})
+    else:
+        # Entry gate: run through correlation logic
+        handle_anpr_detection(plate, confidence)
+
 # ── MQTT (gate commands from admin portal) ────────────────────────────
 def _on_command(client, userdata, msg):
     try:
@@ -234,22 +243,13 @@ def main():
     log.info(f"CommunityGate starting — gate={cfg.GATE_ID} type={cfg.GATE_TYPE}")
     start_mqtt()
 
+    # Start ANPR camera event receiver (listens for HTTP POST from any ANPR camera)
+    anpr = ANPRReceiver(port=cfg.ANPR_RECEIVER_PORT, on_plate_callback=_handle_anpr_event)
+    anpr.start()
+
     if cfg.GATE_TYPE == "exit":
-        log.info("EXIT gate mode — camera audit only")
+        log.info("EXIT gate mode — ANPR audit only, no C3")
         start_sync()
-        if cfg.USE_CAMERA_MOCK:
-            cam = CameraImpl(anpr_url=cfg.ANPR_SERVICE_URL,
-                             plates_dir=cfg.MOCK_CAMERA_PLATE_DIR,
-                             interval=cfg.MOCK_CAMERA_INTERVAL)
-        else:
-            cam = CameraImpl(rtsp_url=os.environ["RTSP_CAMERA_URL"],
-                             anpr_url=cfg.ANPR_SERVICE_URL)
-        cam.start(on_detection=lambda r:
-            _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
-                         "detection_method": "anpr", "raw_value": r.get("plate", ""),
-                         "access_decision": "allow", "anpr_confidence": r.get("confidence"),
-                         "is_offline_event": not _online, "event_ts": time.time()})
-            if r.get("plate") else None)
     else:
         # Entry gate: C3 controller + ANPR
         _c3 = C3Impl(ip=cfg.C3_IP, port=cfg.C3_PORT,
@@ -265,23 +265,11 @@ def main():
         threading.Thread(target=_c3_poll_loop, daemon=True).start()
         log.info(f"C3 event poller started (interval={cfg.C3_POLL_INTERVAL}s)")
 
-        # Start ANPR camera (async)
-        if cfg.USE_CAMERA_MOCK:
-            cam = CameraImpl(anpr_url=cfg.ANPR_SERVICE_URL,
-                             plates_dir=cfg.MOCK_CAMERA_PLATE_DIR,
-                             interval=cfg.MOCK_CAMERA_INTERVAL)
-        else:
-            cam = CameraImpl(rtsp_url=os.environ["RTSP_CAMERA_URL"],
-                             anpr_url=cfg.ANPR_SERVICE_URL)
-        cam.start(on_detection=lambda r:
-            handle_anpr_detection(r["plate"], r.get("confidence"))
-            if r.get("plate") and r.get("confidence", 0) >= cfg.ANPR_THRESHOLD else None)
-
     log.info("Gate controller running. CTRL+C to stop.")
     try:
         while True: time.sleep(1)
     except KeyboardInterrupt:
-        if 'cam' in dir(): cam.stop()
+        anpr.stop()
         if _c3: _c3.disconnect()
         if _mqtt_client: _mqtt_client.loop_stop()
 

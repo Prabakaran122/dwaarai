@@ -35,19 +35,10 @@ class Config:
     WHITELIST_SYNC_INTERVAL: int = int(os.getenv("WHITELIST_SYNC_INTERVAL_SECONDS","300"))
     HEARTBEAT_INTERVAL: int = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS","60"))
 
-    # ANPR
-    ANPR_SERVICE_URL: str   = os.getenv("ANPR_SERVICE_URL", "http://localhost:8001")
-    ANPR_THRESHOLD:   float = float(os.getenv("ANPR_CONFIDENCE_THRESHOLD","0.75"))
-    ANPR_CAPTURE_INTERVAL: float = float(os.getenv("ANPR_CAPTURE_INTERVAL_SECONDS", "1.0"))
-    ANPR_MOTION_THRESHOLD: float = float(os.getenv("ANPR_MOTION_THRESHOLD", "5000"))
-    ANPR_COOLDOWN:    float = float(os.getenv("ANPR_COOLDOWN_SECONDS", "8"))
+    # ANPR camera event receiver (camera POSTs plate events to this port)
+    ANPR_RECEIVER_PORT: int = int(os.getenv("ANPR_RECEIVER_PORT", "8001"))
 
     # ANPR correlation
     FASTAG_CORRELATION_WINDOW: float = float(os.getenv("FASTAG_CORRELATION_WINDOW_SECONDS", "5"))
-
-    # Camera mock
-    USE_CAMERA_MOCK: bool = os.getenv("USE_CAMERA_MOCK", "true").lower()=="true"
-    MOCK_CAMERA_INTERVAL: float = float(os.getenv("MOCK_CAMERA_INTERVAL_SECONDS","4"))
-    MOCK_CAMERA_PLATE_DIR: str  = os.getenv("MOCK_CAMERA_PLATE_DIR","scripts/test_plates")
 
 cfg = Config()
