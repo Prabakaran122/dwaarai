@@ -8,6 +8,7 @@ export interface Vehicle {
   model: string;
   type: string;
   rfidTag?: string;
+  fastagTidHash?: string;
   createdAt: string;
 }
 

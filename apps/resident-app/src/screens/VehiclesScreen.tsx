@@ -75,11 +75,16 @@ export default function VehiclesScreen() {
                     <Text style={styles.vehicleDetail}>{item.make} {item.model}</Text>
                   </View>
                   <View style={styles.vehicleMeta}>
-                    <View style={[styles.rfidPill, { backgroundColor: item.rfidTag ? colors.successBg : colors.surface }]}>
-                      <Text style={[styles.rfidText, { color: item.rfidTag ? colors.success : colors.textMuted }]}>
-                        {item.rfidTag ? 'RFID' : 'No RFID'}
-                      </Text>
-                    </View>
+                    {item.fastagTidHash ? (
+                      <View style={[styles.rfidPill, { backgroundColor: 'rgba(6,182,212,0.15)' }]}>
+                        <MaterialCommunityIcons name="car-wireless" size={12} color="#06b6d4" />
+                        <Text style={[styles.rfidText, { color: '#06b6d4' }]}> FASTag</Text>
+                      </View>
+                    ) : (
+                      <View style={[styles.rfidPill, { backgroundColor: colors.surface }]}>
+                        <Text style={[styles.rfidText, { color: colors.textMuted }]}>No FASTag</Text>
+                      </View>
+                    )}
                     <Text style={styles.vehicleType}>{item.type}</Text>
                   </View>
                 </View>
