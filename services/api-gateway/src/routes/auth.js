@@ -44,6 +44,17 @@ const adminLoginSchema = z.object({
   password: z.string().min(1).max(200),
 });
 
+const residentRegisterSchema = z.object({
+  community_code: z.string().min(1).max(20),
+  phone: z.string().min(10).max(15),
+  unit_number: z.string().min(1).max(30),
+});
+
+const residentRegisterVerifySchema = z.object({
+  phone: z.string().min(10).max(15),
+  otp: z.string().length(6),
+});
+
 // -- Helper: sign JWT ---------------------------------------------------------
 
 function signToken(payload) {
@@ -224,6 +235,145 @@ router.post('/auth/resident-verify', loginLimiter, async (req, res) => {
     });
   } catch (err) {
     console.error('POST /auth/resident-verify error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- POST /auth/resident-register -------------------------------------------
+
+router.post('/auth/resident-register', loginLimiter, async (req, res) => {
+  try {
+    const parsed = residentRegisterSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return error(res, 'Validation error', 400, parsed.error.issues);
+    }
+
+    const { community_code, phone, unit_number } = parsed.data;
+
+    // Find community by invite_code (case-insensitive)
+    const community = await queryOne(
+      'SELECT id, name FROM communities WHERE invite_code = $1 AND is_active = true',
+      [community_code.toUpperCase()]
+    );
+    if (!community) {
+      return error(res, 'Invalid community code', 400);
+    }
+
+    // Find unit in community
+    const unit = await queryOne(
+      'SELECT id, unit_number, block_id FROM units WHERE community_id = $1 AND unit_number = $2',
+      [community.id, unit_number]
+    );
+    if (!unit) {
+      return error(res, 'Unit not found in this community', 400);
+    }
+
+    // Check phone not already registered
+    const existing = await queryOne(
+      'SELECT id FROM residents WHERE community_id = $1 AND mobile = $2 AND is_active = true',
+      [community.id, phone]
+    );
+    if (existing) {
+      return error(res, 'Phone number already registered', 409);
+    }
+
+    // Generate 6-digit OTP
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+
+    // Store registration data in Redis with 5-minute TTL
+    const redis = getRedisClient();
+    await redis.set(
+      `reg:${phone}`,
+      JSON.stringify({
+        otp,
+        community_id: community.id,
+        community_name: community.name,
+        unit_id: unit.id,
+        unit_number: unit.unit_number,
+      }),
+      'EX',
+      300
+    );
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[DEV] Registration OTP for ${phone}: ${otp}`);
+    }
+
+    return success(res, { message: 'OTP sent', communityName: community.name });
+  } catch (err) {
+    console.error('POST /auth/resident-register error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- POST /auth/resident-register-verify ------------------------------------
+
+router.post('/auth/resident-register-verify', loginLimiter, async (req, res) => {
+  try {
+    const parsed = residentRegisterVerifySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return error(res, 'Validation error', 400, parsed.error.issues);
+    }
+
+    const { phone, otp } = parsed.data;
+
+    // Retrieve registration data from Redis
+    const redis = getRedisClient();
+    const raw = await redis.get(`reg:${phone}`);
+    if (!raw) {
+      return error(res, 'Invalid or expired OTP', 401);
+    }
+
+    const regData = JSON.parse(raw);
+    if (regData.otp !== otp) {
+      return error(res, 'Invalid or expired OTP', 401);
+    }
+
+    // Delete Redis key after successful verification
+    await redis.del(`reg:${phone}`);
+
+    const { community_id, community_name, unit_id, unit_number } = regData;
+
+    // Double-check no duplicate resident was created in the meantime
+    const duplicate = await queryOne(
+      'SELECT id FROM residents WHERE community_id = $1 AND mobile = $2 AND is_active = true',
+      [community_id, phone]
+    );
+    if (duplicate) {
+      return error(res, 'Phone number already registered', 409);
+    }
+
+    // Create the resident record
+    const resident = await queryOne(
+      `INSERT INTO residents (community_id, unit_id, name, mobile, type, is_primary)
+       VALUES ($1, $2, 'Resident', $3, 'owner', false)
+       RETURNING id, community_id, unit_id, name, mobile`,
+      [community_id, unit_id, phone]
+    );
+
+    const token = signToken({
+      sub: resident.id,
+      role: 'resident',
+      community_id: resident.community_id,
+      unit_id: resident.unit_id,
+      name: resident.name,
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        token,
+        user: {
+          id: resident.id,
+          name: resident.name,
+          phone: resident.mobile,
+          unitNumber: unit_number,
+          communityName: community_name,
+        },
+      },
+    });
+  } catch (err) {
+    console.error('POST /auth/resident-register-verify error:', err);
     return error(res, 'Internal server error', 500);
   }
 });
