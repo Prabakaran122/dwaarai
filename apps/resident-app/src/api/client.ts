@@ -74,4 +74,15 @@ export const revokePass = (id: string) => api.delete(`/passes/${id}`);
 export const getMyUnitEvents = (params?: Record<string, string>) =>
   api.get('/events/my-unit', { params });
 
+// Notifications
+export const registerFCMToken = (fcm_token: string) =>
+  api.post('/notifications/register', { fcm_token });
+
+export const unregisterFCMToken = () =>
+  api.post('/notifications/unregister');
+
+// Gate commands (for notification actions)
+export const sendGateCommand = (gateId: string, action: string) =>
+  api.post(`/gates/${gateId}/command`, { action });
+
 export default api;
