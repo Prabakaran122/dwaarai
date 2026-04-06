@@ -11,7 +11,12 @@ import { isConfigured as msg91Configured, sendOTP as msg91Send, verifyOTP as msg
 const router = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'test' ? 'test-only-secret' : '');
-const TOKEN_EXPIRY = '24h';
+const TOKEN_EXPIRY = '1h';
+const REFRESH_EXPIRY = '30d';
+
+function signRefreshToken(userId) {
+  return jwt.sign({ sub: userId, type: 'refresh' }, JWT_SECRET, { expiresIn: REFRESH_EXPIRY });
+}
 
 // -- Rate limiters for login endpoints ----------------------------------------
 
@@ -103,8 +108,10 @@ router.post('/auth/guard-login', loginLimiter, async (req, res) => {
           name: 'Dev Guard',
         });
 
+        const refreshToken = signRefreshToken('00000000-0000-0000-0000-000000000000');
         return success(res, {
           token,
+          refreshToken,
           user: {
             name: 'Dev Guard',
             role: 'guard',
@@ -126,8 +133,10 @@ router.post('/auth/guard-login', loginLimiter, async (req, res) => {
       name: guard.name,
     });
 
+    const refreshToken = signRefreshToken(guard.id);
     return success(res, {
       token,
+      refreshToken,
       user: {
         name: guard.name,
         role: 'guard',
@@ -224,8 +233,10 @@ router.post('/auth/resident-verify', loginLimiter, async (req, res) => {
       name: resident.name,
     });
 
+    const refreshToken = signRefreshToken(resident.id);
     return success(res, {
       token,
+      refreshToken,
       user: {
         id: resident.id,
         name: resident.name,
@@ -378,10 +389,12 @@ router.post('/auth/resident-register-verify', loginLimiter, async (req, res) => 
       name: resident.name,
     });
 
+    const refreshToken = signRefreshToken(resident.id);
     return res.status(201).json({
       success: true,
       data: {
         token,
+        refreshToken,
         user: {
           id: resident.id,
           name: resident.name,
@@ -393,6 +406,72 @@ router.post('/auth/resident-register-verify', loginLimiter, async (req, res) => 
     });
   } catch (err) {
     console.error('POST /auth/resident-register-verify error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- POST /auth/refresh -------------------------------------------------------
+
+router.post('/auth/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return error(res, 'Refresh token required', 400);
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, JWT_SECRET);
+    } catch {
+      return error(res, 'Invalid or expired refresh token', 401);
+    }
+
+    if (decoded.type !== 'refresh') {
+      return error(res, 'Invalid token type', 401);
+    }
+
+    // Look up user by ID to get current data
+    const resident = await queryOne(
+      `SELECT r.id, r.community_id, r.unit_id, r.name, r.mobile, r.type,
+              u.unit_number
+       FROM residents r
+       LEFT JOIN units u ON r.unit_id = u.id
+       WHERE r.id = $1 AND r.is_active = true`,
+      [decoded.sub]
+    );
+
+    if (resident) {
+      const token = signToken({
+        sub: resident.id,
+        role: resident.type === 'guard' ? 'guard' : 'resident',
+        community_id: resident.community_id,
+        unit_id: resident.unit_id,
+        name: resident.name,
+      });
+      const newRefreshToken = signRefreshToken(resident.id);
+      return success(res, { token, refreshToken: newRefreshToken });
+    }
+
+    // Try admins table
+    const admin = await queryOne(
+      'SELECT id, name, role, community_id FROM admins WHERE id = $1 AND is_active = true',
+      [decoded.sub]
+    );
+
+    if (admin) {
+      const token = signToken({
+        sub: admin.id,
+        role: admin.role,
+        community_id: admin.community_id || null,
+        name: admin.name,
+      });
+      const newRefreshToken = signRefreshToken(admin.id);
+      return success(res, { token, refreshToken: newRefreshToken });
+    }
+
+    return error(res, 'User not found', 404);
+  } catch (err) {
+    console.error('POST /auth/refresh error:', err);
     return error(res, 'Internal server error', 500);
   }
 });
@@ -429,8 +508,10 @@ router.post('/auth/admin-login', loginLimiter, async (req, res) => {
       name: admin.name,
     });
 
+    const refreshToken = signRefreshToken(admin.id);
     return success(res, {
       token,
+      refreshToken,
       user: {
         id: admin.id,
         name: admin.name,
