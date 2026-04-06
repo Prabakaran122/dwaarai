@@ -70,8 +70,8 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       const res = await verifyOTP(phone.trim(), otp);
-      const { token, user } = res.data.data;
-      login(token, user);
+      const { token, user, refreshToken } = res.data.data;
+      login(token, user, refreshToken);
     } catch (err: any) {
       const msg = err?.response?.data?.error?.message || err?.response?.data?.error || 'Invalid or expired OTP';
       setErrorMsg(typeof msg === 'string' ? msg : 'Invalid or expired OTP');

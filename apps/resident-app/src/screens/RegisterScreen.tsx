@@ -79,8 +79,8 @@ export default function RegisterScreen() {
     setLoading(true);
     try {
       const res = await verifyRegistration(phone.trim(), otp);
-      const { token, user } = res.data.data;
-      login(token, { ...user, communityName });
+      const { token, user, refreshToken } = res.data.data;
+      login(token, { ...user, communityName }, refreshToken);
     } catch (err: any) {
       const msg = err?.response?.data?.error?.message || err?.response?.data?.error || 'Invalid or expired OTP';
       setErrorMsg(typeof msg === 'string' ? msg : 'Invalid or expired OTP');
