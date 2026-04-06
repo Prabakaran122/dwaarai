@@ -1,102 +1,82 @@
-let admin = null;
-let initialized = false;
+/**
+ * Push notifications via Expo Push API.
+ * Works for both Android (FCM) and iOS (APNs) — Expo handles routing.
+ * No Firebase project, no Apple certificates needed.
+ * Free for all Expo accounts.
+ */
 
-async function getApp() {
-  if (initialized) return admin;
-  initialized = true;
+const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
-  const credJson = process.env.FIREBASE_SERVICE_ACCOUNT;
-  const credPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
-
-  if (!credJson && !credPath) {
-    console.log('[FCM] No Firebase credentials configured — notifications will be logged only');
-    return null;
-  }
-
+async function sendExpoPush(messages) {
   try {
-    const firebaseAdmin = await import('firebase-admin');
-    const credential = credJson
-      ? firebaseAdmin.default.credential.cert(JSON.parse(credJson))
-      : firebaseAdmin.default.credential.cert(credPath);
-    admin = firebaseAdmin.default.initializeApp({ credential });
-    console.log('[FCM] Firebase Admin initialized');
-    return admin;
+    const res = await fetch(EXPO_PUSH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(messages),
+      signal: AbortSignal.timeout(10000),
+    });
+    const data = await res.json();
+    return data;
   } catch (err) {
-    console.error('[FCM] Firebase init failed:', err.message);
+    console.error('[Push] Expo Push API error:', err.message);
     return null;
   }
-}
-
-export function isConfigured() {
-  return !!(process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_PATH);
 }
 
 export async function sendNotification(token, title, body, data = {}) {
-  const app = await getApp();
-  if (!app) {
-    console.log(`[FCM-DEV] Push: "${title}" — "${body}" → token:${token?.slice(0, 20)}...`);
+  if (!token || !token.startsWith('ExponentPushToken[')) {
+    console.log(`[Push-DEV] "${title}" — "${body}" → token:${token?.slice(0, 30)}...`);
     return null;
   }
 
-  try {
-    const { getMessaging } = await import('firebase-admin/messaging');
-    const result = await getMessaging().send({
-      token,
-      notification: { title, body },
-      data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
-      android: {
-        priority: 'high',
-        notification: {
-          channelId: 'communitygate',
-          priority: 'high',
-        },
-      },
-    });
-    return result;
-  } catch (err) {
-    console.error(`[FCM] Send failed for token ${token?.slice(0, 20)}:`, err.message);
-    return null;
-  }
+  const result = await sendExpoPush([{
+    to: token,
+    title,
+    body,
+    data,
+    sound: 'default',
+    priority: 'high',
+    channelId: 'communitygate',
+  }]);
+  return result;
 }
 
 export async function sendVisitorAlert(token, visitorName, gateId) {
-  const app = await getApp();
-  if (!app) {
-    console.log(`[FCM-DEV] Visitor alert: "${visitorName}" → token:${token?.slice(0, 20)}...`);
+  if (!token || !token.startsWith('ExponentPushToken[')) {
+    console.log(`[Push-DEV] Visitor alert: "${visitorName}" → token:${token?.slice(0, 30)}...`);
     return null;
   }
 
-  try {
-    const { getMessaging } = await import('firebase-admin/messaging');
-    const result = await getMessaging().send({
-      token,
-      notification: {
-        title: 'Visitor at Gate',
-        body: `${visitorName} is at the gate — approve entry?`,
-      },
-      data: {
-        type: 'visitor_alert',
-        gate_id: gateId,
-        visitor_name: visitorName,
-      },
-      android: {
-        priority: 'high',
-        notification: {
-          channelId: 'communitygate',
-          priority: 'high',
-        },
-      },
-    });
-    return result;
-  } catch (err) {
-    console.error(`[FCM] Visitor alert failed for token ${token?.slice(0, 20)}:`, err.message);
-    return null;
-  }
+  const result = await sendExpoPush([{
+    to: token,
+    title: 'Visitor at Gate',
+    body: `${visitorName} is at the gate — approve entry?`,
+    data: { type: 'visitor_alert', gate_id: gateId, visitor_name: visitorName },
+    sound: 'default',
+    priority: 'high',
+    channelId: 'communitygate',
+    categoryId: 'visitor_alert',
+  }]);
+  return result;
 }
 
 export async function sendToMultiple(tokens, title, body, data = {}) {
-  const results = await Promise.allSettled(
-    tokens.map((t) => sendNotification(t, title, body, data))
-  );
-  return results.filter((r) => r.status === 'fulfilled' && r.value).length;
+  const validTokens = tokens.filter((t) => t && t.startsWith('ExponentPushToken['));
+  if (validTokens.length === 0) {
+    console.log(`[Push-DEV] "${title}" — "${body}" → ${tokens.length} tokens (none valid)`);
+    return 0;
+  }
+
+  const messages = validTokens.map((token) => ({
+    to: token,
+    title,
+    body,
+    data,
+    sound: 'default',
+    priority: 'high',
+    channelId: 'communitygate',
+  }));
+
+  const result = await sendExpoPush(messages);
+  return result ? validTokens.length : 0;
 }
