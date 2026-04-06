@@ -12,6 +12,7 @@ import VehiclesScreen from '../src/screens/VehiclesScreen';
 import VisitorsScreen from '../src/screens/VisitorsScreen';
 import ActivityScreen from '../src/screens/ActivityScreen';
 import ProfileScreen from '../src/screens/ProfileScreen';
+import { registerForPushNotifications, setupNotificationListeners } from '../src/lib/notifications';
 
 type TabKey = 'home' | 'visitors' | 'vehicles' | 'activity' | 'profile';
 
@@ -61,6 +62,12 @@ function ResidentApp() {
       setTab(target as TabKey);
     }
   };
+
+  useEffect(() => {
+    registerForPushNotifications();
+    const cleanup = setupNotificationListeners();
+    return cleanup;
+  }, []);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bgPrimary }}>

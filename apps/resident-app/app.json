@@ -5,7 +5,11 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "platforms": ["android", "ios", "web"],
-    "android": { "package": "com.communitygate.resident" },
-    "ios": { "bundleIdentifier": "com.communitygate.resident" }
+    "android": {
+      "package": "com.communitygate.resident",
+      "googleServicesFile": "./google-services.json"
+    },
+    "ios": { "bundleIdentifier": "com.communitygate.resident" },
+    "plugins": ["expo-notifications"]
   }
 }
