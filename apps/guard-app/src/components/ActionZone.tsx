@@ -137,7 +137,7 @@ export default function ActionZone() {
             <GradientButton title="Approve" icon="check-circle" variant="success" onPress={handleApprove} loading={actionLoading} />
             <GradientButton title="Deny" icon="close-circle" variant="danger" onPress={handleDeny} loading={actionLoading} />
             {showRegisterButton && !showRegister && (
-              <GradientButton title="Approve + Register" icon="car-plus" variant="primary" onPress={() => setShowRegister(true)} />
+              <GradientButton title="Approve + Register" icon="plus-circle" variant="primary" onPress={() => setShowRegister(true)} />
             )}
           </View>
 

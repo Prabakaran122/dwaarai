@@ -11,6 +11,7 @@ interface VehicleCardProps {
 const METHOD_LABELS: Record<QueueEntry['method'], string> = {
   anpr: 'ANPR',
   rfid: 'RFID',
+  fastag: 'FASTag',
   otp: 'OTP',
   manual: 'Manual',
 };
