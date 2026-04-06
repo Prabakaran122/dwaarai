@@ -24,8 +24,8 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       const res = await apiLogin(username.trim(), password);
-      const { token, user } = res.data.data;
-      login(token, user);
+      const { token, user, refreshToken } = res.data.data;
+      login(token, user, refreshToken);
     } catch (err: any) {
       const msg = err?.response?.data?.error?.message || err?.response?.data?.error || 'Login failed';
       setErrorMsg(typeof msg === 'string' ? msg : 'Login failed');
