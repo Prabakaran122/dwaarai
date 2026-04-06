@@ -60,4 +60,11 @@ export const registerVehicleAtGate = (data: {
   fastag_tid_hash?: string;
 }) => api.post('/vehicles/register-at-gate', data);
 
+// Notifications
+export const notifyResident = (data: {
+  visitor_name: string;
+  unit_number: string;
+  gate_id: string;
+}) => api.post('/notifications/visitor-alert', data);
+
 export default api;

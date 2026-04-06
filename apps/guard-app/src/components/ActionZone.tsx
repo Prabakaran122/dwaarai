@@ -10,7 +10,7 @@ import IconBadge from './IconBadge';
 import AnimatedEntry from './AnimatedEntry';
 import { useQueueStore, selectPendingEntries, type QueueEntry } from '../store/queueStore';
 import { useAuthStore } from '../store/authStore';
-import { sendGateCommand, registerVehicleAtGate } from '../api/client';
+import { sendGateCommand, registerVehicleAtGate, notifyResident } from '../api/client';
 
 const methodIcons: Record<string, { icon: string; color: string; gradient: readonly [string, string] }> = {
   anpr: { icon: 'camera', color: '#3b82f6', gradient: ['rgba(99,102,241,0.3)', 'rgba(139,92,246,0.1)'] },
@@ -27,6 +27,10 @@ export default function ActionZone() {
   const [showRegister, setShowRegister] = useState(false);
   const [unitNumber, setUnitNumber] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [showNotify, setShowNotify] = useState(false);
+  const [notifyName, setNotifyName] = useState('');
+  const [notifyUnit, setNotifyUnit] = useState('');
+  const [notifyLoading, setNotifyLoading] = useState(false);
 
   const pending = selectPendingEntries(entries);
   const current = pending[0] || null;
@@ -75,6 +79,26 @@ export default function ActionZone() {
       Alert.alert('Error', err?.response?.data?.error || 'Registration failed');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleNotifyResident = async () => {
+    if (!notifyName.trim() || !notifyUnit.trim() || !gateId) return;
+    setNotifyLoading(true);
+    try {
+      await notifyResident({
+        visitor_name: notifyName.trim(),
+        unit_number: notifyUnit.trim(),
+        gate_id: gateId,
+      });
+      Alert.alert('Sent', 'Resident has been notified');
+      setShowNotify(false);
+      setNotifyName('');
+      setNotifyUnit('');
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.error?.message || 'Failed to notify resident');
+    } finally {
+      setNotifyLoading(false);
     }
   };
 
@@ -140,6 +164,41 @@ export default function ActionZone() {
               <GradientButton title="Approve + Register" icon="plus-circle" variant="primary" onPress={() => setShowRegister(true)} />
             )}
           </View>
+
+          {/* Notify Resident */}
+          {!showRegister && !showNotify && (
+            <GradientButton title="Notify Resident" icon="bell-ring" variant="primary" onPress={() => setShowNotify(true)} />
+          )}
+
+          {showNotify && (
+            <AnimatedEntry direction="fade" duration={200}>
+              <View style={styles.registerForm}>
+                <Text style={styles.registerLabel}>NOTIFY RESIDENT</Text>
+                <TextInput
+                  style={styles.registerInput}
+                  placeholder="Visitor name"
+                  placeholderTextColor={colors.textMuted}
+                  value={notifyName}
+                  onChangeText={setNotifyName}
+                />
+                <TextInput
+                  style={styles.registerInput}
+                  placeholder="Unit number"
+                  placeholderTextColor={colors.textMuted}
+                  value={notifyUnit}
+                  onChangeText={setNotifyUnit}
+                />
+                <View style={styles.registerActions}>
+                  <View style={{ flex: 1 }}>
+                    <GradientButton title="Cancel" variant="danger" onPress={() => { setShowNotify(false); setNotifyName(''); setNotifyUnit(''); }} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <GradientButton title="Send" icon="bell-ring" variant="success" onPress={handleNotifyResident} loading={notifyLoading} disabled={!notifyName.trim() || !notifyUnit.trim()} />
+                  </View>
+                </View>
+              </View>
+            </AnimatedEntry>
+          )}
 
           {showRegister && (
             <AnimatedEntry direction="fade" duration={200}>
