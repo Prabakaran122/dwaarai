@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import { queryOne } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { getRedisClient } from '../db/redis.js';
+import { isConfigured as msg91Configured, sendOTP as msg91Send, verifyOTP as msg91Verify } from '../lib/msg91.js';
 
 const router = Router();
 
@@ -160,16 +161,12 @@ router.post('/auth/resident-otp', loginLimiter, async (req, res) => {
       return success(res, { message: 'OTP sent' });
     }
 
-    // Generate 6-digit OTP
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
-
-    // Store in Redis with 5-minute TTL
-    const redis = getRedisClient();
-    await redis.set(`otp:${phone}`, otp, 'EX', 300);
-
-    // In production, send OTP via SMS (Twilio, SNS, etc.)
-    // For dev, log it
-    if (process.env.NODE_ENV !== 'production') {
+    if (msg91Configured()) {
+      await msg91Send(phone);
+    } else {
+      const otp = String(Math.floor(100000 + Math.random() * 900000));
+      const redis = getRedisClient();
+      await redis.set(`otp:${phone}`, otp, 'EX', 300);
       console.log(`[DEV] OTP for ${phone}: ${otp}`);
     }
 
@@ -191,16 +188,19 @@ router.post('/auth/resident-verify', loginLimiter, async (req, res) => {
 
     const { phone, otp } = parsed.data;
 
-    // Retrieve OTP from Redis
-    const redis = getRedisClient();
-    const storedOtp = await redis.get(`otp:${phone}`);
-
-    if (!storedOtp || storedOtp !== otp) {
-      return error(res, 'Invalid or expired OTP', 401);
+    let otpValid = false;
+    if (msg91Configured()) {
+      otpValid = await msg91Verify(phone, otp);
+    } else {
+      const redis = getRedisClient();
+      const storedOtp = await redis.get(`otp:${phone}`);
+      otpValid = !!(storedOtp && storedOtp === otp);
+      if (otpValid) await redis.del(`otp:${phone}`);
     }
 
-    // Delete OTP after successful verification
-    await redis.del(`otp:${phone}`);
+    if (!otpValid) {
+      return error(res, 'Invalid or expired OTP', 401);
+    }
 
     // Look up resident
     const resident = await queryOne(
@@ -277,25 +277,35 @@ router.post('/auth/resident-register', loginLimiter, async (req, res) => {
       return error(res, 'Phone number already registered', 409);
     }
 
-    // Generate 6-digit OTP
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
-
-    // Store registration data in Redis with 5-minute TTL
+    // Store registration context in Redis (WITHOUT OTP when using MSG91)
     const redis = getRedisClient();
-    await redis.set(
-      `reg:${phone}`,
-      JSON.stringify({
-        otp,
-        community_id: community.id,
-        community_name: community.name,
-        unit_id: unit.id,
-        unit_number: unit.unit_number,
-      }),
-      'EX',
-      300
-    );
-
-    if (process.env.NODE_ENV !== 'production') {
+    if (msg91Configured()) {
+      await redis.set(
+        `reg:${phone}`,
+        JSON.stringify({
+          community_id: community.id,
+          community_name: community.name,
+          unit_id: unit.id,
+          unit_number: unit.unit_number,
+        }),
+        'EX',
+        300
+      );
+      await msg91Send(phone);
+    } else {
+      const otp = String(Math.floor(100000 + Math.random() * 900000));
+      await redis.set(
+        `reg:${phone}`,
+        JSON.stringify({
+          otp,
+          community_id: community.id,
+          community_name: community.name,
+          unit_id: unit.id,
+          unit_number: unit.unit_number,
+        }),
+        'EX',
+        300
+      );
       console.log(`[DEV] Registration OTP for ${phone}: ${otp}`);
     }
 
@@ -317,7 +327,7 @@ router.post('/auth/resident-register-verify', loginLimiter, async (req, res) => 
 
     const { phone, otp } = parsed.data;
 
-    // Retrieve registration data from Redis
+    // Retrieve registration context from Redis
     const redis = getRedisClient();
     const raw = await redis.get(`reg:${phone}`);
     if (!raw) {
@@ -325,7 +335,16 @@ router.post('/auth/resident-register-verify', loginLimiter, async (req, res) => 
     }
 
     const regData = JSON.parse(raw);
-    if (regData.otp !== otp) {
+
+    // Verify OTP via MSG91 or Redis fallback
+    let otpValid = false;
+    if (msg91Configured()) {
+      otpValid = await msg91Verify(phone, otp);
+    } else {
+      otpValid = !!(regData.otp && regData.otp === otp);
+    }
+
+    if (!otpValid) {
       return error(res, 'Invalid or expired OTP', 401);
     }
 
