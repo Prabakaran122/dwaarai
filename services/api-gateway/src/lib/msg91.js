@@ -1,5 +1,3 @@
-import axios from 'axios';
-
 const MSG91_BASE = 'https://control.msg91.com/api/v5';
 const AUTH_KEY = process.env.MSG91_AUTH_KEY || '';
 const TEMPLATE_ID = process.env.MSG91_TEMPLATE_ID || '';
@@ -20,15 +18,17 @@ export function isConfigured() {
  */
 export async function sendOTP(phone) {
   const mobile = phone.startsWith('91') ? phone : `91${phone}`;
-  const res = await axios.post(
-    `${MSG91_BASE}/otp`,
-    { template_id: TEMPLATE_ID, mobile, otp_length: OTP_LENGTH },
-    { headers: { authkey: AUTH_KEY }, timeout: 10000 }
-  );
-  if (res.data?.type === 'error') {
-    throw new Error(res.data.message || 'MSG91 send failed');
+  const res = await fetch(`${MSG91_BASE}/otp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', authkey: AUTH_KEY },
+    body: JSON.stringify({ template_id: TEMPLATE_ID, mobile, otp_length: OTP_LENGTH }),
+    signal: AbortSignal.timeout(10000),
+  });
+  const data = await res.json();
+  if (data?.type === 'error') {
+    throw new Error(data.message || 'MSG91 send failed');
   }
-  return res.data;
+  return data;
 }
 
 /**
@@ -39,17 +39,17 @@ export async function sendOTP(phone) {
 export async function verifyOTP(phone, otp) {
   const mobile = phone.startsWith('91') ? phone : `91${phone}`;
   try {
-    const res = await axios.post(
-      `${MSG91_BASE}/otp/verify`,
-      { mobile, otp },
-      { headers: { authkey: AUTH_KEY }, timeout: 10000 }
-    );
-    return res.data?.type === 'success';
+    const res = await fetch(`${MSG91_BASE}/otp/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', authkey: AUTH_KEY },
+      body: JSON.stringify({ mobile, otp }),
+      signal: AbortSignal.timeout(10000),
+    });
+    const data = await res.json();
+    return data?.type === 'success';
   } catch (err) {
-    // MSG91 returns 4xx for invalid OTP — treat as verification failure, not error
-    if (err.response?.status >= 400 && err.response?.status < 500) {
-      return false;
-    }
-    throw err;
+    // Network errors should propagate, but treat HTTP errors as OTP failure
+    if (err.name === 'AbortError') throw err;
+    return false;
   }
 }
