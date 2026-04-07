@@ -24,6 +24,7 @@ function generateOTP(length = 6) {
 const createPassSchema = z.object({
   visitor_name: z.string().min(1).max(200),
   visitor_mobile: z.string().min(7).max(15).optional(),
+  visitor_vehicle: z.string().max(20).optional(),
   valid_from: z.string().datetime(),
   valid_until: z.string().datetime(),
   max_uses: z.number().int().min(1).default(1),
@@ -48,7 +49,7 @@ router.post('/passes', authenticateJWT(['resident']), async (req, res) => {
       return error(res, 'Validation error', 400, parsed.error.issues);
     }
 
-    const { visitor_name, visitor_mobile, valid_from, valid_until, max_uses } = parsed.data;
+    const { visitor_name, visitor_mobile, visitor_vehicle, valid_from, valid_until, max_uses } = parsed.data;
     const user = req.user;
     const community_id = user.community_id;
     const unit_id = user.unit_id;
@@ -58,10 +59,10 @@ router.post('/passes', authenticateJWT(['resident']), async (req, res) => {
 
     const pass = await queryOne(
       `INSERT INTO visitor_passes
-         (community_id, unit_id, created_by, visitor_name, visitor_mobile, otp, valid_from, valid_until, max_uses)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         (community_id, unit_id, created_by, visitor_name, visitor_mobile, visitor_vehicle, otp, valid_from, valid_until, max_uses)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [community_id, unit_id, created_by, visitor_name, visitor_mobile || null, otp, valid_from, valid_until, max_uses]
+      [community_id, unit_id, created_by, visitor_name, visitor_mobile || null, visitor_vehicle || null, otp, valid_from, valid_until, max_uses]
     );
 
     return success(res, pass, 201);
@@ -117,7 +118,7 @@ router.get('/passes', authenticateJWT(['resident', 'admin']), async (req, res) =
     const data = hasMore ? rows.slice(0, limit) : rows;
     const nextCursor = hasMore ? data[data.length - 1].created_at.toISOString() : null;
 
-    return success(res, { passes: data, nextCursor });
+    return success(res, data);
   } catch (err) {
     console.error('GET /passes error:', err);
     return error(res, 'Internal server error', 500);

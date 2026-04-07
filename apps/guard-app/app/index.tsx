@@ -1,17 +1,16 @@
 import React, { useEffect } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore } from '../src/store/authStore';
 import { useQueueStore, type QueueEntry } from '../src/store/queueStore';
 import { getSocket } from '../src/api/socket';
 import { colors } from '../src/theme/colors';
 import LoginScreen from '../src/screens/LoginScreen';
-import QueueScreen from '../src/screens/QueueScreen';
+import WorkstationScreen from '../src/screens/WorkstationScreen';
 
 function AuthenticatedApp() {
   const addEntry = useQueueStore((s) => s.addEntry);
 
-  // Listen for live gate events via Socket.io
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
@@ -77,7 +76,7 @@ function AuthenticatedApp() {
     };
   }, [addEntry]);
 
-  return <QueueScreen />;
+  return <WorkstationScreen />;
 }
 
 export default function Page() {
@@ -85,9 +84,7 @@ export default function Page() {
   const isLoading = useAuthStore((s) => s.isLoading);
   const rehydrate = useAuthStore((s) => s.rehydrate);
 
-  useEffect(() => {
-    rehydrate();
-  }, []);
+  useEffect(() => { rehydrate(); }, []);
 
   if (isLoading) {
     return (

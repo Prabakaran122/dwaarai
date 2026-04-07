@@ -8,6 +8,7 @@ import { authenticateJWT, authenticateDevice } from '../middleware/auth.js';
 import { deviceLimiter } from '../middleware/rateLimit.js';
 import { getCache, setCache, delCachePattern, getCacheStats } from '../db/redis.js';
 import { broadcast } from '../websocket.js';
+import { sendToMultiple } from '../lib/fcm.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -115,23 +116,33 @@ router.get('/vehicles', authenticateJWT(['resident', 'admin']), async (req, res)
 
     let sql, params;
     if (user.role === 'admin') {
-      sql = 'SELECT * FROM vehicles WHERE community_id = $1 AND is_active = true';
+      sql = `SELECT v.*,
+               (SELECT ge.event_ts FROM gate_events ge
+                WHERE ge.matched_vehicle_id = v.id
+                ORDER BY ge.event_ts DESC LIMIT 1) AS last_entry_at
+             FROM vehicles v
+             WHERE v.community_id = $1 AND v.is_active = true`;
       params = [community_id];
     } else {
-      sql = 'SELECT * FROM vehicles WHERE community_id = $1 AND unit_id = $2 AND is_active = true';
+      sql = `SELECT v.*,
+               (SELECT ge.event_ts FROM gate_events ge
+                WHERE ge.matched_vehicle_id = v.id
+                ORDER BY ge.event_ts DESC LIMIT 1) AS last_entry_at
+             FROM vehicles v
+             WHERE v.community_id = $1 AND v.unit_id = $2 AND v.is_active = true`;
       params = [community_id, user.unit_id];
     }
 
     if (plateSearch) {
-      sql += ` AND plate ILIKE $${params.length + 1}`;
+      sql += ` AND v.plate ILIKE $${params.length + 1}`;
       params.push(`%${plateSearch}%`);
     }
 
     if (cursor) {
-      sql += ` AND created_at < $${params.length + 1}`;
+      sql += ` AND v.created_at < $${params.length + 1}`;
       params.push(cursor);
     }
-    sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`;
+    sql += ` ORDER BY v.created_at DESC LIMIT $${params.length + 1}`;
     params.push(limit + 1);
 
     const rows = await queryRows(sql, params);
@@ -139,7 +150,7 @@ router.get('/vehicles', authenticateJWT(['resident', 'admin']), async (req, res)
     const data = hasMore ? rows.slice(0, limit) : rows;
     const nextCursor = hasMore ? data[data.length - 1].created_at.toISOString() : null;
 
-    return success(res, { vehicles: data, nextCursor });
+    return success(res, data);
   } catch (err) {
     console.error('GET /vehicles error:', err);
     return error(res, 'Internal server error', 500);
@@ -524,6 +535,19 @@ router.post('/access/check', authenticateDevice, deviceLimiter, async (req, res)
         accessDecision: 'allow', matchedUnitNumber: vehicle.unit_number,
         residentName: vehicle.resident_name, anprConfidence: confidence, eventTs: eventTs,
       });
+      // Fire-and-forget push notification to unit residents
+      if (vehicle.unit_id) {
+        queryRows(
+          'SELECT fcm_token FROM residents WHERE unit_id = $1 AND is_active = true AND fcm_token IS NOT NULL',
+          [vehicle.unit_id]
+        ).then((residents) => {
+          const tokens = residents.map((r) => r.fcm_token);
+          if (tokens.length > 0) {
+            const time = new Date(eventTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            sendToMultiple(tokens, 'Vehicle Entry', `Your ${lookupValue} entered Main Gate at ${time}`);
+          }
+        }).catch(() => {});
+      }
       return success(res, { ...allowResult, event_id: eventId });
     }
 
@@ -684,6 +708,18 @@ router.post('/vehicles/auto-pair', authenticateDevice, async (req, res) => {
       unitNumber: updated.unit_number || null,
       fastagTidHash: fastag_tid_hash,
     });
+    // Fire-and-forget push notification for FASTag pairing
+    if (updated.unit_id) {
+      queryRows(
+        'SELECT fcm_token FROM residents WHERE unit_id = $1 AND is_active = true AND fcm_token IS NOT NULL',
+        [updated.unit_id]
+      ).then((residents) => {
+        const tokens = residents.map((r) => r.fcm_token);
+        if (tokens.length > 0) {
+          sendToMultiple(tokens, 'FASTag Linked', `FASTag linked to ${normalizedPlate} — auto-entry active!`);
+        }
+      }).catch(() => {});
+    }
     return success(res, { vehicle: updated, auto_paired: true });
   } catch (err) {
     console.error('POST /vehicles/auto-pair error:', err);

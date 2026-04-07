@@ -73,11 +73,25 @@ def _try_auto_pair(tid_hash: str, plate: str):
     except Exception as e:
         log.warning(f"Auto-pair error: {e}")
 
+# ── Dedup window — suppress duplicate reads within 2 seconds ────────
+_last_read = {}  # card_number -> timestamp
+DEDUP_WINDOW = 2.0
+
 # ── C3 event poller ──────────────────────────────────────────────────
 def _process_c3_event(event: dict):
     """Handle a single event from C3 polling."""
     card = event["card_number"]
     etype = event["event_type"]
+
+    # Deduplicate: skip if same card read within DEDUP_WINDOW seconds
+    now = time.time()
+    if card in _last_read and (now - _last_read[card]) < DEDUP_WINDOW:
+        log.debug(f"Dedup: ignoring repeat read for {card[:12]}... ({now - _last_read[card]:.1f}s)")
+        return
+    _last_read[card] = now
+    # Clean old dedup entries periodically
+    for k in [k for k, ts in _last_read.items() if now - ts > 30]:
+        del _last_read[k]
 
     if etype == "allow":
         log.info(f"C3 ALLOWED (local): {card[:12]}...")

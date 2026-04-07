@@ -6,18 +6,22 @@ import { useAuthStore } from '../src/store/authStore';
 import { colors } from '../src/theme/colors';
 import { spacing } from '../src/theme/spacing';
 import LoginScreen from '../src/screens/LoginScreen';
+import RegisterScreen from '../src/screens/RegisterScreen';
 import HomeScreen from '../src/screens/HomeScreen';
 import VehiclesScreen from '../src/screens/VehiclesScreen';
-import PassesScreen from '../src/screens/PassesScreen';
-import NotificationsScreen from '../src/screens/NotificationsScreen';
+import VisitorsScreen from '../src/screens/VisitorsScreen';
+import ActivityScreen from '../src/screens/ActivityScreen';
+import ProfileScreen from '../src/screens/ProfileScreen';
+import { registerForPushNotifications, setupNotificationListeners } from '../src/lib/notifications';
 
-type TabKey = 'home' | 'vehicles' | 'passes' | 'notifications';
+type TabKey = 'home' | 'visitors' | 'vehicles' | 'activity' | 'profile';
 
 const tabs: { key: TabKey; label: string; icon: string }[] = [
   { key: 'home', label: 'Home', icon: 'home' },
+  { key: 'visitors', label: 'Visitors', icon: 'account-group' },
   { key: 'vehicles', label: 'Vehicles', icon: 'car' },
-  { key: 'passes', label: 'Passes', icon: 'ticket-account' },
-  { key: 'notifications', label: 'Alerts', icon: 'bell' },
+  { key: 'activity', label: 'Activity', icon: 'history' },
+  { key: 'profile', label: 'Profile', icon: 'account' },
 ];
 
 function TabBar({ active, onSelect }: { active: TabKey; onSelect: (key: TabKey) => void }) {
@@ -52,24 +56,28 @@ function TabBar({ active, onSelect }: { active: TabKey; onSelect: (key: TabKey) 
 
 function ResidentApp() {
   const [tab, setTab] = useState<TabKey>('home');
-  const logout = useAuthStore((s) => s.logout);
+
+  const handleNavigate = (target: string) => {
+    if (tabs.some((t) => t.key === target)) {
+      setTab(target as TabKey);
+    }
+  };
+
+  useEffect(() => {
+    registerForPushNotifications();
+    const cleanup = setupNotificationListeners();
+    return cleanup;
+  }, []);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bgPrimary }}>
-      {/* Header */}
-      <View style={headerStyles.header}>
-        <Text style={headerStyles.title}>CommunityGate</Text>
-        <TouchableOpacity onPress={logout}>
-          <MaterialCommunityIcons name="logout" size={20} color={colors.danger} />
-        </TouchableOpacity>
-      </View>
-
       {/* Content */}
       <View style={{ flex: 1 }}>
-        {tab === 'home' && <HomeScreen />}
+        {tab === 'home' && <HomeScreen onNavigate={handleNavigate} />}
+        {tab === 'visitors' && <VisitorsScreen />}
         {tab === 'vehicles' && <VehiclesScreen />}
-        {tab === 'passes' && <PassesScreen />}
-        {tab === 'notifications' && <NotificationsScreen />}
+        {tab === 'activity' && <ActivityScreen />}
+        {tab === 'profile' && <ProfileScreen />}
       </View>
 
       {/* Tab Bar */}
@@ -81,6 +89,7 @@ function ResidentApp() {
 export default function Page() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isLoading = useAuthStore((s) => s.isLoading);
+  const showRegister = useAuthStore((s) => s.showRegister);
   const rehydrate = useAuthStore((s) => s.rehydrate);
 
   useEffect(() => { rehydrate(); }, []);
@@ -93,7 +102,11 @@ export default function Page() {
     );
   }
 
-  return isAuthenticated ? <ResidentApp /> : <LoginScreen />;
+  if (!isAuthenticated) {
+    return showRegister ? <RegisterScreen /> : <LoginScreen />;
+  }
+
+  return <ResidentApp />;
 }
 
 const tabStyles = StyleSheet.create({
@@ -119,30 +132,12 @@ const tabStyles = StyleSheet.create({
     borderRadius: 1,
   },
   label: {
-    fontSize: 11,
+    fontSize: 10,
     color: colors.textMuted,
     fontWeight: '500',
   },
   labelActive: {
     color: colors.textPrimary,
     fontWeight: '600',
-  },
-});
-
-const headerStyles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    backgroundColor: colors.bgPrimary,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.surfaceBorder,
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 18,
-    fontWeight: '800',
   },
 });
