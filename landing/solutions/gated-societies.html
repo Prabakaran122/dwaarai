@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gate Management System for Gated Societies & Housing Complexes | Dwaar AI</title>
+<meta name="description" content="Dwaar AI's AI-powered gate management for gated housing societies. RFID vehicle entry, ANPR plate recognition, facial detection for residents and staff. Replace paper registers. Approve visitors from your phone. No ads, no data resale.">
+<meta name="keywords" content="gate management system for housing society, gated society security software India, society visitor management system, RFID gate system apartment complex, RWA gate management app, housing society access control, apartment gate automation India, society security guard app, resident visitor pass app, NoBrokerHood alternative, MyGate alternative, society gate system Bangalore Mumbai Delhi">
+<link rel="canonical" href="https://dwaarai.in/solutions/gated-societies">
+<meta property="og:title" content="Gate Management for Gated Societies | Dwaar AI">
+<meta property="og:description" content="AI-powered gate management for housing societies. RFID + ANPR + Face detection. No paper registers. Approve visitors from your phone.">
+<meta property="og:url" content="https://dwaarai.in/solutions/gated-societies">
+
+<script type="application/ld+json">
+{
+  "@context":"https://schema.org",
+  "@graph":[
+    {"@type":"WebPage","@id":"https://dwaarai.in/solutions/gated-societies","url":"https://dwaarai.in/solutions/gated-societies","name":"Gate Management System for Gated Societies","description":"Dwaar AI provides AI-powered gate management for gated housing societies and residential complexes in India. The platform combines RFID vehicle identification, ANPR number plate recognition and AI facial detection in one unified system with automatic fallback.","breadcrumb":{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Dwaar AI","item":"https://dwaarai.in"},{"@type":"ListItem","position":2,"name":"Solutions","item":"https://dwaarai.in/solutions"},{"@type":"ListItem","position":3,"name":"Gated Societies","item":"https://dwaarai.in/solutions/gated-societies"}]}},
+    {"@type":"FAQPage","mainEntity":[
+      {"@type":"Question","name":"What is a gate management system for housing societies?","acceptedAnswer":{"@type":"Answer","text":"A gate management system for housing societies is a software and hardware platform that automates the identification and logging of every vehicle and person entering or exiting a gated residential complex. Modern systems like Dwaar AI combine RFID for registered vehicles, ANPR for number plate reading, and AI facial detection for residents and visitors — replacing paper registers and manual guard verification."}},
+      {"@type":"Question","name":"How does Dwaar AI work in a housing society?","acceptedAnswer":{"@type":"Answer","text":"Dwaar AI installs RFID readers, ANPR cameras and facial detection cameras at the society gate. Registered vehicles clear automatically via RFID or ANPR. Visitors receive OTP passes from residents via the mobile app. Domestic staff are face-verified daily. The security guard sees a live queue on their tablet. Residents get instant notifications for every entry. The RWA committee manages everything from a web dashboard."}},
+      {"@type":"Question","name":"Is Dwaar AI better than MyGate or NoBrokerHood for societies?","acceptedAnswer":{"@type":"Answer","text":"Dwaar AI differs fundamentally in architecture. MyGate and NoBrokerHood are app-first platforms where hardware is a third-party add-on with no fallback chain. Dwaar AI is a native hardware-software platform with RFID, ANPR and face detection all built in. If one layer fails, the others take over automatically. Dwaar AI also has no advertising platform and does not resell resident data — both of which have been concerns with some competitors."}},
+      {"@type":"Question","name":"How long does it take to install Dwaar AI in a housing society?","acceptedAnswer":{"@type":"Answer","text":"A typical gated housing society is live within 30 days of contract sign-off. This includes hardware installation at the gate, software configuration, resident app onboarding with invite codes, and guard training on the tablet app. Larger societies with multiple gates may take 45 days."}},
+      {"@type":"Question","name":"Can residents approve visitors from their phone?","acceptedAnswer":{"@type":"Answer","text":"Yes. Residents use the Dwaar AI mobile app to create digital visitor passes — with an OTP or QR code — that they share with guests in advance. When the visitor arrives, the guard verifies the OTP on their tablet. If an unregistered visitor arrives, the resident gets a push notification with the visitor's photo and can approve or deny with one tap, from anywhere."}}
+    ]}
+  ]
+}
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300;1,9..40,400&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --bg:#FAFAF7; --surface:#FFFFFF; --s2:#F2F2EE;
+  --border:rgba(0,0,0,0.08); --bm:rgba(0,0,0,0.13);
+  --t1:#1C1C1A; --t2:#5C5C58; --t3:#8A8A84;
+  --green:#0F6E56; --gd:#0A4F3E; --gl:#E1F5EE;
+  --teal:#5DCAA5; --dark:#0F2920;
+  --accent:#0F6E56; --accent-l:#E1F5EE; --accent-text:#085041;
+  --font:'DM Sans',sans-serif; --ease:0.2s ease;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--bg);color:var(--t1);line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+img{display:block;max-width:100%}
+.container{max-width:1080px;margin:0 auto;padding:0 24px}
+.eyebrow{display:inline-block;font-size:11px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:var(--accent);background:var(--accent-l);padding:4px 12px;border-radius:20px;margin-bottom:14px}
+.sec-h{font-size:clamp(24px,3.5vw,36px);font-weight:500;color:var(--t1);letter-spacing:-.025em;line-height:1.2}
+.sec-s{font-size:16px;color:var(--t2);line-height:1.65;margin-top:12px;max-width:560px}
+.btn-p{display:inline-flex;align-items:center;gap:6px;font-family:var(--font);font-size:14px;font-weight:500;background:var(--accent);color:#fff;padding:11px 24px;border-radius:10px;border:none;cursor:pointer;transition:background var(--ease),transform var(--ease)}
+.btn-p:hover{background:var(--gd);transform:translateY(-1px)}
+.btn-s{display:inline-flex;align-items:center;gap:6px;font-family:var(--font);font-size:14px;color:var(--t1);padding:11px 24px;border-radius:10px;border:1px solid var(--bm);background:transparent;cursor:pointer;transition:background var(--ease)}
+.btn-s:hover{background:var(--s2)}
+.fade-in{opacity:0;transform:translateY(20px);transition:opacity .55s ease,transform .55s ease}
+.fade-in.vis{opacity:1;transform:none}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* NAV */
+nav{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.93);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:60px}
+.nav-in{display:flex;align-items:center;justify-content:space-between;height:100%}
+.nav-logo{display:flex;flex-direction:column;gap:1px}
+.nav-ln{font-size:16px;font-weight:500;color:var(--t1);letter-spacing:-.02em;line-height:1}
+.nav-lt{font-size:9.5px;color:var(--accent);font-style:italic;line-height:1}
+.nav-links{display:flex;gap:2px;list-style:none}
+.nav-links a{font-size:13px;color:var(--t2);padding:6px 12px;border-radius:6px;transition:background var(--ease),color var(--ease)}
+.nav-links a:hover,.nav-links a.active{color:var(--t1);background:var(--s2)}
+.nav-cta{font-family:var(--font);font-size:13px;font-weight:500;background:var(--accent);color:#fff;padding:8px 18px;border-radius:9px;border:none;cursor:pointer;transition:background var(--ease)}
+.nav-cta:hover{background:var(--gd)}
+
+/* BREADCRUMB */
+.breadcrumb{padding:12px 0;border-bottom:1px solid var(--border);background:var(--surface)}
+.bc-inner{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--t3)}
+.bc-sep{opacity:.4}
+.bc-current{color:var(--t1);font-weight:500}
+.bc-tag{display:inline-block;font-size:10px;font-weight:500;padding:2px 8px;border-radius:20px;background:var(--accent-l);color:var(--accent-text);margin-left:8px}
+
+/* HERO */
+.hero{padding:64px 0 56px;background:var(--bg)}
+.hero-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center}
+.hero-text h1{font-size:clamp(28px,4.5vw,48px);font-weight:500;color:var(--t1);letter-spacing:-.03em;line-height:1.12;margin-bottom:16px}
+.hero-text h1 em{color:var(--accent);font-style:normal}
+.hero-sub{font-size:17px;color:var(--t2);line-height:1.65;margin-bottom:24px;max-width:460px}
+.hero-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px}
+.hero-trust{display:flex;flex-direction:column;gap:8px}
+.ht-item{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t2)}
+.ht-dot{width:18px;height:18px;border-radius:50%;background:var(--gl);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ht-dot svg{width:9px;height:9px}
+
+/* SOCIETY GATE ILLUSTRATION */
+.gate-scene{background:var(--dark);border-radius:16px;overflow:hidden;aspect-ratio:16/10;position:relative;display:flex;align-items:center;justify-content:center}
+
+/* PROBLEM */
+.problem-section{padding:72px 0;background:var(--surface);border-top:1px solid var(--border)}
+.prob-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:40px}
+.prob-card{background:var(--bg);border:1px solid var(--border);border-radius:14px;padding:24px}
+.prob-icon{width:44px;height:44px;border-radius:10px;background:#FEF3C7;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.prob-card h3{font-size:15px;font-weight:500;color:var(--t1);margin-bottom:8px;line-height:1.3}
+.prob-card p{font-size:13.5px;color:var(--t2);line-height:1.6}
+.prob-quote{background:var(--surface);border:1px solid var(--border);border-left:3px solid #D97706;border-radius:0 8px 8px 0;padding:10px 14px;margin-top:12px;font-size:12px;color:var(--t3);font-style:italic;line-height:1.5}
+
+/* SOLUTION */
+.solution-section{padding:72px 0;background:var(--bg)}
+.sol-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:start;margin-top:40px}
+.sol-cards{display:flex;flex-direction:column;gap:14px}
+.sol-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px 22px;display:flex;gap:16px;align-items:flex-start;transition:border-color var(--ease),transform var(--ease)}
+.sol-card:hover{border-color:var(--teal);transform:translateX(4px)}
+.sol-card-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--gl)}
+.sol-card-text h4{font-size:14px;font-weight:500;color:var(--t1);margin-bottom:4px}
+.sol-card-text p{font-size:13px;color:var(--t2);line-height:1.5}
+
+/* DAY IN THE LIFE TIMELINE */
+.day-section{padding:72px 0;background:var(--surface);border-top:1px solid var(--border)}
+.day-timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-top:40px;position:relative}
+.day-timeline::before{content:'';position:absolute;top:30px;left:12.5%;right:12.5%;height:1px;background:linear-gradient(90deg,transparent,var(--teal),rgba(93,202,165,.3),var(--teal),transparent)}
+.day-step{display:flex;flex-direction:column;align-items:center;gap:12px;padding:0 12px;text-align:center}
+.day-time{font-size:11px;font-weight:500;color:var(--accent);letter-spacing:.04em}
+.day-icon{width:60px;height:60px;border-radius:50%;background:var(--surface);border:1.5px solid var(--teal);display:flex;align-items:center;justify-content:center;position:relative;z-index:1}
+.day-label{font-size:13px;font-weight:500;color:var(--t1);line-height:1.3}
+.day-detail{font-size:11.5px;color:var(--t3);line-height:1.45}
+
+/* PRODUCTS IN CONTEXT */
+.products-section{padding:72px 0;background:var(--bg)}
+.prod-tabs{display:flex;gap:6px;margin:28px 0 24px;flex-wrap:wrap}
+.prod-tab{font-family:var(--font);font-size:13px;color:var(--t2);background:var(--surface);border:1px solid var(--border);padding:8px 18px;border-radius:20px;cursor:pointer;transition:all var(--ease)}
+.prod-tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.prod-panel{display:none}
+.prod-panel.active{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}
+.prod-visual{background:var(--dark);border-radius:16px;padding:28px;min-height:280px;display:flex;flex-direction:column;gap:12px}
+.prod-visual-label{font-size:10px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:var(--teal);margin-bottom:4px}
+.pv-screen{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px}
+.pv-row{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:rgba(255,255,255,.04);border-radius:7px;margin-bottom:6px}
+.pv-row:last-child{margin-bottom:0}
+.pv-rl{font-size:12px;color:rgba(255,255,255,.75)}
+.pv-rs{font-size:10px;color:rgba(255,255,255,.35);margin-top:1px}
+.pv-badge{font-size:10px;padding:3px 9px;border-radius:20px}
+.pvb-g{background:rgba(15,110,86,.4);color:#5DCAA5}
+.pvb-a{background:rgba(217,119,6,.3);color:#FCD34D}
+.pvb-b{background:rgba(255,255,255,.08);color:rgba(255,255,255,.5)}
+.prod-text h3{font-size:clamp(20px,2.5vw,26px);font-weight:500;color:var(--t1);letter-spacing:-.02em;line-height:1.25;margin-bottom:12px}
+.prod-text p{font-size:15px;color:var(--t2);line-height:1.65;margin-bottom:16px}
+.feat-list{display:flex;flex-direction:column;gap:8px}
+.feat-item{display:flex;align-items:flex-start;gap:10px;font-size:14px;color:var(--t1)}
+.feat-dot{width:20px;height:20px;border-radius:50%;background:var(--gl);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.feat-dot svg{width:10px;height:10px}
+
+/* GATE EVENTS GRAPHIC */
+.events-section{padding:72px 0;background:var(--surface);border-top:1px solid var(--border)}
+.events-graphic{background:var(--bg);border:1px solid var(--border);border-radius:16px;overflow:hidden;margin-top:40px}
+.eg-header{background:var(--dark);padding:16px 22px;display:flex;align-items:center;justify-content:space-between}
+.eg-title{font-size:13px;font-weight:500;color:#F0F5F3}
+.eg-live{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--teal)}
+.eg-live-dot{width:7px;height:7px;border-radius:50%;background:var(--teal);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+.eg-row{display:flex;align-items:center;gap:0;padding:13px 22px;border-bottom:1px solid var(--border);transition:background var(--ease)}
+.eg-row:last-child{border-bottom:none}
+.eg-row:hover{background:var(--s2)}
+.eg-time{font-size:11px;color:var(--t3);width:56px;flex-shrink:0}
+.eg-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:12px}
+.eg-main{flex:1}
+.eg-name{font-size:13px;font-weight:500;color:var(--t1)}
+.eg-detail{font-size:11px;color:var(--t3);margin-top:1px}
+.eg-method{font-size:10px;padding:2px 8px;border-radius:20px;margin-right:8px}
+.em-rfid{background:#E1F5EE;color:#085041}
+.em-anpr{background:#E6F1FB;color:#0C447C}
+.em-face{background:#EEEDFE;color:#3C3489}
+.em-otp{background:#FAEEDA;color:#633806}
+.eg-status{font-size:11px;font-weight:500}
+.es-cleared{color:var(--accent)}
+.es-pending{color:#D97706}
+.eg-layer-bar{display:flex;align-items:center;gap:8px;padding:12px 22px 14px;background:var(--s2);border-top:1px solid var(--border)}
+.elb-label{font-size:10px;color:var(--t3);margin-right:4px}
+.layer-pill{font-size:10px;font-weight:500;padding:3px 10px;border-radius:20px;display:flex;align-items:center;gap:4px}
+
+/* STATS */
+.stats-strip{padding:48px 0;background:var(--dark)}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+.stat-item{text-align:center;padding:16px 20px;border-right:1px solid rgba(255,255,255,.08)}
+.stat-item:last-child{border-right:none}
+.stat-num{font-size:36px;font-weight:500;color:var(--teal);letter-spacing:-.02em;display:block;line-height:1;margin-bottom:6px}
+.stat-label{font-size:13px;color:rgba(255,255,255,.45)}
+
+/* FAQ */
+.faq-section{padding:72px 0;background:var(--bg)}
+.faq-list{margin-top:36px;border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.faq-item{border-bottom:1px solid var(--border)}
+.faq-item:last-child{border-bottom:none}
+.faq-q{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;cursor:pointer;font-size:14.5px;font-weight:500;color:var(--t1);background:var(--surface);transition:background var(--ease);user-select:none;width:100%;text-align:left;border:none;font-family:var(--font)}
+.faq-q:hover{background:var(--bg)}
+.faq-chev{width:20px;height:20px;border-radius:50%;background:var(--s2);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform var(--ease),background var(--ease)}
+.faq-chev svg{width:10px;height:10px}
+.faq-item.open .faq-chev{transform:rotate(180deg);background:var(--gl)}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .3s ease}
+.faq-item.open .faq-a{max-height:400px}
+.faq-a-inner{padding:0 22px 18px;font-size:14px;color:var(--t2);line-height:1.7}
+
+/* RELATED */
+.related-section{padding:56px 0;background:var(--surface);border-top:1px solid var(--border)}
+.related-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:24px}
+.rel-card{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:border-color var(--ease),transform var(--ease)}
+.rel-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.rel-tag{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:20px;display:inline-block;margin-bottom:8px}
+.rel-title{font-size:13px;font-weight:500;color:var(--t1);margin-bottom:3px}
+.rel-sub{font-size:11px;color:var(--t3)}
+
+/* CTA */
+.cta-section{padding:88px 0;background:var(--dark);text-align:center;position:relative;overflow:hidden}
+.cta-section::before{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:600px;height:400px;background:radial-gradient(ellipse,rgba(93,202,165,.09) 0%,transparent 70%);pointer-events:none}
+.cta-section h2{font-size:clamp(26px,4vw,44px);font-weight:500;color:#F0F5F3;letter-spacing:-.025em;line-height:1.2;margin-bottom:14px}
+.cta-section h2 em{color:var(--teal);font-style:normal}
+.cta-section p{font-size:16px;color:rgba(255,255,255,.5);max-width:460px;margin:0 auto 32px;line-height:1.65}
+.cta-btns{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
+.btn-cta{font-family:var(--font);font-size:14px;font-weight:500;background:var(--teal);color:var(--dark);padding:13px 28px;border-radius:10px;border:none;cursor:pointer;transition:opacity var(--ease)}
+.btn-cta:hover{opacity:.9}
+.btn-cta-g{font-family:var(--font);font-size:14px;color:rgba(255,255,255,.6);padding:13px 28px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;cursor:pointer;transition:border-color var(--ease),color var(--ease)}
+.btn-cta-g:hover{border-color:rgba(255,255,255,.35);color:rgba(255,255,255,.9)}
+
+/* FOOTER */
+footer{background:var(--dark);border-top:1px solid rgba(255,255,255,.06);padding:44px 0 24px}
+.footer-top{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:36px;padding-bottom:32px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:20px}
+.f-brand-n{font-size:18px;font-weight:500;color:#F0F5F3;letter-spacing:-.02em;margin-bottom:3px}
+.f-brand-t{font-size:11px;color:var(--teal);font-style:italic;font-weight:300;margin-bottom:12px}
+.f-brand-d{font-size:12.5px;color:rgba(255,255,255,.3);line-height:1.6;max-width:220px}
+.f-col-h{font-size:10px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.3);margin-bottom:12px}
+.f-links{list-style:none;display:flex;flex-direction:column;gap:8px}
+.f-links a{font-size:12.5px;color:rgba(255,255,255,.45);transition:color var(--ease)}
+.f-links a:hover{color:rgba(255,255,255,.85)}
+.f-bottom{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+.f-copy{font-size:11px;color:rgba(255,255,255,.2)}
+.f-tag-sm{font-size:10px;color:rgba(93,202,165,.35);font-style:italic}
+
+/* ANIMATIONS */
+@keyframes car-move{0%{transform:translateX(-180px);opacity:0}25%{opacity:1;transform:translateX(-60px)}60%{transform:translateX(-20px)}80%{transform:translateX(10px)}100%{transform:translateX(200px);opacity:0}}
+@keyframes rfid-ring{0%,100%{opacity:0;r:8}50%{opacity:.7;r:18}}
+@keyframes barrier-lift{0%{transform:rotate(0deg)}100%{transform:rotate(-80deg)}}
+@keyframes notify-pop{0%,100%{opacity:0;transform:translateY(8px) scale(.9)}20%,80%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes scan-sweep{0%{transform:translateY(-30px);opacity:0}30%{opacity:.8}70%{opacity:.8}100%{transform:translateY(60px);opacity:0}}
+@keyframes face-box{0%,100%{opacity:.4;stroke-dashoffset:60}50%{opacity:1;stroke-dashoffset:0}}
+@keyframes check-pulse{0%,100%{opacity:.6}50%{opacity:1}}
+@keyframes float-badge{0%,100%{opacity:0;transform:translateY(6px)}15%,85%{opacity:1;transform:translateY(0)}}
+
+.car-anim{animation:car-move 4s ease-in-out infinite}
+.rfid-ring-1{animation:rfid-ring 1.8s ease-in-out infinite}
+.rfid-ring-2{animation:rfid-ring 1.8s ease-in-out .35s infinite}
+.barrier-anim{animation:barrier-lift 1.2s ease-in-out .8s forwards;transform-origin:left center}
+.notify-anim{animation:notify-pop 4s ease-in-out .5s infinite}
+.scan-anim{animation:scan-sweep 2.5s ease-in-out infinite}
+.face-box-anim{animation:face-box 2s ease-in-out infinite;stroke-dasharray:60;stroke-dashoffset:60}
+.check-anim{animation:check-pulse 1.5s ease-in-out infinite}
+.badge-anim{animation:float-badge 4s ease-in-out 1.2s infinite}
+
+@media(max-width:900px){
+  .nav-links{display:none}
+  .hero-grid,.sol-grid,.prod-panel.active{grid-template-columns:1fr}
+  .prob-grid{grid-template-columns:1fr}
+  .day-timeline{grid-template-columns:1fr 1fr}
+  .stats-grid{grid-template-columns:1fr 1fr}
+  .footer-top{grid-template-columns:1fr 1fr}
+  .related-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:600px){
+  .stats-grid{grid-template-columns:1fr 1fr}
+  .footer-top{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav role="navigation" aria-label="Main navigation">
+  <div class="container nav-in">
+    <a href="/" class="nav-logo" aria-label="Dwaar AI — Open the right doors">
+      <span class="nav-ln">Dwaar AI</span>
+      <span class="nav-lt">Open the right doors.</span>
+    </a>
+    <ul class="nav-links" role="list">
+      <li><a href="/how-it-works">How it works</a></li>
+      <li><a href="/solutions" class="active" aria-current="page">Solutions</a></li>
+      <li><a href="/resources">Resources</a></li>
+      <li><a href="/about">About</a></li>
+      <li><a href="/contact">Contact</a></li>
+    </ul>
+    <button class="nav-cta" onclick="window.location='/demo'">Book a demo</button>
+  </div>
+</nav>
+
+<!-- BREADCRUMB -->
+<div class="breadcrumb" role="navigation" aria-label="Breadcrumb">
+  <div class="container bc-inner">
+    <a href="/">Dwaar AI</a>
+    <span class="bc-sep" aria-hidden="true">/</span>
+    <a href="/solutions">Solutions</a>
+    <span class="bc-sep" aria-hidden="true">/</span>
+    <span class="bc-current">Gated societies</span>
+    <span class="bc-tag">Residential</span>
+  </div>
+</div>
+
+<main>
+
+<!-- HERO -->
+<section class="hero fade-in" aria-labelledby="hero-h">
+  <div class="container">
+    <div class="hero-grid">
+      <div class="hero-text">
+        <span class="eyebrow">Gate management for gated societies</span>
+        <h1 id="hero-h">Your society gate should know <em>who belongs.</em></h1>
+        <p class="hero-sub">Dwaar AI replaces paper registers and guard phone calls with RFID, ANPR, and AI facial detection — all in one platform. Residents approve visitors from their phone. The gate never fails.</p>
+        <div class="hero-actions">
+          <button class="btn-p" onclick="window.location='/demo'">Book a demo</button>
+          <button class="btn-s" onclick="window.location='/how-it-works'">See how it works</button>
+        </div>
+        <div class="hero-trust" role="list">
+          <div class="ht-item" role="listitem"><div class="ht-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#0F6E56" stroke-width="1.5" stroke-linecap="round"/></svg></div>Works for societies from 50 to 5,000 flats</div>
+          <div class="ht-item" role="listitem"><div class="ht-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#0F6E56" stroke-width="1.5" stroke-linecap="round"/></svg></div>Live in 30 days — including guard training</div>
+          <div class="ht-item" role="listitem"><div class="ht-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#0F6E56" stroke-width="1.5" stroke-linecap="round"/></svg></div>No ads. Resident data never sold or shared.</div>
+        </div>
+      </div>
+
+      <!-- Hero Gate Scene -->
+      <div class="gate-scene" aria-label="Animated gate scene showing AI-powered entry" role="img">
+        <svg width="100%" viewBox="0 0 440 280" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <!-- Sky/ground -->
+          <rect width="440" height="280" fill="#0F2920"/>
+          <rect x="0" y="200" width="440" height="80" fill="#0A1F16"/>
+          <!-- Road markings -->
+          <rect x="200" y="200" width="40" height="80" fill="#0F2920"/>
+          <rect x="214" y="210" width="12" height="20" rx="2" fill="rgba(255,255,255,.06)"/>
+          <rect x="214" y="240" width="12" height="20" rx="2" fill="rgba(255,255,255,.06)"/>
+
+          <!-- Society gate structure -->
+          <rect x="155" y="80" width="14" height="128" rx="3" fill="#1a3a2a"/>
+          <rect x="271" y="80" width="14" height="128" rx="3" fill="#1a3a2a"/>
+          <!-- Gate arch -->
+          <path d="M155 90 Q220 50 285 90" stroke="rgba(93,202,165,.2)" stroke-width="1.5" fill="none"/>
+          <!-- Gate signage -->
+          <rect x="175" y="86" width="90" height="22" rx="4" fill="#0F6E56"/>
+          <text x="220" y="101" text-anchor="middle" font-family="sans-serif" font-size="9" fill="white" font-weight="500">SUNRISE ENCLAVE</text>
+
+          <!-- RFID reader on left post -->
+          <rect x="148" y="130" width="20" height="30" rx="3" fill="#0a2018"/>
+          <rect x="151" y="133" width="14" height="10" rx="2" fill="#0F6E56" opacity=".6"/>
+          <circle cx="158" cy="152" r="4" fill="#5DCAA5" class="check-anim"/>
+
+          <!-- RFID radio waves -->
+          <ellipse cx="180" cy="143" rx="12" ry="7" stroke="#5DCAA5" stroke-width="1" fill="none" class="rfid-ring-1"/>
+          <ellipse cx="180" cy="143" rx="20" ry="12" stroke="#5DCAA5" stroke-width=".7" fill="none" class="rfid-ring-2"/>
+
+          <!-- Boom barrier -->
+          <rect x="169" y="145" width="72" height="7" rx="3.5" fill="#0F6E56" class="barrier-anim"/>
+          <circle cx="169" cy="148.5" r="5" fill="#0A4F3E"/>
+
+          <!-- Car approaching -->
+          <g class="car-anim" aria-label="Vehicle approaching gate">
+            <rect x="20" y="208" width="64" height="30" rx="5" fill="#1E3A4C"/>
+            <rect x="28" y="198" width="46" height="22" rx="4" fill="#234559"/>
+            <rect x="33" y="201" width="18" height="15" rx="2" fill="#AED6F1" opacity=".7"/>
+            <rect x="56" y="201" width="14" height="15" rx="2" fill="#AED6F1" opacity=".7"/>
+            <circle cx="33" cy="238" r="7" fill="#111"/>
+            <circle cx="33" cy="238" r="4" fill="#333"/>
+            <circle cx="67" cy="238" r="7" fill="#111"/>
+            <circle cx="67" cy="238" r="4" fill="#333"/>
+            <!-- RFID tag sticker -->
+            <rect x="38" y="202" width="10" height="6" rx="1" fill="#5DCAA5" opacity=".8"/>
+            <!-- Floating tag ID -->
+            <g class="badge-anim">
+              <rect x="14" y="186" width="76" height="16" rx="4" fill="#0F2920" stroke="rgba(93,202,165,.3)" stroke-width=".8"/>
+              <text x="52" y="197" text-anchor="middle" font-family="monospace" font-size="8" fill="#5DCAA5">KA 01 AB 1234 ✓</text>
+            </g>
+          </g>
+
+          <!-- Phone notification on right -->
+          <g class="notify-anim">
+            <rect x="310" y="100" width="100" height="72" rx="8" fill="#0F2920" stroke="rgba(93,202,165,.3)" stroke-width=".8"/>
+            <rect x="318" y="108" width="84" height="12" rx="3" fill="rgba(15,110,86,.5)"/>
+            <text x="360" y="118" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#5DCAA5">Gate entry — Flat 402</text>
+            <rect x="318" y="124" width="84" height="40" rx="4" fill="rgba(255,255,255,.04)"/>
+            <circle cx="334" cy="138" r="9" fill="#1a3a2a"/>
+            <text x="334" y="141" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#5DCAA5">RK</text>
+            <text x="352" y="134" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.7)" font-weight="500">Rajesh Kumar</text>
+            <text x="352" y="145" font-family="sans-serif" font-size="7" fill="rgba(255,255,255,.4)">Honda City · RFID</text>
+            <rect x="318" y="156" width="38" height="10" rx="3" fill="rgba(15,110,86,.6)"/>
+            <text x="337" y="164" text-anchor="middle" font-family="sans-serif" font-size="7" fill="white">✓ Cleared</text>
+            <text x="362" y="162" font-family="sans-serif" font-size="7" fill="rgba(255,255,255,.25)">just now</text>
+          </g>
+
+          <!-- Scan line on camera area -->
+          <rect x="155" y="155" width="130" height="2" fill="rgba(93,202,165,.5)" class="scan-anim"/>
+
+          <!-- Labels -->
+          <text x="158" y="175" font-family="sans-serif" font-size="7.5" fill="rgba(255,255,255,.3)" text-anchor="middle">RFID reader</text>
+          <text x="360" y="96" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.3)" text-anchor="middle">Resident notified</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PROBLEM SECTION -->
+<section class="problem-section fade-in" aria-labelledby="prob-h">
+  <div class="container">
+    <div style="text-align:center;max-width:580px;margin:0 auto">
+      <span class="eyebrow">The problem</span>
+      <h2 class="sec-h" id="prob-h">Your current gate system is working against you.</h2>
+      <p class="sec-s" style="margin:12px auto 0;text-align:center">Most society gates in India still rely on a paper register, a guard with a phone, and software that bolts hardware on as an afterthought. Every layer is a bottleneck.</p>
+    </div>
+    <div class="prob-grid">
+      <div class="prob-card">
+        <div class="prob-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><rect x="3" y="3" width="16" height="16" rx="3" stroke="#D97706" stroke-width="1.4"/><path d="M7 11h8M11 7v8" stroke="#D97706" stroke-width="1.4" stroke-linecap="round"/><line x1="3" y1="3" x2="19" y2="19" stroke="#D97706" stroke-width="1.3" stroke-linecap="round"/></svg>
+        </div>
+        <h3>Paper registers that prove nothing.</h3>
+        <p>Visitor names written by hand. No photo, no verification, no way to know if the person who signed is the person who entered. When something goes wrong, the register tells you nothing useful.</p>
+        <div class="prob-quote">"Our guard asked every visitor to sign a book for 8 years. We had no idea if any of it was accurate." — RWA Secretary, Bengaluru</div>
+      </div>
+      <div class="prob-card">
+        <div class="prob-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="8" stroke="#D97706" stroke-width="1.4"/><path d="M11 7v4l3 3" stroke="#D97706" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </div>
+        <h3>Gate queues every morning and evening.</h3>
+        <p>Peak hours mean every vehicle stops while the guard calls the flat, waits for approval, writes down the number. 10 cars waiting. Residents frustrated. Staff clock in late. The bottleneck is built into the system.</p>
+        <div class="prob-quote">"The morning queue was 15 cars by 9am every day. Residents were honking at each other." — Facility Manager, Mumbai</div>
+      </div>
+      <div class="prob-card">
+        <div class="prob-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M11 3l2 6h6l-5 3.6 1.9 5.8L11 15l-4.9 3.4 1.9-5.8L3 9h6z" stroke="#D97706" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        </div>
+        <h3>App that crashes when you need it most.</h3>
+        <p>Internet goes down. Server is overloaded. App update fails. And suddenly your entire gate security is back to a guard making judgment calls without any information. One failure takes down everything.</p>
+        <div class="prob-quote">"We had an outage on Diwali night. 200 families couldn't get their guests in. The guard just let everyone through." — Committee Member, Delhi NCR</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SOLUTION SECTION -->
+<section class="solution-section fade-in" aria-labelledby="sol-h">
+  <div class="container">
+    <span class="eyebrow">How Dwaar AI solves it</span>
+    <h2 class="sec-h" id="sol-h">Three problems. One platform. Zero single points of failure.</h2>
+    <div class="sol-grid">
+      <div class="sol-cards">
+        <div class="sol-card">
+          <div class="sol-card-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="#0F6E56" stroke-width="1.3"/><rect x="10" y="3" width="7" height="7" rx="1.5" stroke="#0F6E56" stroke-width="1.3"/><rect x="3" y="10" width="7" height="7" rx="1.5" stroke="#0F6E56" stroke-width="1.3"/><rect x="10" y="10" width="7" height="7" rx="1.5" stroke="#0F6E56" stroke-width="1.3"/></svg>
+          </div>
+          <div class="sol-card-text">
+            <h4>Every vehicle identified before it stops.</h4>
+            <p>UHF RFID reads registered cars from 3–5 metres. The gate opens before the car reaches the barrier. Zero stopping, zero guard call, zero queue at peak hours.</p>
+          </div>
+        </div>
+        <div class="sol-card">
+          <div class="sol-card-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="8" r="4" stroke="#0F6E56" stroke-width="1.3"/><path d="M3 18c0-3.87 3.13-7 7-7s7 3.13 7 7" stroke="#0F6E56" stroke-width="1.3" stroke-linecap="round"/><rect x="8" y="5" width="4" height="6" rx="2" stroke="#0F6E56" stroke-width=".8" stroke-dasharray="2 1.5" opacity=".6"/></svg>
+          </div>
+          <div class="sol-card-text">
+            <h4>Domestic staff and visitors — no OTP fumbling.</h4>
+            <p>Registered maids, drivers and cooks are face-verified automatically every morning. Visitors get a digital pass from the resident. The guard just confirms — no phone calls needed.</p>
+          </div>
+        </div>
+        <div class="sol-card">
+          <div class="sol-card-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 3a7 7 0 100 14A7 7 0 0010 3z" stroke="#0F6E56" stroke-width="1.3"/><path d="M6.5 10l2.5 2.5 5-5" stroke="#0F6E56" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="sol-card-text">
+            <h4>Three fallback layers — gate never fails.</h4>
+            <p>If RFID drops, ANPR reads the plate. If the camera is obscured, RFID still clears. All three run in parallel. One failure never stops the gate. Ever.</p>
+          </div>
+        </div>
+        <div class="sol-card">
+          <div class="sol-card-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="5" width="14" height="12" rx="2" stroke="#0F6E56" stroke-width="1.3"/><path d="M7 5V4a3 3 0 016 0v1" stroke="#0F6E56" stroke-width="1.3"/><path d="M7 11l2 2 4-4" stroke="#0F6E56" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="sol-card-text">
+            <h4>Full audit trail — every entry logged with photo.</h4>
+            <p>Every vehicle, visitor and staff entry is timestamped with a photo snapshot. The RWA committee can pull reports for any date range in one click from the admin dashboard.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Solution graphic -->
+      <div aria-label="Solution overview graphic" role="img">
+        <svg width="100%" viewBox="0 0 380 420" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <!-- Background card -->
+          <rect width="380" height="420" rx="16" fill="#FAFAF7" stroke="rgba(0,0,0,.08)" stroke-width=".8"/>
+          <!-- Header -->
+          <rect width="380" height="52" rx="16" fill="#0F2920"/>
+          <rect x="0" y="36" width="380" height="16" fill="#0F2920"/>
+          <text x="20" y="31" font-family="sans-serif" font-size="12" fill="#F0F5F3" font-weight="500">Dwaar AI — Live gate activity</text>
+          <circle cx="352" cy="20" r="5" fill="#5DCAA5" class="check-anim"/>
+          <text x="342" y="39" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.4)" text-anchor="middle">● Live</text>
+
+          <!-- Three modality indicators -->
+          <rect x="16" y="64" width="104" height="52" rx="8" fill="white" stroke="rgba(0,0,0,.08)" stroke-width=".8"/>
+          <rect x="138" y="64" width="104" height="52" rx="8" fill="white" stroke="rgba(0,0,0,.08)" stroke-width=".8"/>
+          <rect x="260" y="64" width="104" height="52" rx="8" fill="white" stroke="rgba(0,0,0,.08)" stroke-width=".8"/>
+
+          <text x="68" y="82" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#8A8A84">RFID</text>
+          <text x="68" y="98" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#0F6E56" font-weight="500">Active</text>
+          <text x="68" y="110" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#8A8A84">3–5m range</text>
+
+          <text x="190" y="82" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#8A8A84">ANPR</text>
+          <text x="190" y="98" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#0F6E56" font-weight="500">Active</text>
+          <text x="190" y="110" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#8A8A84">Live feed</text>
+
+          <text x="312" y="82" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#8A8A84">Face AI</text>
+          <text x="312" y="98" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#0F6E56" font-weight="500">Active</text>
+          <text x="312" y="110" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#8A8A84">98.2% acc.</text>
+
+          <!-- Entry event rows -->
+          <text x="20" y="138" font-family="sans-serif" font-size="9" fill="#8A8A84" font-weight="500" letter-spacing=".04em">TODAY'S ENTRIES</text>
+
+          <!-- Row 1 -->
+          <rect x="16" y="148" width="348" height="44" rx="8" fill="white" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <rect x="24" y="156" width="28" height="28" rx="6" fill="#E1F5EE"/>
+          <text x="38" y="174" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#0F6E56">🚗</text>
+          <text x="62" y="164" font-family="sans-serif" font-size="11" fill="#1C1C1A" font-weight="500">KA 01 AB 1234 · Honda City</text>
+          <text x="62" y="179" font-family="sans-serif" font-size="9" fill="#8A8A84">Flat 402 · Rajesh Kumar · RFID</text>
+          <rect x="274" y="158" width="42" height="14" rx="7" fill="#E1F5EE"/>
+          <text x="295" y="169" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#0F6E56" font-weight="500">Cleared</text>
+          <text x="330" y="169" font-family="sans-serif" font-size="8" fill="#8A8A84">09:12</text>
+
+          <!-- Row 2 -->
+          <rect x="16" y="200" width="348" height="44" rx="8" fill="white" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <rect x="24" y="208" width="28" height="28" rx="6" fill="#E1F5EE"/>
+          <text x="38" y="226" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#0F6E56">👤</text>
+          <text x="62" y="216" font-family="sans-serif" font-size="11" fill="#1C1C1A" font-weight="500">Kamla Devi · Housemaid</text>
+          <text x="62" y="231" font-family="sans-serif" font-size="9" fill="#8A8A84">Flat 301, 402, 506 · Face verified</text>
+          <rect x="274" y="210" width="42" height="14" rx="7" fill="#E1F5EE"/>
+          <text x="295" y="221" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#0F6E56" font-weight="500">Cleared</text>
+          <text x="330" y="221" font-family="sans-serif" font-size="8" fill="#8A8A84">08:47</text>
+
+          <!-- Row 3 visitor with OTP -->
+          <rect x="16" y="252" width="348" height="44" rx="8" fill="white" stroke="rgba(217,119,6,.2)" stroke-width=".8"/>
+          <rect x="24" y="260" width="28" height="28" rx="6" fill="#FEF3C7"/>
+          <text x="38" y="278" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#D97706">👋</text>
+          <text x="62" y="268" font-family="sans-serif" font-size="11" fill="#1C1C1A" font-weight="500">Priya Sharma · Visitor</text>
+          <text x="62" y="283" font-family="sans-serif" font-size="9" fill="#8A8A84">Flat 402 · OTP pass · Approved by resident</text>
+          <rect x="270" y="262" width="50" height="14" rx="7" fill="#FEF3C7"/>
+          <text x="295" y="273" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#D97706" font-weight="500">Via OTP</text>
+          <text x="330" y="273" font-family="sans-serif" font-size="8" fill="#8A8A84">10:23</text>
+
+          <!-- Row 4 delivery -->
+          <rect x="16" y="304" width="348" height="44" rx="8" fill="white" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <rect x="24" y="312" width="28" height="28" rx="6" fill="#E6F1FB"/>
+          <text x="38" y="330" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#185FA5">📦</text>
+          <text x="62" y="320" font-family="sans-serif" font-size="11" fill="#1C1C1A" font-weight="500">Swiggy delivery · Rider ID 4821</text>
+          <text x="62" y="335" font-family="sans-serif" font-size="9" fill="#8A8A84">Flat 205 · One-time OTP · Logged</text>
+          <rect x="274" y="314" width="42" height="14" rx="7" fill="#E1F5EE"/>
+          <text x="295" y="325" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#0F6E56" font-weight="500">Cleared</text>
+          <text x="330" y="325" font-family="sans-serif" font-size="8" fill="#8A8A84">11:05</text>
+
+          <!-- Stats footer -->
+          <rect x="0" y="364" width="380" height="56" rx="0" fill="#F2F2EE" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <rect x="0" y="364" width="380" height="8" fill="#F2F2EE"/>
+          <rect x="0" y="408" width="380" height="12" rx="16" fill="#F2F2EE"/>
+          <rect x="0" y="364" width="380" height="56" rx="0" fill="transparent"/>
+          <rect x="16" y="372" width="80" height="36" rx="8" fill="white" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <text x="56" y="386" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#0F6E56" font-weight="500">142</text>
+          <text x="56" y="400" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#8A8A84">entries today</text>
+          <rect x="105" y="372" width="80" height="36" rx="8" fill="white" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <text x="145" y="386" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#0F6E56" font-weight="500">98%</text>
+          <text x="145" y="400" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#8A8A84">auto-cleared</text>
+          <rect x="194" y="372" width="80" height="36" rx="8" fill="white" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <text x="234" y="386" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#0F6E56" font-weight="500">0</text>
+          <text x="234" y="400" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#8A8A84">paper registers</text>
+          <rect x="283" y="372" width="80" height="36" rx="8" fill="white" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <text x="323" y="386" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#0F6E56" font-weight="500">&lt;3s</text>
+          <text x="323" y="400" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#8A8A84">avg clearance</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DAY IN THE LIFE -->
+<section class="day-section fade-in" aria-labelledby="day-h">
+  <div class="container">
+    <div style="text-align:center;max-width:560px;margin:0 auto">
+      <span class="eyebrow">A day at your gate</span>
+      <h2 class="sec-h" id="day-h">From 6am to midnight — Dwaar AI handles every scenario.</h2>
+    </div>
+    <div class="day-timeline" role="list">
+      <div class="day-step" role="listitem">
+        <span class="day-time">6:00 AM</span>
+        <div class="day-icon" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 26 26" fill="none"><circle cx="13" cy="13" r="5" stroke="#0F6E56" stroke-width="1.3"/><path d="M13 3v3M13 20v3M3 13h3M20 13h3M5.64 5.64l2.12 2.12M18.24 18.24l2.12 2.12M5.64 20.36l2.12-2.12M18.24 7.76l2.12-2.12" stroke="#0F6E56" stroke-width="1.2" stroke-linecap="round"/></svg>
+        </div>
+        <span class="day-label">Morning rush begins</span>
+        <span class="day-detail">Domestic workers arrive. Face detection identifies each one automatically. No guard needed at the pedestrian gate.</span>
+      </div>
+      <div class="day-step" role="listitem">
+        <span class="day-time">8:30 AM</span>
+        <div class="day-icon" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 26 26" fill="none"><rect x="3" y="12" width="20" height="10" rx="3" stroke="#0F6E56" stroke-width="1.3"/><rect x="7" y="8" width="12" height="6" rx="2" stroke="#0F6E56" stroke-width="1.3"/><circle cx="8" cy="22" r="2.5" stroke="#0F6E56" stroke-width="1.1"/><circle cx="18" cy="22" r="2.5" stroke="#0F6E56" stroke-width="1.1"/></svg>
+        </div>
+        <span class="day-label">Vehicle peak hour</span>
+        <span class="day-detail">Residents leave for work. RFID clears every registered car before it reaches the barrier. Zero queue. Gate opens and closes 30 times in 20 minutes.</span>
+      </div>
+      <div class="day-step" role="listitem">
+        <span class="day-time">2:00 PM</span>
+        <div class="day-icon" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 26 26" fill="none"><rect x="5" y="8" width="16" height="12" rx="3" stroke="#0F6E56" stroke-width="1.3"/><path d="M9 8V6a4 4 0 018 0v2" stroke="#0F6E56" stroke-width="1.3"/><circle cx="13" cy="14" r="2" stroke="#0F6E56" stroke-width="1.2"/></svg>
+        </div>
+        <span class="day-label">Delivery rush</span>
+        <span class="day-detail">Swiggy, Zomato, Amazon. Each rider gets a one-time OTP from the resident. Guard verifies on tablet. No paper, no confusion, full log.</span>
+      </div>
+      <div class="day-step" role="listitem">
+        <span class="day-time">7:00 PM</span>
+        <div class="day-icon" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 26 26" fill="none"><circle cx="13" cy="10" r="4" stroke="#0F6E56" stroke-width="1.3"/><path d="M5 23c0-4.42 3.58-8 8-8s8 3.58 8 8" stroke="#0F6E56" stroke-width="1.3" stroke-linecap="round"/><path d="M19 6l2 2M22 3l-1 3-3-1" stroke="#0F6E56" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <span class="day-label">Evening guests</span>
+        <span class="day-detail">Residents share digital visitor passes before guests arrive. Guest shows OTP at gate. Resident gets notification the moment they enter.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- THREE PRODUCTS IN CONTEXT -->
+<section class="products-section fade-in" aria-labelledby="prod-h">
+  <div class="container">
+    <span class="eyebrow">Three products, one community</span>
+    <h2 class="sec-h" id="prod-h">Every person at your gate gets exactly what they need.</h2>
+    <div class="prod-tabs" role="tablist">
+      <button class="prod-tab active" role="tab" aria-selected="true" onclick="setProd('resident',this)">Resident App</button>
+      <button class="prod-tab" role="tab" aria-selected="false" onclick="setProd('guard',this)">Guard App</button>
+      <button class="prod-tab" role="tab" aria-selected="false" onclick="setProd('admin',this)">Admin Portal</button>
+    </div>
+
+    <!-- Resident -->
+    <div class="prod-panel active" id="pp-resident" role="tabpanel">
+      <div class="prod-visual" aria-label="Resident app interface preview">
+        <p class="prod-visual-label">Resident App · iOS & Android</p>
+        <div class="pv-screen">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <span style="font-size:12px;font-weight:500;color:#F0F5F3">Gate activity</span>
+            <span style="font-size:9px;color:var(--teal)">● Live · Flat 402</span>
+          </div>
+          <div class="pv-row"><div><p class="pv-rl">Swiggy delivery</p><p class="pv-rs">Gate 1 · 3 mins ago</p></div><span class="pv-badge pvb-g">Cleared</span></div>
+          <div class="pv-row"><div><p class="pv-rl">Priya Sharma · Guest</p><p class="pv-rs">Visitor pass · 22 mins</p></div><span class="pv-badge pvb-g">Approved</span></div>
+          <div class="pv-row" style="border:1px solid rgba(93,202,165,.3);"><div><p class="pv-rl" style="color:#F0F5F3;font-weight:500">Unknown visitor at gate</p><p class="pv-rs">Tap to see photo</p></div><span class="pv-badge pvb-a">Pending</span></div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <div style="flex:1;background:rgba(15,110,86,.4);border-radius:6px;padding:6px;text-align:center"><span style="font-size:10px;color:#5DCAA5;font-weight:500">✓ Allow</span></div>
+            <div style="flex:1;background:rgba(220,38,38,.2);border-radius:6px;padding:6px;text-align:center"><span style="font-size:10px;color:#FC8181;font-weight:500">✗ Deny</span></div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+          <div style="background:rgba(255,255,255,.05);border-radius:8px;padding:10px;text-align:center">
+            <p style="font-size:18px;font-weight:500;color:var(--teal)">24</p>
+            <p style="font-size:9px;color:rgba(255,255,255,.4)">entries today</p>
+          </div>
+          <div style="background:rgba(255,255,255,.05);border-radius:8px;padding:10px;text-align:center">
+            <p style="font-size:18px;font-weight:500;color:var(--teal)">3</p>
+            <p style="font-size:9px;color:rgba(255,255,255,.4)">vehicles registered</p>
+          </div>
+        </div>
+      </div>
+      <div class="prod-text">
+        <h3>Know who's at your gate. Approve from anywhere.</h3>
+        <p>The Resident App puts your gate in your pocket. Create visitor passes before guests arrive. See every entry in real time. Approve or deny with one tap — whether you're at home or across the city.</p>
+        <div class="feat-list" role="list">
+          <div class="feat-item" role="listitem"><div class="feat-dot" aria-hidden="true"><svg viewBox="0 0 10 9" fill="none"><path d="M1.5 4.5L4 7L8.5 2" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Self-registration with society invite code — live in minutes</div>
+          <div class="feat-item" role="listitem"><div class="feat-dot" aria-hidden="true"><svg viewBox="0 0 10 9" fill="none"><path d="M1.5 4.5L4 7L8.5 2" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Create digital visitor passes with OTP — share via WhatsApp</div>
+          <div class="feat-item" role="listitem"><div class="feat-dot" aria-hidden="true"><svg viewBox="0 0 10 9" fill="none"><path d="M1.5 4.5L4 7L8.5 2" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Live activity feed with photo for every gate event</div>
+          <div class="feat-item" role="listitem"><div class="feat-dot" aria-hidden="true"><svg viewBox="0 0 10 9" fill="none"><path d="M1.5 4.5L4 7L8.5 2" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Vehicle management with FASTag status</div>
+          <div class="feat-item" role="listitem"><div class="feat-dot" aria-hidden="true"><svg viewBox="0 0 10 9" fill="none"><path d="M1.5 4.5L4 7L8.5 2" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Approve or deny unknown visitors remotely — with photo</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Guard -->
+    <div class="prod-panel" id="pp-guard" role="tabpanel">
+      <div class="prod-visual" aria-label="Guard app interface preview">
+        <p class="prod-visual-label">Guard App · Android Tablet</p>
+        <div class="pv-screen">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <span style="font-size:12px;font-weight:500;color:#F0F5F3">Gate queue · Main gate</span>
+            <span style="font-size:9px;color:var(--teal)">● 4 events</span>
+          </div>
+          <div class="pv-row" style="border-color:rgba(93,202,165,.2)"><div><p class="pv-rl" style="font-weight:500">KA 01 AB 1234 · Honda City</p><p class="pv-rs">RFID · Flat 402 · Rajesh Kumar</p></div><span class="pv-badge pvb-g">Auto-cleared</span></div>
+          <div class="pv-row"><div><p class="pv-rl">MH 02 CD 5678 · Swift</p><p class="pv-rs">Visitor · OTP: 4821</p></div><div style="display:flex;gap:4px"><span class="pv-badge pvb-g" style="cursor:pointer">Allow</span><span class="pv-badge" style="background:rgba(220,38,38,.2);color:#FC8181;cursor:pointer">Deny</span></div></div>
+          <div class="pv-row"><div><p class="pv-rl">Kamla Devi · Housemaid</p><p class="pv-rs">Face verified · Flat 301, 402</p></div><span class="pv-badge pvb-g">Auto-cleared</span></div>
+          <div class="pv-row" style="border-color:rgba(217,119,6,.3)"><div><p class="pv-rl" style="font-weight:500">Unknown pedestrian</p><p class="pv-rs">Face not recognised</p></div><span class="pv-badge pvb-a">Register?</span></div>
+          <div style="background:rgba(255,255,255,.04);border-radius:6px;padding:8px;margin-top:6px;display:flex;justify-content:space-between">
+            <span style="font-size:10px;color:rgba(255,255,255,.4)">Manual barrier control</span>
+            <span style="font-size:10px;color:var(--teal);font-weight:500;cursor:pointer">Open gate →</span>
+          </div>
+        </div>
+      </div>
+      <div class="prod-text">
+        <h3>One screen. Every event. No confusion.</h3>
+        <p>The Guard App gives your security team a single workstation screen showing every gate event in real time. Automatically cleared entries appear without interruption. Only exceptions need guard action — and those are clearly highlighted.</p>
+        <div class="feat-list" role="list">
+          <div class="feat-item" role="listitem"><div class="feat-dot" aria-hidden="true"><svg viewBox="0 0 10 9" fill="none"><path d="M1.5 4.5L4 7L8.5 2" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Single-screen workstation — no training needed</div>
+          <div class="feat-item" role="listitem"><div class="feat-dot" aria-hidden="true"><svg viewBox="0 0 10 9" fill="none"><path d="M1.5 4.5L4 7L8.5 2" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Live queue showing every gate event with identification method</div>
+          <div class="feat-item" role="listitem"><div class="feat-dot" aria-hidden="true"><svg viewBox="0 0 10 9" fill="none"><path d="M1.5 4.5L4 7L8.5 2" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Approve, deny or register visitors in two taps</div>
+          <div class="feat-item" role="listitem"><div class="feat-dot" aria-hidden="true"><svg viewBox="0 0 10 9" fill="none"><path d="M1.5 4.5L4 7L8.5 2" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>OTP verification with resident name and flat shown</div>
+          <div class="feat-item" role="listitem"><div class="feat-dot" aria-hidden="true"><svg viewBox="0 0 10 9" fill="none"><path d="M1.5 4.5L4 7L8.5 2" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Available in Hindi, Tamil, and regional languages</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Admin -->
+    <div class="prod-panel" id="pp-admin" role="tabpanel">
+      <div class="prod-visual" aria-label="Admin portal interface preview">
+        <p class="prod-visual-label">Admin Portal · Web Dashboard</p>
+        <div class="pv-screen">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-size:12px;font-weight:500;color:#F0F5F3">Sunrise Enclave</span>
+            <span style="font-size:9px;color:var(--teal)">3 gates · All healthy</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px">
+            <div style="background:rgba(255,255,255,.05);border-radius:6px;padding:8px;text-align:center"><p style="font-size:18px;font-weight:500;color:var(--teal)">312</p><p style="font-size:8px;color:rgba(255,255,255,.4)">entries today</p></div>
+            <div style="background:rgba(255,255,255,.05);border-radius:6px;padding:8px;text-align:center"><p style="font-size:18px;font-weight:500;color:var(--teal)">98%</p><p style="font-size:8px;color:rgba(255,255,255,.4)">auto-cleared</p></div>
+            <div style="background:rgba(255,255,255,.05);border-radius:6px;padding:8px;text-align:center"><p style="font-size:18px;font-weight:500;color:var(--teal)">0</p><p style="font-size:8px;color:rgba(255,255,255,.4)">alerts today</p></div>
+          </div>
+          <div class="pv-row"><div><p class="pv-rl">Gate 1 · Main entry</p><p class="pv-rs">RFID + ANPR + Face · All active</p></div><span class="pv-badge pvb-g">Healthy</span></div>
+          <div class="pv-row"><div><p class="pv-rl">Vehicle registry</p><p class="pv-rs">184 registered vehicles</p></div><span class="pv-badge pvb-b">Manage</span></div>
+          <div class="pv-row"><div><p class="pv-rl">October report</p><p class="pv-rs">9,847 events · Ready</p></div><span class="pv-badge pvb-b">Export PDF</span></div>
+        </div>
+      </div>
+      <div class="prod-text">
+        <h3>Full community oversight. Zero daily involvement.</h3>
+        <p>The Admin Portal gives your RWA committee complete visibility without requiring anyone to actively manage the gate. Configure access, pull reports, review incidents — all from a web browser, any time.</p>
+        <div class="feat-list" role="list">
+          <div class="feat-item" role="listitem"><div class="feat-dot" aria-hidden="true"><svg viewBox="0 0 10 9" fill="none"><path d="M1.5 4.5L4 7L8.5 2" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Real-time gate status across all entry points</div>
+          <div class="feat-item" role="listitem"><div class="feat-dot" aria-hidden="true"><svg viewBox="0 0 10 9" fill="none"><path d="M1.5 4.5L4 7L8.5 2" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Complete vehicle and resident registry — always up to date</div>
+          <div class="feat-item" role="listitem"><div class="feat-dot" aria-hidden="true"><svg viewBox="0 0 10 9" fill="none"><path d="M1.5 4.5L4 7L8.5 2" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Full event logs with photo and timestamp — one-click export</div>
+          <div class="feat-item" role="listitem"><div class="feat-dot" aria-hidden="true"><svg viewBox="0 0 10 9" fill="none"><path d="M1.5 4.5L4 7L8.5 2" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Gate configuration — no vendor call needed</div>
+          <div class="feat-item" role="listitem"><div class="feat-dot" aria-hidden="true"><svg viewBox="0 0 10 9" fill="none"><path d="M1.5 4.5L4 7L8.5 2" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Role-based access — committee chair, treasurer, manager</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LIVE GATE EVENTS GRAPHIC -->
+<section class="events-section fade-in" aria-labelledby="ev-h">
+  <div class="container">
+    <span class="eyebrow">Real gate event types</span>
+    <h2 class="sec-h" id="ev-h">Every scenario your gate faces — Dwaar AI handles it.</h2>
+    <p class="sec-s">From resident vehicles to unknown visitors to deliveries — see exactly how each event type is processed, which layer handles it, and what the guard sees.</p>
+    <div class="events-graphic" role="region" aria-label="Live gate events log">
+      <div class="eg-header">
+        <span class="eg-title">Gate event log — Main gate · Sunrise Enclave</span>
+        <span class="eg-live" aria-label="Live feed active"><span class="eg-live-dot" aria-hidden="true"></span>Live</span>
+      </div>
+      <div class="eg-row" role="row">
+        <span class="eg-time">09:12</span>
+        <div class="eg-icon" style="background:#E1F5EE;" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="7" width="14" height="7" rx="2" stroke="#0F6E56" stroke-width="1.1"/><rect x="3" y="5" width="10" height="4" rx="1.5" stroke="#0F6E56" stroke-width="1.1"/><circle cx="4" cy="14" r="1.5" fill="#0F6E56"/><circle cx="12" cy="14" r="1.5" fill="#0F6E56"/></svg></div>
+        <div class="eg-main"><p class="eg-name">KA 01 AB 1234 · Honda City</p><p class="eg-detail">Flat 402 · Rajesh Kumar · Resident vehicle</p></div>
+        <span class="eg-method em-rfid">RFID</span>
+        <span class="eg-status es-cleared">Cleared automatically</span>
+      </div>
+      <div class="eg-row">
+        <span class="eg-time">08:47</span>
+        <div class="eg-icon" style="background:#EEEDFE;" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="6" r="3" stroke="#534AB7" stroke-width="1.1"/><path d="M2 15c0-3.31 2.69-6 6-6s6 2.69 6 6" stroke="#534AB7" stroke-width="1.1" stroke-linecap="round"/></svg></div>
+        <div class="eg-main"><p class="eg-name">Kamla Devi · Domestic staff</p><p class="eg-detail">Registered maid · Flat 301, 402, 506</p></div>
+        <span class="eg-method em-face">Face AI</span>
+        <span class="eg-status es-cleared">Cleared automatically</span>
+      </div>
+      <div class="eg-row">
+        <span class="eg-time">10:23</span>
+        <div class="eg-icon" style="background:#FAEEDA;" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="6" r="3" stroke="#854F0B" stroke-width="1.1"/><path d="M2 15c0-3.31 2.69-6 6-6s6 2.69 6 6" stroke="#854F0B" stroke-width="1.1" stroke-linecap="round"/><path d="M12 3l1 1M13 1l-.5 1.5-1.5-.5" stroke="#854F0B" stroke-width="1" stroke-linecap="round"/></svg></div>
+        <div class="eg-main"><p class="eg-name">Priya Sharma · Visitor</p><p class="eg-detail">Guest of Flat 402 · OTP pass shared by resident</p></div>
+        <span class="eg-method em-otp">OTP pass</span>
+        <span class="eg-status es-cleared">Cleared — resident approved</span>
+      </div>
+      <div class="eg-row">
+        <span class="eg-time">11:05</span>
+        <div class="eg-icon" style="background:#E6F1FB;" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="4" width="12" height="8" rx="2" stroke="#0C447C" stroke-width="1.1"/><path d="M5 4V3a3 3 0 016 0v1" stroke="#0C447C" stroke-width="1.1"/><path d="M6 8h4M8 6v4" stroke="#0C447C" stroke-width="1" stroke-linecap="round"/></svg></div>
+        <div class="eg-main"><p class="eg-name">Zomato delivery · Rider #ZB4821</p><p class="eg-detail">One-time delivery OTP · Flat 205</p></div>
+        <span class="eg-method em-otp">OTP</span>
+        <span class="eg-status es-cleared">Cleared — logged</span>
+      </div>
+      <div class="eg-row">
+        <span class="eg-time">14:30</span>
+        <div class="eg-icon" style="background:#E1F5EE;" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="7" width="14" height="7" rx="2" stroke="#0F6E56" stroke-width="1.1"/><rect x="3" y="5" width="10" height="4" rx="1.5" stroke="#0F6E56" stroke-width="1.1"/><circle cx="4" cy="14" r="1.5" fill="#0F6E56"/><circle cx="12" cy="14" r="1.5" fill="#0F6E56"/></svg></div>
+        <div class="eg-main"><p class="eg-name">DL 3C AX 9901 · Unknown vehicle</p><p class="eg-detail">Plate not in registry · ANPR captured · Visitor flow triggered</p></div>
+        <span class="eg-method em-anpr">ANPR</span>
+        <span class="eg-status" style="color:#D97706">Guard action — logged</span>
+      </div>
+      <div class="eg-layer-bar" role="status" aria-label="Active identification layers">
+        <span class="elb-label">Active layers:</span>
+        <span class="layer-pill" style="background:#E1F5EE;color:#085041;"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true"><circle cx="4" cy="4" r="3" fill="#0F6E56"/></svg>RFID · active</span>
+        <span class="layer-pill" style="background:#E6F1FB;color:#0C447C;"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true"><circle cx="4" cy="4" r="3" fill="#185FA5"/></svg>ANPR · active</span>
+        <span class="layer-pill" style="background:#EEEDFE;color:#3C3489;"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true"><circle cx="4" cy="4" r="3" fill="#534AB7"/></svg>Face AI · active</span>
+        <span style="margin-left:auto;font-size:10px;color:var(--t3)">All 3 modalities running in parallel</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STATS STRIP -->
+<section class="stats-strip" aria-labelledby="stats-h">
+  <div class="container">
+    <h2 class="sr-only" id="stats-h">Dwaar AI performance statistics</h2>
+    <div class="stats-grid" role="list">
+      <div class="stat-item" role="listitem"><span class="stat-num">&lt;3s</span><span class="stat-label">Average vehicle clearance</span></div>
+      <div class="stat-item" role="listitem"><span class="stat-num">98%</span><span class="stat-label">Entries cleared automatically</span></div>
+      <div class="stat-item" role="listitem"><span class="stat-num">30</span><span class="stat-label">Days from contract to live</span></div>
+      <div class="stat-item" role="listitem"><span class="stat-num">0</span><span class="stat-label">Ads, data sales, ever</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="faq-section fade-in" aria-labelledby="faq-h">
+  <div class="container" style="max-width:740px">
+    <span class="eyebrow">Common questions</span>
+    <h2 class="sec-h" id="faq-h">Everything your RWA committee needs to know.</h2>
+    <div class="faq-list" role="list">
+      <div class="faq-item" role="listitem">
+        <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">What is a gate management system for housing societies?<div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div></button>
+        <div class="faq-a" role="region"><p class="faq-a-inner">A gate management system for housing societies automates the identification and logging of every vehicle and person entering or exiting a gated residential complex. Dwaar AI's system combines UHF RFID for registered vehicles, ANPR for number plate reading, and AI facial detection for residents, staff and visitors — replacing paper registers, guard phone calls and manual approval processes.</p></div>
+      </div>
+      <div class="faq-item" role="listitem">
+        <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">How does Dwaar AI handle domestic staff like maids and drivers?<div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div></button>
+        <div class="faq-a" role="region"><p class="faq-a-inner">Domestic workers — maids, cooks, drivers, security staff — are registered once with a face photo and assigned to the flats they work in. From the next visit onwards, the AI facial detection engine identifies them automatically at the gate. No RFID tag, no OTP, no guard check needed. Residents receive a push notification when their staff member enters. If a domestic worker's access is revoked by the admin, they cannot enter from the next gate scan.</p></div>
+      </div>
+      <div class="faq-item" role="listitem">
+        <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">Can residents invite guests and create visitor passes?<div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div></button>
+        <div class="faq-a" role="region"><p class="faq-a-inner">Yes. From the Dwaar AI Resident App, you can create a digital visitor pass — a 6-digit OTP — and share it with your guest via WhatsApp or SMS before they arrive. When the guest reaches the gate, they show the OTP to the security guard, who verifies it on their tablet. The guard sees your name, flat number, and the pass validity period. If an unregistered visitor arrives without a pass, you receive a push notification with the visitor's photo and can approve or deny in one tap.</p></div>
+      </div>
+      <div class="faq-item" role="listitem">
+        <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">Is Dwaar AI better than MyGate or NoBrokerHood for societies?<div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div></button>
+        <div class="faq-a" role="region"><p class="faq-a-inner">The fundamental difference is architecture. MyGate and NoBrokerHood are app-first platforms where RFID and cameras are third-party add-ons with no fallback logic — if the app is down or hardware integration fails, the gate stops working. Dwaar AI is a native hardware-software platform with RFID, ANPR and face detection all built in with an automatic fallback chain. Additionally, Dwaar AI has no advertising platform and does not use resident data for marketing — both have been reported concerns with some competitors.</p></div>
+      </div>
+      <div class="faq-item" role="listitem">
+        <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">How long does installation take and what does it involve?<div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div></button>
+        <div class="faq-a" role="region"><p class="faq-a-inner">A typical gated housing society is live within 30 days of contract signing. The process involves: hardware installation at each gate point (RFID readers, ANPR cameras, facial detection cameras, boom barrier integration) by our certified hardware partner team; platform configuration with your vehicle and resident database; resident app onboarding using unique invite codes; and guard training on the tablet app — which typically takes one session of under 2 hours. Multi-gate and large township deployments may take 45 days.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- RELATED SOLUTIONS -->
+<section class="related-section fade-in" aria-labelledby="rel-h">
+  <div class="container">
+    <span class="eyebrow">Related solutions</span>
+    <h2 class="sec-h" id="rel-h" style="font-size:22px">Dwaar AI works beyond your society gate.</h2>
+    <div class="related-grid" role="list">
+      <div class="rel-card" role="listitem" onclick="window.location='/solutions/villa-townships'" tabindex="0">
+        <span class="rel-tag" style="background:#E1F5EE;color:#085041;">Residential</span>
+        <p class="rel-title">Villa townships</p>
+        <p class="rel-sub">Multi-entrance gated villa communities with perimeter monitoring →</p>
+      </div>
+      <div class="rel-card" role="listitem" onclick="window.location='/solutions/corporate-offices'" tabindex="0">
+        <span class="rel-tag" style="background:#E6F1FB;color:#0C447C;">Commercial</span>
+        <p class="rel-title">Corporate offices</p>
+        <p class="rel-sub">Employee RFID entry, visitor digital passes, contractor tracking →</p>
+      </div>
+      <div class="rel-card" role="listitem" onclick="window.location='/solutions/hospitals'" tabindex="0">
+        <span class="rel-tag" style="background:#E6F1FB;color:#0C447C;">Commercial</span>
+        <p class="rel-title">Hospitals</p>
+        <p class="rel-sub">Ambulance priority, staff face ID, visitor management →</p>
+      </div>
+      <div class="rel-card" role="listitem" onclick="window.location='/solutions'" tabindex="0">
+        <span class="rel-tag" style="background:#F2F2EE;color:#5C5C58;">All sectors</span>
+        <p class="rel-title">See all 17 solutions</p>
+        <p class="rel-sub">Warehouses, schools, ports, stadiums and more →</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section" aria-labelledby="cta-h">
+  <div class="container">
+    <span class="eyebrow" style="background:rgba(93,202,165,.15);color:var(--teal)">Ready to upgrade your society gate?</span>
+    <h2 id="cta-h">Your residents deserve a gate that<br><em>works every time.</em></h2>
+    <p>Book a 30-minute demo. We'll show you exactly how Dwaar AI works for a society your size — with a clear 30-day deployment timeline.</p>
+    <div class="cta-btns">
+      <button class="btn-cta" onclick="window.location='/demo'">Book a free demo</button>
+      <button class="btn-cta-g" onclick="window.location='/how-it-works'">See how the technology works</button>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- FOOTER -->
+<footer role="contentinfo">
+  <div class="container">
+    <div class="footer-top">
+      <div>
+        <p class="f-brand-n">Dwaar AI</p>
+        <p class="f-brand-t">Open the right doors.</p>
+        <p class="f-brand-d">AI-powered gate management for gated societies, corporates, warehouses and institutions across India.</p>
+      </div>
+      <div>
+        <p class="f-col-h">Platform</p>
+        <ul class="f-links"><li><a href="/how-it-works">How it works</a></li><li><a href="/how-it-works#technology">Technology stack</a></li><li><a href="/how-it-works#products">Resident App</a></li><li><a href="/how-it-works#products">Guard App</a></li><li><a href="/partners">Hardware partners</a></li></ul>
+      </div>
+      <div>
+        <p class="f-col-h">Solutions</p>
+        <ul class="f-links"><li><a href="/solutions/gated-societies">Gated societies</a></li><li><a href="/solutions/villa-townships">Villa townships</a></li><li><a href="/solutions/corporate-offices">Corporate offices</a></li><li><a href="/solutions/warehouses">Warehouses</a></li><li><a href="/solutions">All 17 sectors →</a></li></ul>
+      </div>
+      <div>
+        <p class="f-col-h">Company</p>
+        <ul class="f-links"><li><a href="/about">Our story</a></li><li><a href="/resources/blog">Blog</a></li><li><a href="/resources/case-studies">Case studies</a></li><li><a href="/contact">Contact</a></li><li><a href="/demo">Book a demo</a></li></ul>
+      </div>
+    </div>
+    <div class="f-bottom">
+      <p class="f-copy">© 2025 Dwaar AI. All rights reserved. · <a href="/privacy" style="color:rgba(255,255,255,.2)">Privacy</a> · <a href="/terms" style="color:rgba(255,255,255,.2)">Terms</a></p>
+      <p class="f-tag-sm">Open the right doors.</p>
+    </div>
+  </div>
+</footer>
+
+<script>
+function setProd(key,btn){
+  document.querySelectorAll('.prod-tab').forEach(t=>{t.classList.remove('active');t.setAttribute('aria-selected','false')});
+  document.querySelectorAll('.prod-panel').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active');btn.setAttribute('aria-selected','true');
+  document.getElementById('pp-'+key).classList.add('active');
+}
+function toggleFaq(btn){
+  const item=btn.closest('.faq-item');
+  const isOpen=item.classList.contains('open');
+  document.querySelectorAll('.faq-item.open').forEach(i=>{i.classList.remove('open');i.querySelector('.faq-q').setAttribute('aria-expanded','false')});
+  if(!isOpen){item.classList.add('open');btn.setAttribute('aria-expanded','true')}
+}
+const io=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('vis');io.unobserve(e.target)}})},{threshold:.08});
+document.querySelectorAll('.fade-in').forEach(el=>io.observe(el));
+</script>
+</body>
+</html>

@@ -1,0 +1,1346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- SEO META -->
+  <title>How Dwaar AI Works — RFID, ANPR & AI Face Detection Gate Management System</title>
+  <meta name="description" content="Dwaar AI combines UHF RFID, ANPR number plate recognition, and AI facial detection into one native gate management platform. See how the triple-layer fallback chain works, what each product does, and how it all comes together for residents, guards, and facility managers.">
+  <meta name="keywords" content="how does gate management system work, RFID gate access system, ANPR number plate recognition India, AI facial recognition gate, automatic boom barrier system, visitor management software how it works, society gate system explained, guard management app India, resident gate app, RWA admin dashboard, gate management system India, access control system RFID ANPR face">
+  <link rel="canonical" href="https://dwaarai.in/how-it-works">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://dwaarai.in/how-it-works">
+  <meta property="og:title" content="How Dwaar AI Works — RFID + ANPR + AI Face Detection">
+  <meta property="og:description" content="A complete walkthrough of Dwaar AI's triple-layer gate management platform. From vehicle identification to visitor approval to admin reporting — every layer explained.">
+  <meta property="og:site_name" content="Dwaar AI">
+
+  <!-- AEO/GEO Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebPage",
+        "@id": "https://dwaarai.in/how-it-works",
+        "url": "https://dwaarai.in/how-it-works",
+        "name": "How Dwaar AI Works",
+        "description": "A complete guide to Dwaar AI's gate management platform — covering RFID vehicle access, ANPR number plate recognition, AI facial detection, the automatic fallback chain, and the Resident App, Guard App and Admin Portal.",
+        "isPartOf": { "@id": "https://dwaarai.in/#website" },
+        "about": { "@id": "https://dwaarai.in/#product" }
+      },
+      {
+        "@type": "HowTo",
+        "name": "How Dwaar AI gate management works",
+        "description": "Dwaar AI uses three layers of access control technology — UHF RFID, ANPR, and AI facial detection — that run in parallel with automatic fallback. Here is how a typical gate event is processed.",
+        "step": [
+          {
+            "@type": "HowToStep",
+            "position": 1,
+            "name": "Vehicle approaches the gate",
+            "text": "As a vehicle drives towards the boom barrier, Dwaar AI begins identifying it using all three modalities simultaneously."
+          },
+          {
+            "@type": "HowToStep",
+            "position": 2,
+            "name": "UHF RFID identifies the vehicle",
+            "text": "If the vehicle has an RFID tag, it is identified 3-5 metres before the barrier. The gate opens automatically before the car stops — zero delay."
+          },
+          {
+            "@type": "HowToStep",
+            "position": 3,
+            "name": "ANPR reads the number plate",
+            "text": "Simultaneously, the ANPR camera captures and reads the licence plate. If RFID is unavailable, ANPR provides the identification. Matched against the vehicle registry in under one second."
+          },
+          {
+            "@type": "HowToStep",
+            "position": 4,
+            "name": "AI facial detection identifies persons",
+            "text": "For pedestrians, visitors and staff, AI facial detection identifies known individuals. Unknown persons are directed to OTP verification via the guard's tablet."
+          },
+          {
+            "@type": "HowToStep",
+            "position": 5,
+            "name": "Guard app shows live gate queue",
+            "text": "The security guard's Android tablet displays a live queue of all gate events. Approved entries are handled automatically; exceptions appear for the guard to action."
+          },
+          {
+            "@type": "HowToStep",
+            "position": 6,
+            "name": "Resident is notified",
+            "text": "The resident's mobile app receives an instant notification for every entry and exit at their gate. Visitors can be approved or denied remotely."
+          },
+          {
+            "@type": "HowToStep",
+            "position": 7,
+            "name": "All events logged to admin portal",
+            "text": "Every gate event — vehicle, visitor, staff — is timestamped and logged to the admin portal. Committee members and facility managers can access reports, configure gates, and manage access from any web browser."
+          }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is UHF RFID and how does it work at a gate?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "UHF (Ultra High Frequency) RFID is a wireless identification technology. A small RFID tag is fitted to a registered vehicle. When the vehicle approaches the gate, a UHF reader identifies the tag from 3 to 5 metres away — before the car even reaches the barrier. The system matches the tag ID against the registered vehicle list and signals the boom barrier to open automatically. The driver never needs to stop, roll down a window, or use an app."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What is ANPR and how accurate is it?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "ANPR stands for Automatic Number Plate Recognition. A camera captures an image of the vehicle's number plate as it approaches. Dwaar AI's ANPR engine reads the plate characters, normalises the result, and matches it against the vehicle registry in under one second. Modern ANPR systems achieve over 95% accuracy in good lighting conditions. Dwaar AI's ANPR also works in low-light and at typical approach speeds."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does the AI facial detection work at the gate?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Dwaar AI's proprietary AI facial detection engine analyses a live camera feed at the gate. Faces are compared against a registered database of residents, staff and authorised visitors. Known persons are identified and cleared within seconds. Unknown persons are flagged on the guard's tablet for manual verification via OTP or a resident approval request. The AI runs locally on the gate hardware — it does not require a cloud round-trip for each identification."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What is the fallback chain and why does it matter?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "The fallback chain is Dwaar AI's core architectural advantage. All three modalities — RFID, ANPR, and facial detection — run simultaneously. If an RFID signal is not detected (tag absent, reader fault, signal interference), ANPR automatically provides vehicle identification. If ANPR cannot read the plate (dirt, glare, obscured camera), facial detection or OTP verification handles the entry. This means no single failure point can stop the gate from operating. Other gate management systems that rely on a single modality or on third-party integrations do not have this resilience."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What does the guard see on the Guard App tablet?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "The Guard App is a single-screen Android tablet application showing a live queue of all gate events in real time. Each event shows the vehicle or person details, identification method used, and the action taken or required. Automatically cleared entries appear with a green status. Events requiring guard action — unknown visitors, OTP verification, override requests — appear highlighted. The guard can approve, deny or register visitors directly from the tablet. Manual gate controls are always accessible."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What can the Admin Portal do?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "The Admin Portal is a web-based dashboard for RWA committees, facility managers and security administrators. It provides real-time gate status across all entry points, a complete vehicle and resident registry, full event logs with timestamp and photo for every entry and exit, exportable audit reports, gate configuration controls, and role-based access management. Multi-community and multi-gate deployments are managed from a single login."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+
+  <!-- FONTS -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300;1,9..40,400&display=swap" rel="stylesheet">
+
+  <style>
+    /* ═══════ TOKENS ═══════ */
+    :root {
+      --bg:         #FAFAF7;
+      --surface:    #FFFFFF;
+      --surface-2:  #F2F2EE;
+      --border:     rgba(0,0,0,0.08);
+      --border-mid: rgba(0,0,0,0.13);
+      --text-1:     #1C1C1A;
+      --text-2:     #5C5C58;
+      --text-3:     #8A8A84;
+      --green:      #0F6E56;
+      --green-d:    #0A4F3E;
+      --green-l:    #E1F5EE;
+      --teal:       #5DCAA5;
+      --dark:       #0F2920;
+      --amber:      #D97706;
+      --amber-l:    #FEF3C7;
+      --font:       'DM Sans', sans-serif;
+      --ease:       0.2s ease;
+    }
+
+    /* ═══════ RESET ═══════ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text-1); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+    a { color: inherit; text-decoration: none; }
+
+    /* ═══════ UTILITY ═══════ */
+    .container { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+    .eyebrow { display: inline-block; font-size: 11px; font-weight: 500; letter-spacing: 0.07em; text-transform: uppercase; color: var(--green); background: var(--green-l); padding: 4px 12px; border-radius: 20px; margin-bottom: 14px; }
+    .sec-h { font-size: clamp(24px, 3.5vw, 36px); font-weight: 500; color: var(--text-1); letter-spacing: -0.025em; line-height: 1.2; }
+    .sec-s { font-size: 16px; color: var(--text-2); line-height: 1.65; max-width: 540px; margin-top: 12px; }
+    .btn-p { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font); font-size: 14px; font-weight: 500; background: var(--green); color: #fff; padding: 11px 24px; border-radius: 10px; border: none; cursor: pointer; transition: background var(--ease), transform var(--ease); }
+    .btn-p:hover { background: var(--green-d); transform: translateY(-1px); }
+    .btn-s { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font); font-size: 14px; color: var(--text-1); padding: 11px 24px; border-radius: 10px; border: 1px solid var(--border-mid); background: transparent; cursor: pointer; transition: background var(--ease); }
+    .btn-s:hover { background: var(--surface-2); }
+    .fade-in { opacity: 0; transform: translateY(22px); transition: opacity 0.6s ease, transform 0.6s ease; }
+    .fade-in.vis { opacity: 1; transform: none; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+    /* ═══════ NAV ═══════ */
+    nav { position: sticky; top: 0; z-index: 100; background: rgba(255,255,255,0.93); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); height: 60px; }
+    .nav-in { display: flex; align-items: center; justify-content: space-between; height: 100%; }
+    .nav-logo { display: flex; flex-direction: column; gap: 1px; }
+    .nav-logo-n { font-size: 16px; font-weight: 500; color: var(--text-1); letter-spacing: -0.02em; line-height: 1; }
+    .nav-logo-t { font-size: 9.5px; color: var(--green); font-style: italic; line-height: 1; }
+    .nav-links { display: flex; gap: 2px; list-style: none; }
+    .nav-links a { font-size: 13px; color: var(--text-2); padding: 6px 12px; border-radius: 6px; transition: background var(--ease), color var(--ease); }
+    .nav-links a:hover, .nav-links a.active { color: var(--text-1); background: var(--surface-2); }
+    .nav-cta { font-family: var(--font); font-size: 13px; font-weight: 500; background: var(--green); color: #fff; padding: 8px 18px; border-radius: 9px; border: none; cursor: pointer; transition: background var(--ease); }
+    .nav-cta:hover { background: var(--green-d); }
+
+    /* ═══════ ANCHOR STRIP ═══════ */
+    .anchor-strip { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0; overflow-x: auto; }
+    .anchor-inner { display: flex; align-items: center; gap: 0; padding: 0 24px; height: 48px; min-width: max-content; }
+    .anchor-item { font-size: 12px; color: var(--text-3); padding: 0 16px; height: 100%; display: flex; align-items: center; border-bottom: 2px solid transparent; white-space: nowrap; cursor: pointer; transition: color var(--ease), border-color var(--ease); }
+    .anchor-item:hover { color: var(--text-1); border-bottom-color: var(--teal); }
+
+    /* ═══════ HERO ═══════ */
+    .hero { padding: 72px 0 60px; text-align: center; }
+    .hero h1 { font-size: clamp(30px, 5vw, 52px); font-weight: 500; color: var(--text-1); letter-spacing: -0.03em; line-height: 1.12; margin-bottom: 16px; }
+    .hero h1 em { color: var(--green); font-style: normal; }
+    .hero-sub { font-size: 17px; color: var(--text-2); line-height: 1.65; max-width: 560px; margin: 0 auto 32px; }
+    .hero-actions { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+
+    /* ═══════ GATE FLOW ILLUSTRATION ═══════ */
+    .gate-flow-section { padding: 72px 0; background: var(--surface); border-top: 1px solid var(--border); }
+    .gate-flow-wrap { background: var(--dark); border-radius: 20px; overflow: hidden; margin-top: 40px; padding: 40px 32px; }
+    .flow-steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; align-items: center; position: relative; }
+    .flow-steps::before {
+      content: '';
+      position: absolute;
+      top: 38px; left: 10%; right: 10%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(93,202,165,0.3), var(--teal), rgba(93,202,165,0.3), transparent);
+    }
+    .flow-step { display: flex; flex-direction: column; align-items: center; gap: 12px; position: relative; z-index: 1; }
+    .flow-icon-wrap { width: 76px; height: 76px; border-radius: 50%; background: rgba(93,202,165,0.1); border: 1px solid rgba(93,202,165,0.25); display: flex; align-items: center; justify-content: center; transition: background 0.4s ease, border-color 0.4s ease; }
+    .flow-step.active .flow-icon-wrap { background: rgba(93,202,165,0.2); border-color: var(--teal); }
+    .flow-step-num { font-size: 10px; font-weight: 500; color: rgba(255,255,255,0.3); letter-spacing: 0.06em; text-transform: uppercase; }
+    .flow-step-label { font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.7); text-align: center; line-height: 1.35; max-width: 90px; }
+    .flow-arrow { display: flex; align-items: center; justify-content: center; }
+    .flow-arrow svg { opacity: 0.3; }
+
+    .flow-detail { margin-top: 32px; min-height: 100px; }
+    .flow-detail-step { display: none; }
+    .flow-detail-step.active { display: grid; grid-template-columns: 1fr 2fr; gap: 28px; align-items: start; }
+    .fds-left { background: rgba(255,255,255,0.05); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.08); }
+    .fds-tag { font-size: 10px; font-weight: 500; color: var(--teal); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; }
+    .fds-title { font-size: 16px; font-weight: 500; color: #F0F5F3; margin-bottom: 8px; line-height: 1.3; }
+    .fds-body { font-size: 13px; color: rgba(255,255,255,0.5); line-height: 1.65; }
+    .fds-right { display: flex; flex-direction: column; gap: 8px; }
+    .fds-pill { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 10px 14px; }
+    .fds-pill-icon { width: 28px; height: 28px; border-radius: 6px; background: rgba(93,202,165,0.12); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .fds-pill-text { font-size: 12px; color: rgba(255,255,255,0.65); line-height: 1.35; }
+    .fds-pill-strong { font-weight: 500; color: #F0F5F3; }
+    .flow-nav-btns { display: flex; gap: 8px; margin-top: 20px; justify-content: center; }
+    .flow-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.15); cursor: pointer; transition: background 0.2s; border: none; }
+    .flow-dot.active { background: var(--teal); }
+
+    /* ═══════ FALLBACK CHAIN DIAGRAM ═══════ */
+    .fallback-section { padding: 72px 0; background: var(--bg); }
+    .fallback-diagram { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; align-items: stretch; }
+    .fd-col { display: flex; flex-direction: column; }
+    .fd-layer {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      background: var(--surface);
+      margin: 0 6px 12px;
+      flex: 1;
+      transition: transform var(--ease), border-color var(--ease);
+      cursor: default;
+    }
+    .fd-layer:hover { transform: translateY(-3px); border-color: var(--teal); }
+    .fd-layer-num {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: var(--green-l);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 500; color: var(--green);
+      margin-bottom: 12px;
+    }
+    .fd-layer h3 { font-size: 14px; font-weight: 500; color: var(--text-1); margin-bottom: 6px; }
+    .fd-layer p { font-size: 12.5px; color: var(--text-2); line-height: 1.55; }
+    .fd-connector { display: flex; align-items: center; justify-content: center; padding: 12px 0; }
+    .fd-connector svg { opacity: 0.25; }
+    .fd-fallback-label { font-size: 10px; font-weight: 500; color: var(--text-3); letter-spacing: 0.06em; text-transform: uppercase; text-align: center; margin-top: 4px; }
+    .fallback-result {
+      grid-column: 1 / -1;
+      margin: 8px 6px 0;
+      background: var(--dark);
+      border-radius: 14px;
+      padding: 22px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .fr-left { display: flex; align-items: center; gap: 14px; }
+    .fr-icon { width: 40px; height: 40px; border-radius: 50%; background: rgba(93,202,165,0.2); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .fr-title { font-size: 16px; font-weight: 500; color: #F0F5F3; }
+    .fr-sub { font-size: 12px; color: rgba(255,255,255,0.45); margin-top: 2px; }
+    .fr-stats { display: flex; gap: 24px; }
+    .fr-stat { text-align: center; }
+    .fr-stat-num { font-size: 22px; font-weight: 500; color: var(--teal); display: block; line-height: 1; }
+    .fr-stat-label { font-size: 10px; color: rgba(255,255,255,0.3); margin-top: 3px; }
+
+    /* ═══════ ANIMATED TECHNOLOGY GRAPHICS ═══════ */
+    .tech-graphics-section { padding: 72px 0; background: var(--surface); border-top: 1px solid var(--border); }
+    .tech-tabs { display: flex; gap: 6px; margin: 32px 0 28px; flex-wrap: wrap; }
+    .tech-tab { font-family: var(--font); font-size: 13px; color: var(--text-2); background: var(--bg); border: 1px solid var(--border); padding: 8px 18px; border-radius: 20px; cursor: pointer; transition: all var(--ease); }
+    .tech-tab.active { background: var(--green); color: #fff; border-color: var(--green); }
+    .tech-panel { display: none; }
+    .tech-panel.active { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
+    .tech-graphic { border-radius: 16px; overflow: hidden; background: var(--bg); border: 1px solid var(--border); aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center; position: relative; }
+    .tech-text h3 { font-size: clamp(20px, 2.5vw, 26px); font-weight: 500; color: var(--text-1); letter-spacing: -0.02em; line-height: 1.25; margin-bottom: 12px; }
+    .tech-text p { font-size: 15px; color: var(--text-2); line-height: 1.65; margin-bottom: 16px; }
+    .tech-specs { display: flex; flex-direction: column; gap: 8px; }
+    .tech-spec { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; color: var(--text-1); }
+    .spec-dot { width: 18px; height: 18px; border-radius: 50%; background: var(--green-l); display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+    .spec-dot svg { width: 9px; height: 9px; }
+
+    /* RFID Animation */
+    @keyframes rfid-wave { 0%,100%{opacity:0;transform:scale(0.7)} 50%{opacity:1;transform:scale(1)} }
+    @keyframes rfid-pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+    @keyframes scan-line { 0%{transform:translateY(-50px);opacity:0} 30%{opacity:1} 70%{opacity:1} 100%{transform:translateY(80px);opacity:0} }
+    @keyframes face-detect { 0%,100%{opacity:0.3;transform:scale(0.95)} 50%{opacity:1;transform:scale(1)} }
+    @keyframes barrier-open { 0%{transform:scaleX(1)} 100%{transform:scaleX(0.15);transform-origin:left} }
+    @keyframes car-approach { 0%{transform:translateX(-120px);opacity:0} 40%{opacity:1;transform:translateX(-40px)} 70%{transform:translateX(-20px)} 100%{transform:translateX(60px);opacity:0} }
+    @keyframes blink-green { 0%,100%{background:#6EE7B7} 50%{background:#10B981} }
+    @keyframes float-up { 0%{opacity:0;transform:translateY(10px)} 20%{opacity:1;transform:translateY(0)} 80%{opacity:1;transform:translateY(0)} 100%{opacity:0;transform:translateY(-10px)} }
+
+    .rfid-wave { animation: rfid-wave 1.8s ease-in-out infinite; }
+    .rfid-wave-2 { animation: rfid-wave 1.8s ease-in-out 0.3s infinite; }
+    .rfid-wave-3 { animation: rfid-wave 1.8s ease-in-out 0.6s infinite; }
+    .scan-line-anim { animation: scan-line 2.4s ease-in-out infinite; }
+    .face-anim { animation: face-detect 2s ease-in-out infinite; }
+    .barrier-anim { animation: barrier-open 1.5s ease-in-out 0.5s forwards; transform-origin: left center; }
+    .car-anim { animation: car-approach 3s ease-in-out infinite; }
+    .check-blink { animation: blink-green 1.2s ease-in-out infinite; }
+    .float-tag { animation: float-up 2.5s ease-in-out infinite; }
+
+    /* ═══════ THREE PRODUCTS ═══════ */
+    .products-section { padding: 72px 0; background: var(--bg); }
+    .products-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 40px; }
+    .product-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; transition: transform var(--ease), border-color var(--ease); }
+    .product-card:hover { transform: translateY(-4px); }
+    .product-card-header { padding: 20px 20px 16px; border-bottom: 1px solid var(--border); }
+    .product-platform { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 10px; border-radius: 20px; display: inline-block; margin-bottom: 10px; }
+    .platform-mobile { background: #E6F1FB; color: #0C447C; }
+    .platform-tablet { background: #FAEEDA; color: #633806; }
+    .platform-web { background: #EEEDFE; color: #3C3489; }
+    .product-card-title { font-size: 17px; font-weight: 500; color: var(--text-1); margin-bottom: 4px; }
+    .product-card-sub { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+    .product-card-mockup { padding: 16px; background: var(--bg); min-height: 200px; }
+    .product-card-features { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 7px; }
+    .pf-item { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--text-1); line-height: 1.35; }
+    .pf-check { width: 16px; height: 16px; border-radius: 50%; background: var(--green-l); display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+    .pf-check svg { width: 8px; height: 8px; }
+
+    /* Product mockups */
+    .mockup-phone { background: #1a1a18; border-radius: 12px; padding: 8px; max-width: 160px; margin: 0 auto; }
+    .mockup-phone-screen { background: #0F2920; border-radius: 8px; padding: 12px; }
+    .mock-status-bar { display: flex; justify-content: space-between; margin-bottom: 8px; }
+    .mock-status-dot { width: 6px; height: 6px; border-radius: 50%; }
+    .mock-row { background: rgba(255,255,255,0.06); border-radius: 6px; padding: 7px 8px; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }
+    .mock-row-l { font-size: 9px; color: rgba(255,255,255,0.7); }
+    .mock-row-sub { font-size: 8px; color: rgba(255,255,255,0.3); margin-top: 1px; }
+    .mock-badge { font-size: 8px; padding: 2px 6px; border-radius: 10px; }
+    .badge-g { background: rgba(15,110,86,0.3); color: #5DCAA5; }
+    .badge-a { background: rgba(217,119,6,0.3); color: #FCD34D; }
+
+    .mockup-tablet { background: #1a1a18; border-radius: 10px; padding: 8px; max-width: 220px; margin: 0 auto; }
+    .mockup-tablet-screen { background: var(--bg); border-radius: 6px; padding: 10px; }
+    .tablet-header { font-size: 8px; font-weight: 500; color: var(--text-2); margin-bottom: 6px; border-bottom: 1px solid var(--border); padding-bottom: 4px; display: flex; justify-content: space-between; }
+    .tablet-row { background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 6px 7px; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
+    .tablet-row-l { font-size: 8px; color: var(--text-1); }
+    .tablet-row-sub { font-size: 7px; color: var(--text-3); margin-top: 1px; }
+    .tablet-badge { font-size: 7px; padding: 2px 5px; border-radius: 8px; }
+    .tab-badge-g { background: var(--green-l); color: var(--green); }
+    .tab-badge-o { background: var(--amber-l); color: var(--amber); }
+
+    .mockup-browser { background: #1a1a18; border-radius: 8px; overflow: hidden; max-width: 220px; margin: 0 auto; }
+    .browser-bar { background: #2a2a28; padding: 6px 8px; display: flex; align-items: center; gap: 4px; }
+    .browser-dot { width: 5px; height: 5px; border-radius: 50%; }
+    .browser-screen { background: var(--bg); padding: 8px; }
+    .browser-nav-bar { background: var(--surface); border-radius: 4px; padding: 5px 7px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border); }
+    .bnb-title { font-size: 7px; font-weight: 500; color: var(--text-1); }
+    .stat-mini-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 5px; }
+    .stat-mini { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 4px; text-align: center; }
+    .stat-mini-n { font-size: 11px; font-weight: 500; color: var(--green); }
+    .stat-mini-l { font-size: 6px; color: var(--text-3); }
+    .browser-row { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 5px 6px; margin-bottom: 3px; display: flex; justify-content: space-between; }
+    .br-text { font-size: 7px; color: var(--text-1); }
+    .br-sub { font-size: 6px; color: var(--text-3); }
+    .br-badge { font-size: 6px; padding: 1px 4px; border-radius: 6px; }
+    .brb-g { background: var(--green-l); color: var(--green); }
+    .brb-b { background: var(--surface-2); color: var(--text-3); }
+
+    /* ═══════ STEP BY STEP PROCESS ═══════ */
+    .process-section { padding: 72px 0; background: var(--surface); border-top: 1px solid var(--border); }
+    .process-timeline { margin-top: 48px; position: relative; }
+    .process-timeline::before { content: ''; position: absolute; left: 27px; top: 28px; bottom: 28px; width: 1px; background: linear-gradient(180deg, var(--teal), rgba(93,202,165,0.1)); }
+    .process-step { display: flex; gap: 24px; margin-bottom: 32px; position: relative; }
+    .process-step:last-child { margin-bottom: 0; }
+    .ps-num { width: 56px; height: 56px; border-radius: 50%; background: var(--surface); border: 1.5px solid var(--teal); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 16px; font-weight: 500; color: var(--green); position: relative; z-index: 1; }
+    .ps-content { flex: 1; padding-top: 12px; }
+    .ps-content h3 { font-size: 16px; font-weight: 500; color: var(--text-1); margin-bottom: 6px; }
+    .ps-content p { font-size: 14px; color: var(--text-2); line-height: 1.6; max-width: 560px; }
+    .ps-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 20px; margin-top: 8px; }
+
+    /* ═══════ FAQ ═══════ */
+    .faq-section { padding: 72px 0; background: var(--bg); }
+    .faq-list { margin-top: 36px; display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+    .faq-item { border-bottom: 1px solid var(--border); }
+    .faq-item:last-child { border-bottom: none; }
+    .faq-q { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; cursor: pointer; font-size: 14.5px; font-weight: 500; color: var(--text-1); background: var(--surface); transition: background var(--ease); user-select: none; }
+    .faq-q:hover { background: var(--bg); }
+    .faq-chev { width: 20px; height: 20px; border-radius: 50%; background: var(--surface-2); display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform var(--ease), background var(--ease); }
+    .faq-chev svg { width: 10px; height: 10px; }
+    .faq-item.open .faq-chev { transform: rotate(180deg); background: var(--green-l); }
+    .faq-a { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+    .faq-item.open .faq-a { max-height: 400px; }
+    .faq-a-inner { padding: 0 22px 18px; font-size: 14px; color: var(--text-2); line-height: 1.7; }
+
+    /* ═══════ CTA ═══════ */
+    .cta-section { padding: 88px 0; background: var(--dark); text-align: center; position: relative; overflow: hidden; }
+    .cta-section::before { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 600px; height: 400px; background: radial-gradient(ellipse, rgba(93,202,165,0.09) 0%, transparent 70%); pointer-events: none; }
+    .cta-section h2 { font-size: clamp(26px, 4vw, 42px); font-weight: 500; color: #F0F5F3; letter-spacing: -0.025em; line-height: 1.2; margin-bottom: 14px; }
+    .cta-section h2 em { color: var(--teal); font-style: normal; }
+    .cta-section p { font-size: 16px; color: rgba(255,255,255,0.5); max-width: 460px; margin: 0 auto 32px; line-height: 1.65; }
+    .cta-btns { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+    .btn-cta { font-family: var(--font); font-size: 14px; font-weight: 500; background: var(--teal); color: var(--dark); padding: 12px 28px; border-radius: 10px; border: none; cursor: pointer; transition: opacity var(--ease); }
+    .btn-cta:hover { opacity: 0.9; }
+    .btn-cta-ghost { font-family: var(--font); font-size: 14px; color: rgba(255,255,255,0.6); padding: 12px 28px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); background: transparent; cursor: pointer; transition: border-color var(--ease), color var(--ease); }
+    .btn-cta-ghost:hover { border-color: rgba(255,255,255,0.35); color: rgba(255,255,255,0.9); }
+
+    /* ═══════ FOOTER ═══════ */
+    footer { background: var(--dark); border-top: 1px solid rgba(255,255,255,0.06); padding: 44px 0 24px; }
+    .footer-top { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 36px; padding-bottom: 32px; border-bottom: 1px solid rgba(255,255,255,0.07); margin-bottom: 20px; }
+    .footer-brand-n { font-size: 18px; font-weight: 500; color: #F0F5F3; letter-spacing: -0.02em; margin-bottom: 3px; }
+    .footer-brand-t { font-size: 11px; color: var(--teal); font-style: italic; font-weight: 300; margin-bottom: 12px; }
+    .footer-brand-d { font-size: 12.5px; color: rgba(255,255,255,0.3); line-height: 1.6; max-width: 220px; }
+    .footer-col-h { font-size: 10px; font-weight: 500; letter-spacing: 0.07em; text-transform: uppercase; color: rgba(255,255,255,0.3); margin-bottom: 12px; }
+    .footer-links { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .footer-links a { font-size: 12.5px; color: rgba(255,255,255,0.45); transition: color var(--ease); }
+    .footer-links a:hover { color: rgba(255,255,255,0.85); }
+    .footer-bottom { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+    .footer-copy { font-size: 11px; color: rgba(255,255,255,0.2); }
+    .footer-tag-small { font-size: 10px; color: rgba(93,202,165,0.35); font-style: italic; }
+
+    /* ═══════ RESPONSIVE ═══════ */
+    @media (max-width: 900px) {
+      .nav-links { display: none; }
+      .flow-steps { grid-template-columns: repeat(3, 1fr); }
+      .flow-steps .flow-step:nth-child(n+4) { display: none; }
+      .flow-detail-step.active { grid-template-columns: 1fr; }
+      .fallback-diagram { grid-template-columns: 1fr; }
+      .fallback-diagram .fd-col:not(:first-child) { flex-direction: row; }
+      .tech-panel.active { grid-template-columns: 1fr; }
+      .tech-graphic { max-height: 280px; }
+      .products-grid { grid-template-columns: 1fr; }
+      .footer-top { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 600px) {
+      .flow-steps { grid-template-columns: repeat(2, 1fr); }
+      .footer-top { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ═══ NAV ═══ -->
+  <nav role="navigation" aria-label="Main navigation">
+    <div class="container nav-in">
+      <a href="/" class="nav-logo" aria-label="Dwaar AI home">
+        <span class="nav-logo-n">Dwaar AI</span>
+        <span class="nav-logo-t">Open the right doors.</span>
+      </a>
+      <ul class="nav-links" role="list">
+        <li><a href="/how-it-works" class="active" aria-current="page">How it works</a></li>
+        <li><a href="/solutions">Solutions</a></li>
+        <li><a href="/resources">Resources</a></li>
+        <li><a href="/about">About</a></li>
+        <li><a href="/contact">Contact</a></li>
+      </ul>
+      <button class="nav-cta" onclick="window.location='/demo'">Book a demo</button>
+    </div>
+  </nav>
+
+  <!-- ═══ ANCHOR STRIP ═══ -->
+  <nav class="anchor-strip" aria-label="Page sections">
+    <div class="anchor-inner" role="list">
+      <a class="anchor-item" href="#gate-flow" role="listitem">The experience</a>
+      <a class="anchor-item" href="#fallback" role="listitem">Fallback chain</a>
+      <a class="anchor-item" href="#technology" role="listitem">Technology</a>
+      <a class="anchor-item" href="#products" role="listitem">Three products</a>
+      <a class="anchor-item" href="#step-by-step" role="listitem">Step by step</a>
+      <a class="anchor-item" href="#faq" role="listitem">FAQ</a>
+    </div>
+  </nav>
+
+  <main>
+
+    <!-- ═══ HERO ═══ -->
+    <section class="hero" aria-labelledby="hero-h">
+      <div class="container">
+        <span class="eyebrow">How Dwaar AI works</span>
+        <h1 id="hero-h">Three layers. One gate.<br><em>Zero failures.</em></h1>
+        <p class="hero-sub">Every vehicle identified. Every visitor verified. Every entry logged. This is how Dwaar AI's RFID, ANPR and AI facial detection work together — and what happens when one layer can't.</p>
+        <div class="hero-actions">
+          <button class="btn-p" onclick="window.location='/demo'">Book a demo</button>
+          <button class="btn-s" onclick="document.getElementById('gate-flow').scrollIntoView({behavior:'smooth'})">See the gate flow ↓</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ GATE FLOW ═══ -->
+    <section class="gate-flow-section fade-in" id="gate-flow" aria-labelledby="gf-h">
+      <div class="container">
+        <span class="eyebrow">The experience</span>
+        <h2 class="sec-h" id="gf-h">From approach to cleared — in under 3 seconds.</h2>
+        <p class="sec-s">Walk through every stage of a gate event. Click each step to understand what's happening at the gate, in the system, and on the guard's screen.</p>
+
+        <div class="gate-flow-wrap" role="region" aria-label="Interactive gate flow walkthrough">
+          <div class="flow-steps" id="flow-steps" role="tablist">
+            <div class="flow-step active" role="tab" aria-selected="true" aria-controls="fd-0" tabindex="0" onclick="setFlowStep(0)" onkeydown="if(event.key==='Enter')setFlowStep(0)">
+              <div class="flow-icon-wrap" aria-hidden="true">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                  <rect x="4" y="18" width="24" height="10" rx="3" stroke="#5DCAA5" stroke-width="1.3"/>
+                  <rect x="10" y="12" width="12" height="8" rx="2" stroke="#5DCAA5" stroke-width="1.3"/>
+                  <circle cx="9" cy="28" r="2.5" stroke="#5DCAA5" stroke-width="1.2"/>
+                  <circle cx="23" cy="28" r="2.5" stroke="#5DCAA5" stroke-width="1.2"/>
+                  <path d="M4 22h24" stroke="#5DCAA5" stroke-width="1" stroke-dasharray="2 2"/>
+                </svg>
+              </div>
+              <span class="flow-step-num">Step 1</span>
+              <span class="flow-step-label">Vehicle approaches</span>
+            </div>
+            <div class="flow-step" role="tab" aria-selected="false" aria-controls="fd-1" tabindex="0" onclick="setFlowStep(1)" onkeydown="if(event.key==='Enter')setFlowStep(1)">
+              <div class="flow-icon-wrap" aria-hidden="true">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                  <rect x="5" y="8" width="10" height="16" rx="2" stroke="#5DCAA5" stroke-width="1.3"/>
+                  <circle cx="22" cy="16" r="5" stroke="#5DCAA5" stroke-width="1.3" stroke-dasharray="3 2"/>
+                  <circle cx="22" cy="16" r="2" fill="#5DCAA5"/>
+                  <path d="M15 16h5" stroke="#5DCAA5" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <span class="flow-step-num">Step 2</span>
+              <span class="flow-step-label">RFID reads tag</span>
+            </div>
+            <div class="flow-step" role="tab" aria-selected="false" aria-controls="fd-2" tabindex="0" onclick="setFlowStep(2)" onkeydown="if(event.key==='Enter')setFlowStep(2)">
+              <div class="flow-icon-wrap" aria-hidden="true">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                  <rect x="4" y="10" width="24" height="14" rx="3" stroke="#5DCAA5" stroke-width="1.3"/>
+                  <circle cx="16" cy="17" r="3.5" stroke="#5DCAA5" stroke-width="1.2"/>
+                  <rect x="11" y="25" width="10" height="2" rx="1" fill="#5DCAA5" opacity="0.5"/>
+                </svg>
+              </div>
+              <span class="flow-step-num">Step 3</span>
+              <span class="flow-step-label">ANPR reads plate</span>
+            </div>
+            <div class="flow-step" role="tab" aria-selected="false" aria-controls="fd-3" tabindex="0" onclick="setFlowStep(3)" onkeydown="if(event.key==='Enter')setFlowStep(3)">
+              <div class="flow-icon-wrap" aria-hidden="true">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                  <circle cx="16" cy="13" r="5" stroke="#5DCAA5" stroke-width="1.3"/>
+                  <path d="M6 28c0-5.52 4.48-10 10-10s10 4.48 10 10" stroke="#5DCAA5" stroke-width="1.3" stroke-linecap="round"/>
+                  <rect x="10" y="8" width="12" height="10" rx="6" stroke="#5DCAA5" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.6"/>
+                </svg>
+              </div>
+              <span class="flow-step-num">Step 4</span>
+              <span class="flow-step-label">Face / OTP verify</span>
+            </div>
+            <div class="flow-step" role="tab" aria-selected="false" aria-controls="fd-4" tabindex="0" onclick="setFlowStep(4)" onkeydown="if(event.key==='Enter')setFlowStep(4)">
+              <div class="flow-icon-wrap" aria-hidden="true">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                  <rect x="6" y="10" width="4" height="12" rx="2" fill="#5DCAA5" opacity="0.7"/>
+                  <rect x="6" y="10" width="20" height="3" rx="1.5" fill="#5DCAA5"/>
+                  <path d="M10 10V6" stroke="#5DCAA5" stroke-width="1.5" stroke-linecap="round"/>
+                  <path d="M8 18l4 4 8-8" stroke="#5DCAA5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <span class="flow-step-num">Step 5</span>
+              <span class="flow-step-label">Barrier lifts. Cleared.</span>
+            </div>
+          </div>
+
+          <!-- Detail panels -->
+          <div class="flow-detail" aria-live="polite">
+            <div class="flow-detail-step active" id="fd-0" role="tabpanel">
+              <div class="fds-left">
+                <p class="fds-tag">Stage 01 — Approach</p>
+                <h3 class="fds-title">The vehicle enters Dwaar AI's detection zone.</h3>
+                <p class="fds-body">As the vehicle turns toward the gate, all three identification systems activate simultaneously. RFID begins scanning for tags. The ANPR camera starts its feed. The facial detection engine watches the windscreen and surrounding area. Everything happens in parallel — there's no sequence, no waiting for one to fail before trying the next.</p>
+              </div>
+              <div class="fds-right">
+                <div class="fds-pill"><div class="fds-pill-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="#5DCAA5" stroke-width="1"/><path d="M7 4v3l2 2" stroke="#5DCAA5" stroke-width="1" stroke-linecap="round"/></svg></div><div class="fds-pill-text"><span class="fds-pill-strong">Detection range</span><br>RFID active from 3–5 metres</div></div>
+                <div class="fds-pill"><div class="fds-pill-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="4" width="10" height="6" rx="1.5" stroke="#5DCAA5" stroke-width="1"/><circle cx="7" cy="7" r="1.5" stroke="#5DCAA5" stroke-width="1"/></svg></div><div class="fds-pill-text"><span class="fds-pill-strong">All 3 modalities</span><br>Activate in parallel, not sequence</div></div>
+                <div class="fds-pill"><div class="fds-pill-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M7 2v10" stroke="#5DCAA5" stroke-width="1" stroke-linecap="round"/></svg></div><div class="fds-pill-text"><span class="fds-pill-strong">No action required</span><br>Driver doesn't need to stop or press anything</div></div>
+              </div>
+            </div>
+            <div class="flow-detail-step" id="fd-1" role="tabpanel">
+              <div class="fds-left">
+                <p class="fds-tag">Stage 02 — RFID Identification</p>
+                <h3 class="fds-title">The vehicle's RFID tag is read. Matched. Gate opens.</h3>
+                <p class="fds-body">A UHF RFID tag — typically a small sticker on the windscreen or bumper — is detected by the gate reader from 3 to 5 metres away. The tag ID is matched against the society's vehicle registry. If it's a registered vehicle, the boom barrier opens automatically. The entire process takes under one second. The driver never slows down.</p>
+              </div>
+              <div class="fds-right">
+                <div class="fds-pill"><div class="fds-pill-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="3" width="6" height="8" rx="1" stroke="#5DCAA5" stroke-width="1"/><circle cx="10" cy="7" r="2.5" stroke="#5DCAA5" stroke-width="1" stroke-dasharray="2 1.5"/></svg></div><div class="fds-pill-text"><span class="fds-pill-strong">UHF RFID</span><br>860–960 MHz, reads through glass and plastic</div></div>
+                <div class="fds-pill"><div class="fds-pill-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M7 2v10" stroke="#5DCAA5" stroke-width="1" stroke-linecap="round"/></svg></div><div class="fds-pill-text"><span class="fds-pill-strong">FASTag compatible</span><br>Works alongside existing FASTag on vehicle</div></div>
+                <div class="fds-pill"><div class="fds-pill-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5" stroke="#5DCAA5" stroke-width="1.3" stroke-linecap="round"/></svg></div><div class="fds-pill-text"><span class="fds-pill-strong">Gate open signal</span><br>Sent to boom barrier controller &lt;1 second</div></div>
+              </div>
+            </div>
+            <div class="flow-detail-step" id="fd-2" role="tabpanel">
+              <div class="fds-left">
+                <p class="fds-tag">Stage 03 — ANPR Plate Recognition</p>
+                <h3 class="fds-title">Camera reads the plate. System matches it. Simultaneously.</h3>
+                <p class="fds-body">While RFID is scanning, an ANPR camera captures the vehicle's number plate. Dwaar AI's plate recognition engine reads the characters, normalises the text, and matches it against the vehicle registry. This happens in parallel — meaning for registered vehicles, RFID and ANPR both confirm the match. For vehicles without RFID tags, ANPR alone handles clearance.</p>
+              </div>
+              <div class="fds-right">
+                <div class="fds-pill"><div class="fds-pill-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="4" width="10" height="6" rx="1.5" stroke="#5DCAA5" stroke-width="1"/><rect x="4" y="6" width="6" height="2" rx="0.5" stroke="#5DCAA5" stroke-width="0.8"/></svg></div><div class="fds-pill-text"><span class="fds-pill-strong">Works in all conditions</span><br>Low light, rain, speeds up to 30 km/h</div></div>
+                <div class="fds-pill"><div class="fds-pill-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2l1.5 4h4l-3.2 2.3 1.2 3.7L7 9.5 3.5 12l1.2-3.7L1.5 6h4z" stroke="#5DCAA5" stroke-width="1"/></svg></div><div class="fds-pill-text"><span class="fds-pill-strong">India-specific</span><br>Trained on Indian number plate formats (BH series, state codes)</div></div>
+                <div class="fds-pill"><div class="fds-pill-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5" stroke="#5DCAA5" stroke-width="1.3" stroke-linecap="round"/></svg></div><div class="fds-pill-text"><span class="fds-pill-strong">Dual confirmation</span><br>RFID + ANPR both confirm a registered vehicle</div></div>
+              </div>
+            </div>
+            <div class="flow-detail-step" id="fd-3" role="tabpanel">
+              <div class="fds-left">
+                <p class="fds-tag">Stage 04 — Facial Detection &amp; OTP</p>
+                <h3 class="fds-title">Person at the gate? AI identifies them in seconds.</h3>
+                <p class="fds-body">For pedestrians, staff and visitors walking through the gate, Dwaar AI's AI facial detection engine runs on the camera feed. Known persons — registered residents, domestic workers, regular staff — are identified and cleared. Unknown persons are shown on the guard's tablet with a prompt: request OTP from the visiting resident, or register as a new visitor.</p>
+              </div>
+              <div class="fds-right">
+                <div class="fds-pill"><div class="fds-pill-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="6" r="2.5" stroke="#5DCAA5" stroke-width="1"/><path d="M2 13c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="#5DCAA5" stroke-width="1" stroke-linecap="round"/></svg></div><div class="fds-pill-text"><span class="fds-pill-strong">Proprietary AI model</span><br>Trained and optimised by Dwaar AI's team</div></div>
+                <div class="fds-pill"><div class="fds-pill-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="2" stroke="#5DCAA5" stroke-width="1"/><path d="M5 7l2 2 3-3" stroke="#5DCAA5" stroke-width="1" stroke-linecap="round"/></svg></div><div class="fds-pill-text"><span class="fds-pill-strong">Domestic staff management</span><br>Daily workers face-verified on every visit</div></div>
+                <div class="fds-pill"><div class="fds-pill-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M2 7h6M2 10h8" stroke="#5DCAA5" stroke-width="1" stroke-linecap="round"/></svg></div><div class="fds-pill-text"><span class="fds-pill-strong">OTP fallback</span><br>Unknown person triggers resident notification</div></div>
+              </div>
+            </div>
+            <div class="flow-detail-step" id="fd-4" role="tabpanel">
+              <div class="fds-left">
+                <p class="fds-tag">Stage 05 — Cleared</p>
+                <h3 class="fds-title">Barrier lifts. Entry logged. Everyone notified.</h3>
+                <p class="fds-body">Once identity is confirmed by any layer, the gate controller receives the open signal and the boom barrier lifts. The event is instantly logged to the admin portal with timestamp, entry method, and a photo snapshot. The resident's app receives a push notification. The guard's tablet updates. Everything happens in parallel — under 3 seconds from approach to cleared.</p>
+              </div>
+              <div class="fds-right">
+                <div class="fds-pill"><div class="fds-pill-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5" stroke="#5DCAA5" stroke-width="1.5" stroke-linecap="round"/></svg></div><div class="fds-pill-text"><span class="fds-pill-strong">Boom barrier lifts</span><br>Signal sent via dry contact relay to barrier controller</div></div>
+                <div class="fds-pill"><div class="fds-pill-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="3" y="2" width="8" height="10" rx="1.5" stroke="#5DCAA5" stroke-width="1"/><path d="M5 7h4M5 9h2" stroke="#5DCAA5" stroke-width="0.8" stroke-linecap="round"/></svg></div><div class="fds-pill-text"><span class="fds-pill-strong">Event logged instantly</span><br>Photo + timestamp + method stored in admin portal</div></div>
+                <div class="fds-pill"><div class="fds-pill-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 11L5 7l3 4 2-5 2 3" stroke="#5DCAA5" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="fds-pill-text"><span class="fds-pill-strong">Resident notified</span><br>Push notification with visitor photo sent instantly</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flow-nav-btns" role="group" aria-label="Gate flow navigation">
+            <button class="flow-dot active" id="dot-0" onclick="setFlowStep(0)" aria-label="Step 1: Vehicle approaches"></button>
+            <button class="flow-dot" id="dot-1" onclick="setFlowStep(1)" aria-label="Step 2: RFID reads tag"></button>
+            <button class="flow-dot" id="dot-2" onclick="setFlowStep(2)" aria-label="Step 3: ANPR reads plate"></button>
+            <button class="flow-dot" id="dot-3" onclick="setFlowStep(3)" aria-label="Step 4: Face or OTP verify"></button>
+            <button class="flow-dot" id="dot-4" onclick="setFlowStep(4)" aria-label="Step 5: Barrier lifts"></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ FALLBACK CHAIN ═══ -->
+    <section class="fallback-section fade-in" id="fallback" aria-labelledby="fb-h">
+      <div class="container">
+        <span class="eyebrow">The fallback chain</span>
+        <h2 class="sec-h" id="fb-h">If one layer can't — the others carry on.</h2>
+        <p class="sec-s">This is the architecture no other gate management platform in India has. Three modalities running simultaneously, each ready to take over from the other.</p>
+
+        <div class="fallback-diagram" role="region" aria-label="Fallback chain diagram">
+          <div class="fd-col">
+            <div class="fd-layer">
+              <div class="fd-layer-num" aria-hidden="true">1</div>
+              <h3>UHF RFID</h3>
+              <p>Primary identification for registered vehicles. Reads tags from 3–5 metres before the barrier. Gate opens before the car stops.</p>
+            </div>
+            <div class="fd-connector" aria-hidden="true">
+              <div style="text-align:center;">
+                <svg width="16" height="20" viewBox="0 0 16 20" fill="none"><path d="M8 2v16M4 14l4 4 4-4" stroke="#5DCAA5" stroke-width="1.3" stroke-linecap="round"/></svg>
+                <p class="fd-fallback-label">If RFID fails</p>
+              </div>
+            </div>
+            <div class="fd-layer" style="border-color:rgba(93,202,165,0.3);">
+              <div class="fd-layer-num" aria-hidden="true" style="background:#E1F5EE;">↓</div>
+              <h3>ANPR takes over</h3>
+              <p>Camera reads the number plate. Matched against registry in under 1 second. Works even if the RFID tag is absent, damaged or not yet registered.</p>
+            </div>
+          </div>
+
+          <div class="fd-col">
+            <div class="fd-layer">
+              <div class="fd-layer-num" aria-hidden="true">2</div>
+              <h3>ANPR</h3>
+              <p>Runs simultaneously with RFID. Captures every plate at the barrier — registered or not. Dual confirmation for known vehicles, sole identification for others.</p>
+            </div>
+            <div class="fd-connector" aria-hidden="true">
+              <div style="text-align:center;">
+                <svg width="16" height="20" viewBox="0 0 16 20" fill="none"><path d="M8 2v16M4 14l4 4 4-4" stroke="#5DCAA5" stroke-width="1.3" stroke-linecap="round"/></svg>
+                <p class="fd-fallback-label">If ANPR fails</p>
+              </div>
+            </div>
+            <div class="fd-layer" style="border-color:rgba(93,202,165,0.3);">
+              <div class="fd-layer-num" aria-hidden="true" style="background:#E1F5EE;">↓</div>
+              <h3>Face detection activates</h3>
+              <p>Driver or pedestrian is identified by the AI facial detection engine. Known persons cleared automatically. Unknown persons trigger OTP or guard action.</p>
+            </div>
+          </div>
+
+          <div class="fd-col">
+            <div class="fd-layer">
+              <div class="fd-layer-num" aria-hidden="true">3</div>
+              <h3>AI facial detection</h3>
+              <p>Proprietary AI engine identifies registered faces at the gate — residents, domestic workers, regular staff. No tag, no card, no OTP needed for known persons.</p>
+            </div>
+            <div class="fd-connector" aria-hidden="true">
+              <div style="text-align:center;">
+                <svg width="16" height="20" viewBox="0 0 16 20" fill="none"><path d="M8 2v16M4 14l4 4 4-4" stroke="#5DCAA5" stroke-width="1.3" stroke-linecap="round"/></svg>
+                <p class="fd-fallback-label">Final fallback</p>
+              </div>
+            </div>
+            <div class="fd-layer" style="border-color:rgba(93,202,165,0.3);">
+              <div class="fd-layer-num" aria-hidden="true" style="background:#E1F5EE;">↓</div>
+              <h3>Manual guard control</h3>
+              <p>Guard sees the event on the tablet and makes the call. Approve, deny or register. Manual controls are always the final safety net.</p>
+            </div>
+          </div>
+
+          <div class="fallback-result" role="status">
+            <div class="fr-left">
+              <div class="fr-icon" aria-hidden="true">
+                <svg width="20" height="16" viewBox="0 0 20 16" fill="none"><path d="M2 8l5 5 11-11" stroke="#5DCAA5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div>
+                <p class="fr-title">The gate never fails.</p>
+                <p class="fr-sub">No single point of failure. Every modality is a complete fallback for the others.</p>
+              </div>
+            </div>
+            <div class="fr-stats" role="list" aria-label="Fallback chain stats">
+              <div class="fr-stat" role="listitem">
+                <span class="fr-stat-num">3</span>
+                <span class="fr-stat-label">parallel layers</span>
+              </div>
+              <div class="fr-stat" role="listitem">
+                <span class="fr-stat-num">&lt;3s</span>
+                <span class="fr-stat-label">clearance time</span>
+              </div>
+              <div class="fr-stat" role="listitem">
+                <span class="fr-stat-num">0</span>
+                <span class="fr-stat-label">single points of failure</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ TECHNOLOGY (Animated graphics) ═══ -->
+    <section class="tech-graphics-section fade-in" id="technology" aria-labelledby="tech-h">
+      <div class="container">
+        <span class="eyebrow">Under the hood</span>
+        <h2 class="sec-h" id="tech-h">The technology behind every gate decision.</h2>
+        <p class="sec-s">Click each technology to see how it works at the gate — illustrated with live animations.</p>
+
+        <div class="tech-tabs" role="tablist" aria-label="Technology explainers">
+          <button class="tech-tab active" role="tab" aria-selected="true" aria-controls="tp-rfid" onclick="setTechTab('rfid',this)">UHF RFID</button>
+          <button class="tech-tab" role="tab" aria-selected="false" aria-controls="tp-anpr" onclick="setTechTab('anpr',this)">ANPR</button>
+          <button class="tech-tab" role="tab" aria-selected="false" aria-controls="tp-face" onclick="setTechTab('face',this)">AI facial detection</button>
+        </div>
+
+        <!-- RFID Panel -->
+        <div class="tech-panel active" id="tp-rfid" role="tabpanel">
+          <div class="tech-graphic" aria-label="RFID animated illustration">
+            <svg width="100%" viewBox="0 0 420 300" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <!-- Background -->
+              <rect width="420" height="300" fill="#FAFAF7"/>
+              <!-- Road -->
+              <rect x="0" y="200" width="420" height="100" fill="#E8E8E4"/>
+              <rect x="195" y="200" width="30" height="100" fill="#FAFAF7"/>
+              <!-- Gate post left -->
+              <rect x="160" y="120" width="12" height="90" rx="3" fill="#1C1C1A" opacity="0.8"/>
+              <!-- Gate post right -->
+              <rect x="248" y="120" width="12" height="90" rx="3" fill="#1C1C1A" opacity="0.8"/>
+              <!-- Barrier arm (animated) -->
+              <g id="barrier-arm">
+                <rect x="172" y="120" width="88" height="8" rx="4" fill="#0F6E56"/>
+                <rect x="172" y="124" width="10" height="4" rx="2" fill="#5DCAA5" opacity="0.5"/>
+                <rect x="192" y="124" width="10" height="4" rx="2" fill="#5DCAA5" opacity="0.5"/>
+                <rect x="212" y="124" width="10" height="4" rx="2" fill="#5DCAA5" opacity="0.5"/>
+                <rect x="232" y="124" width="10" height="4" rx="2" fill="#5DCAA5" opacity="0.5"/>
+              </g>
+              <!-- RFID Reader on post -->
+              <rect x="155" y="145" width="22" height="36" rx="4" fill="#0F2920"/>
+              <rect x="158" y="148" width="16" height="12" rx="2" fill="#0F6E56" opacity="0.7"/>
+              <circle cx="166" cy="172" r="4" fill="#5DCAA5" class="check-blink"/>
+              <!-- RFID waves -->
+              <ellipse cx="190" cy="163" rx="16" ry="10" stroke="#5DCAA5" stroke-width="1.2" fill="none" class="rfid-wave"/>
+              <ellipse cx="190" cy="163" rx="26" ry="16" stroke="#5DCAA5" stroke-width="1" fill="none" class="rfid-wave-2"/>
+              <ellipse cx="190" cy="163" rx="36" ry="22" stroke="#5DCAA5" stroke-width="0.7" fill="none" class="rfid-wave-3"/>
+              <!-- Car body (animated) -->
+              <g class="car-anim" aria-label="Approaching vehicle">
+                <!-- Car silhouette -->
+                <rect x="20" y="215" width="60" height="28" rx="5" fill="#2C3E50"/>
+                <rect x="28" y="207" width="42" height="20" rx="4" fill="#34495E"/>
+                <rect x="32" y="210" width="16" height="14" rx="2" fill="#AED6F1" opacity="0.8"/>
+                <rect x="52" y="210" width="14" height="14" rx="2" fill="#AED6F1" opacity="0.8"/>
+                <!-- Wheels -->
+                <circle cx="33" cy="243" r="7" fill="#1C1C1A"/>
+                <circle cx="33" cy="243" r="4" fill="#8A8A84"/>
+                <circle cx="67" cy="243" r="7" fill="#1C1C1A"/>
+                <circle cx="67" cy="243" r="4" fill="#8A8A84"/>
+                <!-- RFID tag on windscreen -->
+                <rect x="37" y="211" width="10" height="6" rx="1" fill="#5DCAA5" opacity="0.8"/>
+                <!-- Tag ID label -->
+                <g class="float-tag">
+                  <rect x="24" y="195" width="52" height="16" rx="4" fill="#0F2920"/>
+                  <text x="50" y="206" text-anchor="middle" font-family="monospace" font-size="8" fill="#5DCAA5">KA01AB1234</text>
+                </g>
+              </g>
+              <!-- Match confirmed label -->
+              <g class="float-tag" style="animation-delay:1.5s">
+                <rect x="170" y="88" width="80" height="20" rx="4" fill="#0F6E56"/>
+                <text x="210" y="102" text-anchor="middle" font-family="sans-serif" font-size="9" fill="white" font-weight="500">✓ Tag matched — open</text>
+              </g>
+              <!-- Labels -->
+              <text x="166" y="200" font-family="sans-serif" font-size="9" fill="#8A8A84" text-anchor="middle">RFID reader</text>
+              <text x="210" y="115" font-family="sans-serif" font-size="9" fill="#8A8A84" text-anchor="middle">Boom barrier</text>
+            </svg>
+          </div>
+          <div class="tech-text">
+            <span class="eyebrow">Layer 1</span>
+            <h3>UHF RFID — vehicles identified before they stop.</h3>
+            <p>Ultra High Frequency RFID tags broadcast a unique ID that our gate reader detects from 3 to 5 metres away. The vehicle is identified, matched, and the barrier signal is sent before the car even reaches the gate.</p>
+            <div class="tech-specs" role="list">
+              <div class="tech-spec" role="listitem"><div class="spec-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div><span>Reads through glass, plastic and water — no line of sight needed</span></div>
+              <div class="tech-spec" role="listitem"><div class="spec-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div><span>UHF range 860–960 MHz — long read distance, fast identification</span></div>
+              <div class="tech-spec" role="listitem"><div class="spec-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div><span>FASTag-compatible — works alongside existing FASTag on the vehicle</span></div>
+              <div class="tech-spec" role="listitem"><div class="spec-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div><span>Tag cost under ₹100 — low deployment cost per vehicle</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ANPR Panel -->
+        <div class="tech-panel" id="tp-anpr" role="tabpanel">
+          <div class="tech-graphic" aria-label="ANPR animated illustration">
+            <svg width="100%" viewBox="0 0 420 300" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <rect width="420" height="300" fill="#FAFAF7"/>
+              <!-- Road -->
+              <rect x="0" y="200" width="420" height="100" fill="#E8E8E4"/>
+              <!-- Camera housing on pole -->
+              <rect x="285" y="60" width="8" height="160" rx="3" fill="#1C1C1A" opacity="0.7"/>
+              <rect x="272" y="56" width="34" height="24" rx="5" fill="#0F2920"/>
+              <rect x="275" y="59" width="20" height="16" rx="3" fill="#0F6E56" opacity="0.6"/>
+              <circle cx="285" cy="67" r="5" fill="#1C1C1A"/>
+              <circle cx="285" cy="67" r="3" fill="#34495E"/>
+              <circle cx="285" cy="67" r="1.5" fill="#AED6F1"/>
+              <!-- Camera FOV cone -->
+              <path d="M285 80 L160 210 L420 210 Z" fill="rgba(93,202,165,0.05)" stroke="rgba(93,202,165,0.2)" stroke-width="0.8"/>
+              <!-- Car with plate -->
+              <rect x="80" y="215" width="70" height="32" rx="5" fill="#2C3E50"/>
+              <rect x="90" y="206" width="50" height="22" rx="4" fill="#34495E"/>
+              <rect x="95" y="209" width="18" height="15" rx="2" fill="#AED6F1" opacity="0.8"/>
+              <rect x="118" y="209" width="16" height="15" rx="2" fill="#AED6F1" opacity="0.8"/>
+              <!-- Number plate -->
+              <rect x="90" y="237" width="44" height="14" rx="2" fill="#F5F5F5"/>
+              <rect x="91" y="238" width="3" height="12" rx="1" fill="#003399"/>
+              <text x="111" y="248" text-anchor="middle" font-family="monospace" font-size="8" fill="#1C1C1A" font-weight="bold">MH02CD5678</text>
+              <!-- Wheels -->
+              <circle cx="96" cy="247" r="7" fill="#1C1C1A"/>
+              <circle cx="96" cy="247" r="4" fill="#8A8A84"/>
+              <circle cx="136" cy="247" r="7" fill="#1C1C1A"/>
+              <circle cx="136" cy="247" r="4" fill="#8A8A84"/>
+              <!-- Scan line animation -->
+              <rect x="80" y="230" width="80" height="2" fill="rgba(93,202,165,0.8)" class="scan-line-anim"/>
+              <!-- Plate reading result -->
+              <g class="float-tag" style="animation-delay:0.8s">
+                <rect x="170" y="190" width="120" height="28" rx="6" fill="#0F2920"/>
+                <text x="230" y="200" text-anchor="middle" font-family="monospace" font-size="7.5" fill="rgba(255,255,255,0.5)">Plate detected</text>
+                <text x="230" y="212" text-anchor="middle" font-family="monospace" font-size="9" fill="#5DCAA5" font-weight="bold">MH 02 CD 5678 ✓</text>
+              </g>
+              <!-- Labels -->
+              <text x="289" y="55" font-family="sans-serif" font-size="8" fill="#8A8A84">ANPR camera</text>
+            </svg>
+          </div>
+          <div class="tech-text">
+            <span class="eyebrow">Layer 2</span>
+            <h3>ANPR — every plate read automatically, day and night.</h3>
+            <p>Automatic Number Plate Recognition captures, reads and matches every vehicle's licence plate as it approaches the barrier — simultaneously with RFID. Works in low light, rain and at normal approach speeds.</p>
+            <div class="tech-specs" role="list">
+              <div class="tech-spec" role="listitem"><div class="spec-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div><span>India-specific model — trained on all Indian number plate formats including BH series</span></div>
+              <div class="tech-spec" role="listitem"><div class="spec-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div><span>Works in low light — IR-enabled cameras capture plates at night</span></div>
+              <div class="tech-spec" role="listitem"><div class="spec-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div><span>Dual confirmation — RFID and ANPR both verify registered vehicles simultaneously</span></div>
+              <div class="tech-spec" role="listitem"><div class="spec-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div><span>Visitor identification — unregistered plates trigger visitor flow automatically</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Face Detection Panel -->
+        <div class="tech-panel" id="tp-face" role="tabpanel">
+          <div class="tech-graphic" aria-label="AI facial detection animated illustration">
+            <svg width="100%" viewBox="0 0 420 300" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <rect width="420" height="300" fill="#FAFAF7"/>
+              <!-- Camera view background -->
+              <rect x="30" y="30" width="260" height="200" rx="8" fill="#0F2920"/>
+              <!-- Person silhouette -->
+              <circle cx="160" cy="100" r="35" fill="#1a3030"/>
+              <!-- Face detail -->
+              <circle cx="160" cy="95" r="22" fill="#2a4040"/>
+              <!-- AI detection bounding box -->
+              <rect x="132" y="66" width="56" height="68" rx="3" stroke="#5DCAA5" stroke-width="1.5" fill="none" stroke-dasharray="6 3" class="face-anim"/>
+              <!-- Corner markers -->
+              <path d="M132 76V66h10" stroke="#5DCAA5" stroke-width="2" stroke-linecap="round"/>
+              <path d="M178 76V66h-10" stroke="#5DCAA5" stroke-width="2" stroke-linecap="round"/>
+              <path d="M132 124v10h10" stroke="#5DCAA5" stroke-width="2" stroke-linecap="round"/>
+              <path d="M178 124v10h-10" stroke="#5DCAA5" stroke-width="2" stroke-linecap="round"/>
+              <!-- Face landmark dots -->
+              <circle cx="150" cy="90" r="1.5" fill="#5DCAA5" opacity="0.6"/>
+              <circle cx="170" cy="90" r="1.5" fill="#5DCAA5" opacity="0.6"/>
+              <circle cx="160" cy="100" r="1.5" fill="#5DCAA5" opacity="0.6"/>
+              <path d="M152 108 Q160 113 168 108" stroke="#5DCAA5" stroke-width="1" fill="none" opacity="0.6"/>
+              <!-- Landmark connection lines -->
+              <line x1="150" y1="90" x2="160" y2="100" stroke="#5DCAA5" stroke-width="0.5" opacity="0.3"/>
+              <line x1="170" y1="90" x2="160" y2="100" stroke="#5DCAA5" stroke-width="0.5" opacity="0.3"/>
+              <!-- Camera overlay info -->
+              <rect x="35" y="35" width="60" height="14" rx="2" fill="rgba(93,202,165,0.15)"/>
+              <text x="65" y="45" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#5DCAA5">LIVE · Gate 1</text>
+              <rect x="35" y="205" width="250" height="20" rx="0" fill="rgba(0,0,0,0.5)"/>
+              <!-- Match result -->
+              <g class="float-tag" style="animation-delay:0.5s">
+                <rect x="35" y="205" width="250" height="20" rx="0" fill="rgba(15,110,86,0.7)"/>
+                <text x="160" y="218" text-anchor="middle" font-family="sans-serif" font-size="8.5" fill="white" font-weight="500">✓ Identified — Rajesh Kumar, Flat 402</text>
+              </g>
+              <!-- AI confidence meter on right -->
+              <rect x="305" y="30" width="85" height="200" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="0.8"/>
+              <text x="347" y="52" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#8A8A84">AI confidence</text>
+              <rect x="315" y="60" width="65" height="8" rx="4" fill="#E1F5EE"/>
+              <rect x="315" y="60" width="61" height="8" rx="4" fill="#0F6E56" class="check-blink"/>
+              <text x="347" y="80" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#0F6E56" font-weight="500">98.4%</text>
+              <text x="347" y="92" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#8A8A84">match score</text>
+              <rect x="315" y="105" width="65" height="1" fill="var(--border)"/>
+              <text x="347" y="118" text-anchor="middle" font-family="sans-serif" font-size="7.5" fill="#5C5C58">Processing time</text>
+              <text x="347" y="132" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#1C1C1A" font-weight="500">0.4s</text>
+              <rect x="315" y="145" width="65" height="1" fill="var(--border)"/>
+              <text x="347" y="158" text-anchor="middle" font-family="sans-serif" font-size="7.5" fill="#5C5C58">Modality</text>
+              <text x="347" y="172" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#1C1C1A" font-weight="500">Face detect</text>
+              <rect x="315" y="183" width="65" height="1" fill="var(--border)"/>
+              <rect x="320" y="192" width="55" height="20" rx="4" fill="#E1F5EE"/>
+              <text x="347" y="205" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#0F6E56" font-weight="500">✓ Cleared</text>
+            </svg>
+          </div>
+          <div class="tech-text">
+            <span class="eyebrow">Layer 3</span>
+            <h3>AI facial detection — know every face at your gate.</h3>
+            <p>Dwaar AI's proprietary AI model runs on the gate camera feed, identifying registered persons in real time. Residents, domestic workers and regular staff are cleared automatically. Unknown faces are flagged for guard action.</p>
+            <div class="tech-specs" role="list">
+              <div class="tech-spec" role="listitem"><div class="spec-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div><span>Proprietary AI model — built and maintained by Dwaar AI, not a generic API</span></div>
+              <div class="tech-spec" role="listitem"><div class="spec-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div><span>Edge processing — runs locally at the gate, no cloud round-trip per identification</span></div>
+              <div class="tech-spec" role="listitem"><div class="spec-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div><span>Domestic staff management — maids, drivers, cooks registered once, auto-identified daily</span></div>
+              <div class="tech-spec" role="listitem"><div class="spec-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div><span>Privacy-by-design — biometric data stored locally, never shared externally</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ THREE PRODUCTS ═══ -->
+    <section class="products-section fade-in" id="products" aria-labelledby="prod-h">
+      <div class="container">
+        <span class="eyebrow">Three products</span>
+        <h2 class="sec-h" id="prod-h">One platform. Three interfaces. Every person at the gate covered.</h2>
+        <p class="sec-s">Dwaar AI gives each stakeholder exactly what they need — on the device they already use. No shared screens. No confusion. No missed entries.</p>
+
+        <div class="products-grid" role="list">
+
+          <!-- Resident App -->
+          <div class="product-card" role="listitem" aria-label="Resident App for iOS and Android">
+            <div class="product-card-header">
+              <span class="product-platform platform-mobile">iOS & Android</span>
+              <h3 class="product-card-title">Resident App</h3>
+              <p class="product-card-sub">For residents of gated communities. Know who enters your gate before they arrive.</p>
+            </div>
+            <div class="product-card-mockup" aria-label="Resident app screenshot mockup">
+              <div class="mockup-phone" role="img" aria-label="Phone showing gate activity feed">
+                <div class="mockup-phone-screen">
+                  <div class="mock-status-bar">
+                    <div class="mock-status-dot" style="background:#5DCAA5;"></div>
+                    <span style="font-size:7px;color:rgba(255,255,255,0.4);">Gate activity</span>
+                    <div class="mock-status-dot" style="background:#5DCAA5;" class="check-blink"></div>
+                  </div>
+                  <div class="mock-row">
+                    <div><p class="mock-row-l">Swiggy delivery</p><p class="mock-row-sub">2 mins ago · Gate 1</p></div>
+                    <span class="mock-badge badge-g">Cleared</span>
+                  </div>
+                  <div class="mock-row">
+                    <div><p class="mock-row-l">Priya Sharma</p><p class="mock-row-sub">Guest pass · 14 mins</p></div>
+                    <span class="mock-badge badge-g">Approved</span>
+                  </div>
+                  <div class="mock-row" style="border:0.5px solid rgba(93,202,165,0.5);">
+                    <div><p class="mock-row-l" style="color:#fff;font-weight:500;">Unknown visitor</p><p class="mock-row-sub">Awaiting approval</p></div>
+                    <span class="mock-badge badge-a">Pending</span>
+                  </div>
+                  <div style="display:flex;gap:4px;margin-top:5px;">
+                    <div style="flex:1;background:rgba(15,110,86,0.4);border-radius:4px;padding:4px;text-align:center;"><span style="font-size:7px;color:#5DCAA5;">✓ Allow</span></div>
+                    <div style="flex:1;background:rgba(255,50,50,0.2);border-radius:4px;padding:4px;text-align:center;"><span style="font-size:7px;color:#FC8181;">✗ Deny</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="product-card-features" role="list">
+              <div class="pf-item" role="listitem"><div class="pf-check" aria-hidden="true"><svg viewBox="0 0 8 7" fill="none"><path d="M1 3.5L3 5.5L7 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Self-registration with society invite code</div>
+              <div class="pf-item" role="listitem"><div class="pf-check" aria-hidden="true"><svg viewBox="0 0 8 7" fill="none"><path d="M1 3.5L3 5.5L7 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Create &amp; share digital visitor passes</div>
+              <div class="pf-item" role="listitem"><div class="pf-check" aria-hidden="true"><svg viewBox="0 0 8 7" fill="none"><path d="M1 3.5L3 5.5L7 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Live activity feed — every entry in real time</div>
+              <div class="pf-item" role="listitem"><div class="pf-check" aria-hidden="true"><svg viewBox="0 0 8 7" fill="none"><path d="M1 3.5L3 5.5L7 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Vehicle management with FASTag status</div>
+              <div class="pf-item" role="listitem"><div class="pf-check" aria-hidden="true"><svg viewBox="0 0 8 7" fill="none"><path d="M1 3.5L3 5.5L7 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Approve or deny visitors remotely</div>
+            </div>
+          </div>
+
+          <!-- Guard App -->
+          <div class="product-card" role="listitem" style="border-color:rgba(217,119,6,0.2);" aria-label="Guard App for Android tablet">
+            <div class="product-card-header">
+              <span class="product-platform platform-tablet">Android Tablet</span>
+              <h3 class="product-card-title">Guard App</h3>
+              <p class="product-card-sub">For security guards. One screen. Every gate event. Zero paper.</p>
+            </div>
+            <div class="product-card-mockup" aria-label="Guard app tablet mockup">
+              <div class="mockup-tablet" role="img" aria-label="Tablet showing live gate queue">
+                <div class="mockup-tablet-screen">
+                  <div class="tablet-header">
+                    <span>Gate queue — live</span>
+                    <span style="color:var(--green);">● 3 events</span>
+                  </div>
+                  <div class="tablet-row">
+                    <div><p class="tablet-row-l">KA 01 AB 1234</p><p class="tablet-row-sub">RFID · Flat 402 · Rajesh Kumar</p></div>
+                    <span class="tablet-badge tab-badge-g">Auto-cleared</span>
+                  </div>
+                  <div class="tablet-row" style="border-color:rgba(217,119,6,0.3);">
+                    <div><p class="tablet-row-l" style="font-weight:500;">MH 02 CD 5678</p><p class="tablet-row-sub">Visitor · OTP: 4821</p></div>
+                    <div style="display:flex;gap:3px;">
+                      <span class="tablet-badge tab-badge-g">Allow</span>
+                      <span class="tablet-badge" style="background:#FEE2E2;color:#991B1B;">Deny</span>
+                    </div>
+                  </div>
+                  <div class="tablet-row">
+                    <div><p class="tablet-row-l">Pedestrian</p><p class="tablet-row-sub">Face not recognised · Register?</p></div>
+                    <span class="tablet-badge tab-badge-o">Action</span>
+                  </div>
+                  <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:5px 6px;margin-top:4px;display:flex;justify-content:space-between;">
+                    <span style="font-size:7px;color:var(--text-3);">Manual gate control</span>
+                    <span style="font-size:7px;color:var(--green);font-weight:500;">Open barrier</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="product-card-features" role="list">
+              <div class="pf-item" role="listitem"><div class="pf-check" aria-hidden="true"><svg viewBox="0 0 8 7" fill="none"><path d="M1 3.5L3 5.5L7 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Single-screen workstation — live gate queue</div>
+              <div class="pf-item" role="listitem"><div class="pf-check" aria-hidden="true"><svg viewBox="0 0 8 7" fill="none"><path d="M1 3.5L3 5.5L7 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Approve, deny or register in two taps</div>
+              <div class="pf-item" role="listitem"><div class="pf-check" aria-hidden="true"><svg viewBox="0 0 8 7" fill="none"><path d="M1 3.5L3 5.5L7 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>OTP verification for visitors</div>
+              <div class="pf-item" role="listitem"><div class="pf-check" aria-hidden="true"><svg viewBox="0 0 8 7" fill="none"><path d="M1 3.5L3 5.5L7 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Manual gate controls always available</div>
+              <div class="pf-item" role="listitem"><div class="pf-check" aria-hidden="true"><svg viewBox="0 0 8 7" fill="none"><path d="M1 3.5L3 5.5L7 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Works in Hindi and regional languages</div>
+            </div>
+          </div>
+
+          <!-- Admin Portal -->
+          <div class="product-card" role="listitem" style="border-color:rgba(127,119,221,0.2);" aria-label="Admin Portal web dashboard">
+            <div class="product-card-header">
+              <span class="product-platform platform-web">Web Dashboard</span>
+              <h3 class="product-card-title">Admin Portal</h3>
+              <p class="product-card-sub">For RWA committees and facility managers. Full visibility. Zero micromanagement.</p>
+            </div>
+            <div class="product-card-mockup" aria-label="Admin portal browser mockup">
+              <div class="mockup-browser" role="img" aria-label="Browser showing admin dashboard">
+                <div class="browser-bar">
+                  <div class="browser-dot" style="background:#FF5F57;"></div>
+                  <div class="browser-dot" style="background:#FFBD2E;"></div>
+                  <div class="browser-dot" style="background:#28CA41;"></div>
+                </div>
+                <div class="browser-screen">
+                  <div class="browser-nav-bar">
+                    <span class="bnb-title">Dwaar AI Admin — Sunrise Enclave</span>
+                    <span style="font-size:6px;color:var(--green);">● Live</span>
+                  </div>
+                  <div class="stat-mini-grid">
+                    <div class="stat-mini"><span class="stat-mini-n">247</span><span class="stat-mini-l">entries today</span></div>
+                    <div class="stat-mini"><span class="stat-mini-n">3</span><span class="stat-mini-l">gates online</span></div>
+                    <div class="stat-mini"><span class="stat-mini-n">98%</span><span class="stat-mini-l">auto-cleared</span></div>
+                  </div>
+                  <div class="browser-row">
+                    <div><p class="br-text">Gate 1 · Main entry</p><p class="br-sub">RFID + ANPR + Face active</p></div>
+                    <span class="br-badge brb-g">Healthy</span>
+                  </div>
+                  <div class="browser-row">
+                    <div><p class="br-text">Monthly report · Oct</p><p class="br-sub">2,847 events logged</p></div>
+                    <span class="br-badge brb-b">Export PDF</span>
+                  </div>
+                  <div class="browser-row">
+                    <div><p class="br-text">Vehicle registry</p><p class="br-sub">142 registered vehicles</p></div>
+                    <span class="br-badge brb-b">Manage</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="product-card-features" role="list">
+              <div class="pf-item" role="listitem"><div class="pf-check" aria-hidden="true"><svg viewBox="0 0 8 7" fill="none"><path d="M1 3.5L3 5.5L7 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Multi-gate and multi-community management</div>
+              <div class="pf-item" role="listitem"><div class="pf-check" aria-hidden="true"><svg viewBox="0 0 8 7" fill="none"><path d="M1 3.5L3 5.5L7 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Complete vehicle and resident registry</div>
+              <div class="pf-item" role="listitem"><div class="pf-check" aria-hidden="true"><svg viewBox="0 0 8 7" fill="none"><path d="M1 3.5L3 5.5L7 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Full event logs and audit reports</div>
+              <div class="pf-item" role="listitem"><div class="pf-check" aria-hidden="true"><svg viewBox="0 0 8 7" fill="none"><path d="M1 3.5L3 5.5L7 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Gate status and configuration controls</div>
+              <div class="pf-item" role="listitem"><div class="pf-check" aria-hidden="true"><svg viewBox="0 0 8 7" fill="none"><path d="M1 3.5L3 5.5L7 1.5" stroke="#0F6E56" stroke-width="1.4" stroke-linecap="round"/></svg></div>Role-based access control</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ STEP BY STEP ═══ -->
+    <section class="process-section fade-in" id="step-by-step" aria-labelledby="proc-h">
+      <div class="container" style="max-width:780px;">
+        <span class="eyebrow">Step by step</span>
+        <h2 class="sec-h" id="proc-h">From first sight to full log — the complete gate event.</h2>
+        <p class="sec-s">Every single thing that happens, in sequence, from the moment a vehicle enters the camera zone to the moment the event is in the admin report.</p>
+
+        <div class="process-timeline" role="list">
+          <div class="process-step" role="listitem">
+            <div class="ps-num" aria-label="Step 1">1</div>
+            <div class="ps-content">
+              <h3>Vehicle enters the detection zone</h3>
+              <p>At 5 metres from the gate, the RFID reader starts scanning. The ANPR camera begins its capture window. The AI facial detection engine watches for faces. All three start simultaneously — there is no first, no sequence.</p>
+              <span class="ps-tag" style="background:var(--green-l);color:var(--green);">All 3 layers active</span>
+            </div>
+          </div>
+          <div class="process-step" role="listitem">
+            <div class="ps-num" aria-label="Step 2">2</div>
+            <div class="ps-content">
+              <h3>RFID tag detected (if present)</h3>
+              <p>The UHF reader identifies the vehicle's tag ID. Matched against the vehicle registry in milliseconds. If it's a registered vehicle, the clearance signal is sent to the boom barrier controller immediately. The car doesn't stop.</p>
+              <span class="ps-tag" style="background:var(--green-l);color:var(--green);">Primary identification</span>
+            </div>
+          </div>
+          <div class="process-step" role="listitem">
+            <div class="ps-num" aria-label="Step 3">3</div>
+            <div class="ps-content">
+              <h3>ANPR reads and matches the number plate</h3>
+              <p>The camera captures the plate, the recognition engine reads it, and it's matched against the registry — independently of RFID. For registered vehicles, both methods confirm the match. For unregistered vehicles, the plate is logged and the visitor flow begins.</p>
+              <span class="ps-tag" style="background:var(--green-l);color:var(--green);">Secondary identification</span>
+            </div>
+          </div>
+          <div class="process-step" role="listitem">
+            <div class="ps-num" aria-label="Step 4">4</div>
+            <div class="ps-content">
+              <h3>AI identifies persons (pedestrians, staff, visitors)</h3>
+              <p>For anyone approaching on foot, the AI facial detection engine identifies known persons automatically. Staff clocked in. Regular maid recognised. For unknown faces, the guard's tablet shows an action prompt — trigger OTP flow or manually register.</p>
+              <span class="ps-tag" style="background:var(--green-l);color:var(--green);">AI facial detection</span>
+            </div>
+          </div>
+          <div class="process-step" role="listitem">
+            <div class="ps-num" aria-label="Step 5">5</div>
+            <div class="ps-content">
+              <h3>Guard sees all events on the live queue</h3>
+              <p>The guard's tablet shows every gate event in real time — cleared automatically, requiring OTP, or flagged. The guard only acts on exceptions. 98% of events are handled without guard input. The guard is the final safety net, not the first checkpoint.</p>
+              <span class="ps-tag" style="background:var(--amber-l);color:var(--amber);">Guard oversight</span>
+            </div>
+          </div>
+          <div class="process-step" role="listitem">
+            <div class="ps-num" aria-label="Step 6">6</div>
+            <div class="ps-content">
+              <h3>Resident notified in real time</h3>
+              <p>The moment a visitor is approved or a vehicle enters, the resident's app receives a push notification — with a photo of the person or vehicle. If a visitor is pending approval, the resident sees the face and can approve or deny with one tap.</p>
+              <span class="ps-tag" style="background:#E6F1FB;color:#0C447C;">Resident app</span>
+            </div>
+          </div>
+          <div class="process-step" role="listitem">
+            <div class="ps-num" aria-label="Step 7">7</div>
+            <div class="ps-content">
+              <h3>Everything logged to the admin portal</h3>
+              <p>Every gate event — vehicle, pedestrian, visitor, staff — is logged with a timestamp, identification method, photo snapshot, and clearance status. Available in the admin portal instantly. Exportable as reports for audits, committee meetings or compliance requirements.</p>
+              <span class="ps-tag" style="background:#EEEDFE;color:#3C3489;">Admin portal</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ FAQ ═══ -->
+    <section class="faq-section fade-in" id="faq" aria-labelledby="faq-h">
+      <div class="container" style="max-width:740px;">
+        <span class="eyebrow">Frequently asked</span>
+        <h2 class="sec-h" id="faq-h">Questions we get asked before every demo.</h2>
+
+        <div class="faq-list" role="list">
+          <div class="faq-item" role="listitem">
+            <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">
+              What is UHF RFID and how does it work at a gate?
+              <div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+            </button>
+            <div class="faq-a" role="region">
+              <p class="faq-a-inner">UHF (Ultra High Frequency) RFID is a wireless identification technology. A small RFID tag — typically a windscreen sticker or bumper tag — is fitted to each registered vehicle. When the vehicle approaches the gate, a UHF reader detects the tag from 3 to 5 metres away. The tag ID is matched against the vehicle registry and if confirmed, the boom barrier opens automatically before the car reaches it. The driver never needs to stop, roll down a window, or use an app.</p>
+            </div>
+          </div>
+          <div class="faq-item" role="listitem">
+            <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">
+              What is ANPR and how accurate is it?
+              <div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+            </button>
+            <div class="faq-a" role="region">
+              <p class="faq-a-inner">ANPR stands for Automatic Number Plate Recognition. A camera captures the vehicle's number plate as it approaches and Dwaar AI's recognition engine reads and matches it against the vehicle registry in under one second. Our model is specifically trained on Indian number plate formats — including BH-series plates, state codes, and older formats. It works in low light using IR-enabled cameras and functions at normal approach speeds without the vehicle needing to slow down.</p>
+            </div>
+          </div>
+          <div class="faq-item" role="listitem">
+            <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">
+              How does the AI facial detection work?
+              <div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+            </button>
+            <div class="faq-a" role="region">
+              <p class="faq-a-inner">Dwaar AI's proprietary AI model analyses the live gate camera feed. Faces are compared against a registered database of residents, staff and authorised visitors. Known persons are identified and cleared within a second. Unknown persons are flagged on the guard's tablet — the guard can trigger an OTP flow, request resident approval, or register the person as a new visitor. The AI processing runs locally at the gate hardware — it does not require a cloud round-trip for each identification, which means it works even on low-bandwidth connections.</p>
+            </div>
+          </div>
+          <div class="faq-item" role="listitem">
+            <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">
+              What is the fallback chain and why does it matter?
+              <div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+            </button>
+            <div class="faq-a" role="region">
+              <p class="faq-a-inner">The fallback chain is Dwaar AI's core architectural differentiator. All three modalities — RFID, ANPR and facial detection — run simultaneously, not in sequence. If RFID signal is unavailable, ANPR automatically handles identification. If ANPR cannot read the plate, face detection provides identification for known persons. If none can confirm automatically, the guard's tablet shows the event for manual action. This architecture means no single failure point can stop the gate from operating. Most other gate management platforms depend on a single technology or use third-party integrations that have no fallback logic.</p>
+            </div>
+          </div>
+          <div class="faq-item" role="listitem">
+            <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">
+              What does the guard see on the Guard App?
+              <div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+            </button>
+            <div class="faq-a" role="region">
+              <p class="faq-a-inner">The Guard App is a single-screen Android tablet application showing a live queue of all gate events. Automatically cleared entries appear with a green status. Events needing guard action — unknown visitors, OTP verification, override requests — appear highlighted with clear action buttons. The guard can approve, deny or register visitors in two taps. Manual gate controls are always accessible at the bottom of the screen. The app is available in Hindi and regional languages and requires no technical training.</p>
+            </div>
+          </div>
+          <div class="faq-item" role="listitem">
+            <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">
+              What can the Admin Portal do?
+              <div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+            </button>
+            <div class="faq-a" role="region">
+              <p class="faq-a-inner">The Admin Portal is a web-based dashboard for RWA committees, facility managers and security administrators. It provides real-time gate status across all entry points, a complete vehicle and resident registry, full event logs with timestamp, identification method and photo for every entry and exit, one-click exportable audit reports, gate configuration controls, and role-based access management. Multi-community and multi-gate deployments are managed from a single login. No software installation needed — it works in any web browser.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ CTA ═══ -->
+    <section class="cta-section" aria-labelledby="cta-h">
+      <div class="container">
+        <span class="eyebrow" style="background:rgba(93,202,165,0.15);color:var(--teal);">Ready to see it in action?</span>
+        <h2 id="cta-h">See every layer work together<br>at a gate <em>like yours.</em></h2>
+        <p>Book a 30-minute demo. We'll show you RFID, ANPR, and face detection in action — with a clear timeline for your specific site type.</p>
+        <div class="cta-btns">
+          <button class="btn-cta" onclick="window.location='/demo'">Book a free demo</button>
+          <button class="btn-cta-ghost" onclick="window.location='/solutions'">Explore solutions by industry</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ═══ FOOTER ═══ -->
+  <footer role="contentinfo">
+    <div class="container">
+      <div class="footer-top">
+        <div>
+          <p class="footer-brand-n">Dwaar AI</p>
+          <p class="footer-brand-t">Open the right doors.</p>
+          <p class="footer-brand-d">AI-powered gate management combining RFID, ANPR and facial detection for gated societies, corporates, warehouses and institutions across India.</p>
+        </div>
+        <div>
+          <p class="footer-col-h">Platform</p>
+          <ul class="footer-links">
+            <li><a href="/how-it-works">How it works</a></li>
+            <li><a href="/how-it-works#technology">Technology stack</a></li>
+            <li><a href="/how-it-works#products">Resident App</a></li>
+            <li><a href="/how-it-works#products">Guard App</a></li>
+            <li><a href="/how-it-works#products">Admin Portal</a></li>
+          </ul>
+        </div>
+        <div>
+          <p class="footer-col-h">Solutions</p>
+          <ul class="footer-links">
+            <li><a href="/solutions/gated-societies">Gated societies</a></li>
+            <li><a href="/solutions/corporate-offices">Corporate offices</a></li>
+            <li><a href="/solutions/warehouses">Warehouses</a></li>
+            <li><a href="/solutions/hospitals">Hospitals</a></li>
+            <li><a href="/solutions">All 17 sectors →</a></li>
+          </ul>
+        </div>
+        <div>
+          <p class="footer-col-h">Company</p>
+          <ul class="footer-links">
+            <li><a href="/about">Our story</a></li>
+            <li><a href="/partners">Hardware partners</a></li>
+            <li><a href="/resources/blog">Blog</a></li>
+            <li><a href="/contact">Contact us</a></li>
+            <li><a href="/demo">Book a demo</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p class="footer-copy">© 2025 Dwaar AI. All rights reserved. · <a href="/privacy" style="color:rgba(255,255,255,0.2);">Privacy</a> · <a href="/terms" style="color:rgba(255,255,255,0.2);">Terms</a></p>
+        <p class="footer-tag-small">Open the right doors.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // ── Gate Flow Steps ──────────────────────
+    let currentFlowStep = 0;
+    function setFlowStep(idx) {
+      const steps = document.querySelectorAll('.flow-step');
+      const panels = document.querySelectorAll('.flow-detail-step');
+      const dots = document.querySelectorAll('.flow-dot');
+      steps.forEach((s,i) => { s.classList.toggle('active', i===idx); s.setAttribute('aria-selected', i===idx); });
+      panels.forEach((p,i) => { p.classList.toggle('active', i===idx); });
+      dots.forEach((d,i) => { d.classList.toggle('active', i===idx); });
+      currentFlowStep = idx;
+    }
+
+    // Auto-advance flow steps
+    setInterval(() => {
+      const next = (currentFlowStep + 1) % 5;
+      setFlowStep(next);
+    }, 5000);
+
+    // ── Tech Tabs ────────────────────────────
+    function setTechTab(key, btn) {
+      document.querySelectorAll('.tech-tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected','false'); });
+      document.querySelectorAll('.tech-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active'); btn.setAttribute('aria-selected','true');
+      document.getElementById('tp-' + key).classList.add('active');
+    }
+
+    // ── FAQ ──────────────────────────────────
+    function toggleFaq(btn) {
+      const item = btn.closest('.faq-item');
+      const isOpen = item.classList.contains('open');
+      document.querySelectorAll('.faq-item.open').forEach(i => { i.classList.remove('open'); i.querySelector('.faq-q').setAttribute('aria-expanded','false'); });
+      if (!isOpen) { item.classList.add('open'); btn.setAttribute('aria-expanded','true'); }
+    }
+
+    // ── Scroll Fade-in ───────────────────────
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('vis'); io.unobserve(e.target); } });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.fade-in').forEach(el => io.observe(el));
+
+    // ── Anchor strip active state ────────────
+    const anchors = document.querySelectorAll('.anchor-item');
+    const sections = ['gate-flow','fallback','technology','products','step-by-step','faq'];
+    const sectionEls = sections.map(id => document.getElementById(id)).filter(Boolean);
+    window.addEventListener('scroll', () => {
+      let current = '';
+      sectionEls.forEach(s => { if (window.scrollY >= s.offsetTop - 120) current = s.id; });
+      anchors.forEach(a => { a.style.color = a.getAttribute('href') === '#'+current ? 'var(--text-1)' : ''; a.style.borderBottomColor = a.getAttribute('href') === '#'+current ? 'var(--teal)' : ''; });
+    }, { passive: true });
+  </script>
+</body>
+</html>

@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gate Management System for Corporate Offices & IT Parks | Dwaar AI</title>
+<meta name="description" content="Dwaar AI's AI-powered gate management for corporate offices and IT parks. RFID employee entry, ANPR for fleet vehicles, digital visitor passes, contractor tracking, and full audit logs. Frictionless entry. Zero manual registers.">
+<meta name="keywords" content="gate management system corporate office India, office visitor management software, RFID employee entry system, corporate access control system India, IT park gate management, company gate automation, visitor pass management office, employee vehicle management system, corporate security gate India, contractor access management">
+<link rel="canonical" href="https://dwaarai.in/solutions/corporate-offices">
+<meta property="og:title" content="Gate Management for Corporate Offices & IT Parks | Dwaar AI">
+<meta property="og:description" content="RFID employee entry, digital visitor passes, contractor tracking. Frictionless corporate gate management with full audit trail.">
+<meta property="og:url" content="https://dwaarai.in/solutions/corporate-offices">
+
+<script type="application/ld+json">
+{
+  "@context":"https://schema.org",
+  "@graph":[
+    {"@type":"WebPage","@id":"https://dwaarai.in/solutions/corporate-offices","url":"https://dwaarai.in/solutions/corporate-offices","name":"Gate Management System for Corporate Offices","description":"Dwaar AI provides AI-powered gate management for corporate offices and IT parks in India. RFID for employee vehicles, ANPR for fleet management, digital visitor passes, contractor access control and full compliance-ready audit logs.","breadcrumb":{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Dwaar AI","item":"https://dwaarai.in"},{"@type":"ListItem","position":2,"name":"Solutions","item":"https://dwaarai.in/solutions"},{"@type":"ListItem","position":3,"name":"Corporate Offices","item":"https://dwaarai.in/solutions/corporate-offices"}]}},
+    {"@type":"FAQPage","mainEntity":[
+      {"@type":"Question","name":"How does gate management work for corporate offices?","acceptedAnswer":{"@type":"Answer","text":"For corporate offices, Dwaar AI installs RFID readers for registered employee vehicles, ANPR cameras for fleet and visitor vehicle logging, and facial detection for staff access at pedestrian gates. Employees clear the vehicle gate automatically without stopping. Visitors receive digital passes from the reception desk or their meeting host. Contractors are registered with time-limited access. All entries are logged with photo and timestamp for compliance and security audits."}},
+      {"@type":"Question","name":"How does Dwaar AI handle visitor management in a corporate office?","acceptedAnswer":{"@type":"Answer","text":"Corporate visitor management with Dwaar AI works on two flows. Pre-registered visitors receive a digital OTP pass from their meeting host before arrival — they present it at the gate for instant clearance. Walk-in visitors are registered at reception, their vehicle plate and face are captured, and a temporary pass is issued. All visitor data is logged with entry time, host name, and purpose of visit — available as a report for any date range."}},
+      {"@type":"Question","name":"Can Dwaar AI track contractor and vendor access?","acceptedAnswer":{"@type":"Answer","text":"Yes. Contractors, vendors and maintenance teams can be registered with time-limited or day-specific access. Their face or vehicle plate is logged on every visit. Access can be restricted to specific gates or time windows. When a contractor's engagement ends, their access is revoked instantly from the admin portal — no badge collection, no manual update needed. Full contractor visit history is available for audit."}},
+      {"@type":"Question","name":"Does Dwaar AI provide compliance-ready audit logs for offices?","acceptedAnswer":{"@type":"Answer","text":"Yes. Every gate event — employee vehicle entry, visitor pass clearance, contractor access, unknown vehicle alert — is logged with a timestamp, identification method used, photo snapshot, and clearance status. These logs are stored in the admin portal and can be exported as PDF or CSV reports for any date range. This is useful for ISO compliance, internal security audits, insurance documentation, and incident investigation."}}
+    ]}
+  ]
+}
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300;1,9..40,400&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --bg:#FAFAF7; --surface:#FFFFFF; --s2:#F2F2EE;
+  --border:rgba(0,0,0,0.08); --bm:rgba(0,0,0,0.13);
+  --t1:#1C1C1A; --t2:#5C5C58; --t3:#8A8A84;
+  --green:#0F6E56; --gd:#0A4F3E; --gl:#E1F5EE;
+  --teal:#5DCAA5; --dark:#0F2920;
+  /* Corporate accent — blue */
+  --accent:#185FA5; --accent-l:#E6F1FB; --accent-text:#0C447C;
+  --font:'DM Sans',sans-serif; --ease:0.2s ease;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--bg);color:var(--t1);line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.container{max-width:1080px;margin:0 auto;padding:0 24px}
+.eyebrow{display:inline-block;font-size:11px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:var(--accent);background:var(--accent-l);padding:4px 12px;border-radius:20px;margin-bottom:14px}
+.sec-h{font-size:clamp(24px,3.5vw,36px);font-weight:500;color:var(--t1);letter-spacing:-.025em;line-height:1.2}
+.sec-s{font-size:16px;color:var(--t2);line-height:1.65;margin-top:12px;max-width:560px}
+.btn-p{display:inline-flex;align-items:center;gap:6px;font-family:var(--font);font-size:14px;font-weight:500;background:var(--accent);color:#fff;padding:11px 24px;border-radius:10px;border:none;cursor:pointer;transition:background var(--ease),transform var(--ease)}
+.btn-p:hover{background:#0C447C;transform:translateY(-1px)}
+.btn-s{display:inline-flex;align-items:center;gap:6px;font-family:var(--font);font-size:14px;color:var(--t1);padding:11px 24px;border-radius:10px;border:1px solid var(--bm);background:transparent;cursor:pointer;transition:background var(--ease)}
+.btn-s:hover{background:var(--s2)}
+.fade-in{opacity:0;transform:translateY(20px);transition:opacity .55s ease,transform .55s ease}
+.fade-in.vis{opacity:1;transform:none}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+nav{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.93);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:60px}
+.nav-in{display:flex;align-items:center;justify-content:space-between;height:100%}
+.nav-logo{display:flex;flex-direction:column;gap:1px}
+.nav-ln{font-size:16px;font-weight:500;color:var(--t1);letter-spacing:-.02em;line-height:1}
+.nav-lt{font-size:9.5px;color:var(--green);font-style:italic;line-height:1}
+.nav-links{display:flex;gap:2px;list-style:none}
+.nav-links a{font-size:13px;color:var(--t2);padding:6px 12px;border-radius:6px;transition:background var(--ease),color var(--ease)}
+.nav-links a:hover,.nav-links a.active{color:var(--t1);background:var(--s2)}
+.nav-cta{font-family:var(--font);font-size:13px;font-weight:500;background:var(--green);color:#fff;padding:8px 18px;border-radius:9px;border:none;cursor:pointer;transition:background var(--ease)}
+.nav-cta:hover{background:var(--gd)}
+
+.breadcrumb{padding:12px 0;border-bottom:1px solid var(--border);background:var(--surface)}
+.bc-inner{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--t3)}
+.bc-sep{opacity:.4}
+.bc-current{color:var(--t1);font-weight:500}
+.bc-tag{display:inline-block;font-size:10px;font-weight:500;padding:2px 8px;border-radius:20px;background:var(--accent-l);color:var(--accent-text);margin-left:8px}
+
+.hero{padding:64px 0 56px;background:var(--bg)}
+.hero-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center}
+.hero-text h1{font-size:clamp(28px,4.5vw,48px);font-weight:500;color:var(--t1);letter-spacing:-.03em;line-height:1.12;margin-bottom:16px}
+.hero-text h1 em{color:var(--accent);font-style:normal}
+.hero-sub{font-size:17px;color:var(--t2);line-height:1.65;margin-bottom:24px;max-width:460px}
+.hero-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px}
+.hero-trust{display:flex;flex-direction:column;gap:8px}
+.ht-item{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t2)}
+.ht-dot{width:18px;height:18px;border-radius:50%;background:var(--accent-l);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ht-dot svg{width:9px;height:9px}
+
+.gate-scene{background:#0A1528;border-radius:16px;overflow:hidden;aspect-ratio:16/10;position:relative;display:flex;align-items:center;justify-content:center}
+
+.problem-section{padding:72px 0;background:var(--surface);border-top:1px solid var(--border)}
+.prob-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:40px}
+.prob-card{background:var(--bg);border:1px solid var(--border);border-radius:14px;padding:24px}
+.prob-icon{width:44px;height:44px;border-radius:10px;background:#FEF3C7;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.prob-card h3{font-size:15px;font-weight:500;color:var(--t1);margin-bottom:8px;line-height:1.3}
+.prob-card p{font-size:13.5px;color:var(--t2);line-height:1.6}
+.prob-quote{background:var(--surface);border:1px solid var(--border);border-left:3px solid #D97706;border-radius:0 8px 8px 0;padding:10px 14px;margin-top:12px;font-size:12px;color:var(--t3);font-style:italic;line-height:1.5}
+
+.solution-section{padding:72px 0;background:var(--bg)}
+.sol-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:start;margin-top:40px}
+.sol-cards{display:flex;flex-direction:column;gap:14px}
+.sol-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px 22px;display:flex;gap:16px;align-items:flex-start;transition:border-color var(--ease),transform var(--ease)}
+.sol-card:hover{border-color:var(--teal);transform:translateX(4px)}
+.sol-card-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--accent-l)}
+.sol-card-text h4{font-size:14px;font-weight:500;color:var(--t1);margin-bottom:4px}
+.sol-card-text p{font-size:13px;color:var(--t2);line-height:1.5}
+
+.visitor-flow-section{padding:72px 0;background:var(--surface);border-top:1px solid var(--border)}
+.vf-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-top:40px;position:relative}
+.vf-grid::before{content:'';position:absolute;top:30px;left:12%;right:12%;height:1px;background:linear-gradient(90deg,transparent,var(--accent),rgba(24,95,165,.3),var(--accent),transparent)}
+.vf-step{display:flex;flex-direction:column;align-items:center;gap:10px;padding:0 12px;text-align:center}
+.vf-icon{width:60px;height:60px;border-radius:50%;background:var(--surface);border:1.5px solid var(--accent);display:flex;align-items:center;justify-content:center;position:relative;z-index:1}
+.vf-step-label{font-size:13px;font-weight:500;color:var(--t1);line-height:1.3}
+.vf-step-detail{font-size:11.5px;color:var(--t3);line-height:1.45}
+
+.events-section{padding:72px 0;background:var(--bg)}
+.events-graphic{background:var(--bg);border:1px solid var(--border);border-radius:16px;overflow:hidden;margin-top:40px}
+.eg-header{background:#0A1528;padding:16px 22px;display:flex;align-items:center;justify-content:space-between}
+.eg-title{font-size:13px;font-weight:500;color:#F0F5F3}
+.eg-live{display:flex;align-items:center;gap:5px;font-size:11px;color:#5DCAA5}
+.eg-live-dot{width:7px;height:7px;border-radius:50%;background:#5DCAA5;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+.eg-row{display:flex;align-items:center;gap:0;padding:13px 22px;border-bottom:1px solid var(--border);transition:background var(--ease)}
+.eg-row:last-child{border-bottom:none}
+.eg-row:hover{background:var(--s2)}
+.eg-time{font-size:11px;color:var(--t3);width:56px;flex-shrink:0}
+.eg-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:12px}
+.eg-main{flex:1}
+.eg-name{font-size:13px;font-weight:500;color:var(--t1)}
+.eg-detail{font-size:11px;color:var(--t3);margin-top:1px}
+.eg-method{font-size:10px;padding:2px 8px;border-radius:20px;margin-right:8px}
+.em-rfid{background:#E1F5EE;color:#085041}
+.em-anpr{background:#E6F1FB;color:#0C447C}
+.em-face{background:#EEEDFE;color:#3C3489}
+.em-vis{background:#FAEEDA;color:#633806}
+.eg-status{font-size:11px;font-weight:500}
+.es-cleared{color:var(--green)}
+.es-pending{color:#D97706}
+
+.stats-strip{padding:48px 0;background:#0A1528}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+.stat-item{text-align:center;padding:16px 20px;border-right:1px solid rgba(255,255,255,.08)}
+.stat-item:last-child{border-right:none}
+.stat-num{font-size:36px;font-weight:500;color:#60A5FA;letter-spacing:-.02em;display:block;line-height:1;margin-bottom:6px}
+.stat-label{font-size:13px;color:rgba(255,255,255,.45)}
+
+.faq-section{padding:72px 0;background:var(--surface);border-top:1px solid var(--border)}
+.faq-list{margin-top:36px;border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.faq-item{border-bottom:1px solid var(--border)}
+.faq-item:last-child{border-bottom:none}
+.faq-q{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;cursor:pointer;font-size:14.5px;font-weight:500;color:var(--t1);background:var(--surface);transition:background var(--ease);user-select:none;width:100%;text-align:left;border:none;font-family:var(--font)}
+.faq-q:hover{background:var(--bg)}
+.faq-chev{width:20px;height:20px;border-radius:50%;background:var(--s2);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform var(--ease),background var(--ease)}
+.faq-chev svg{width:10px;height:10px}
+.faq-item.open .faq-chev{transform:rotate(180deg);background:var(--accent-l)}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .3s ease}
+.faq-item.open .faq-a{max-height:400px}
+.faq-a-inner{padding:0 22px 18px;font-size:14px;color:var(--t2);line-height:1.7}
+
+.related-section{padding:56px 0;background:var(--bg)}
+.related-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:24px}
+.rel-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:border-color var(--ease),transform var(--ease)}
+.rel-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.rel-tag{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:20px;display:inline-block;margin-bottom:8px}
+.rel-title{font-size:13px;font-weight:500;color:var(--t1);margin-bottom:3px}
+.rel-sub{font-size:11px;color:var(--t3)}
+
+.cta-section{padding:88px 0;background:#0A1528;text-align:center;position:relative;overflow:hidden}
+.cta-section::before{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:600px;height:400px;background:radial-gradient(ellipse,rgba(96,165,250,.08) 0%,transparent 70%);pointer-events:none}
+.cta-section h2{font-size:clamp(26px,4vw,44px);font-weight:500;color:#F0F5F3;letter-spacing:-.025em;line-height:1.2;margin-bottom:14px}
+.cta-section h2 em{color:#60A5FA;font-style:normal}
+.cta-section p{font-size:16px;color:rgba(255,255,255,.5);max-width:460px;margin:0 auto 32px;line-height:1.65}
+.cta-btns{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
+.btn-cta{font-family:var(--font);font-size:14px;font-weight:500;background:#60A5FA;color:#0A1528;padding:13px 28px;border-radius:10px;border:none;cursor:pointer;transition:opacity var(--ease)}
+.btn-cta:hover{opacity:.9}
+.btn-cta-g{font-family:var(--font);font-size:14px;color:rgba(255,255,255,.6);padding:13px 28px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;cursor:pointer;transition:border-color var(--ease),color var(--ease)}
+.btn-cta-g:hover{border-color:rgba(255,255,255,.35);color:rgba(255,255,255,.9)}
+
+footer{background:var(--dark);border-top:1px solid rgba(255,255,255,.06);padding:44px 0 24px}
+.footer-top{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:36px;padding-bottom:32px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:20px}
+.f-brand-n{font-size:18px;font-weight:500;color:#F0F5F3;letter-spacing:-.02em;margin-bottom:3px}
+.f-brand-t{font-size:11px;color:var(--teal);font-style:italic;font-weight:300;margin-bottom:12px}
+.f-brand-d{font-size:12.5px;color:rgba(255,255,255,.3);line-height:1.6;max-width:220px}
+.f-col-h{font-size:10px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.3);margin-bottom:12px}
+.f-links{list-style:none;display:flex;flex-direction:column;gap:8px}
+.f-links a{font-size:12.5px;color:rgba(255,255,255,.45);transition:color var(--ease)}
+.f-links a:hover{color:rgba(255,255,255,.85)}
+.f-bottom{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+.f-copy{font-size:11px;color:rgba(255,255,255,.2)}
+.f-tag-sm{font-size:10px;color:rgba(93,202,165,.35);font-style:italic}
+
+@keyframes car-move{0%{transform:translateX(-180px);opacity:0}25%{opacity:1;transform:translateX(-60px)}60%{transform:translateX(-20px)}80%{transform:translateX(10px)}100%{transform:translateX(200px);opacity:0}}
+@keyframes rfid-ring{0%,100%{opacity:0;r:8}50%{opacity:.7;r:18}}
+@keyframes scan-sweep{0%{transform:translateY(-30px);opacity:0}30%{opacity:.8}70%{opacity:.8}100%{transform:translateY(60px);opacity:0}}
+@keyframes barrier-lift{0%{transform:rotate(0deg)}100%{transform:rotate(-80deg)}}
+@keyframes notify-pop{0%,100%{opacity:0;transform:translateY(8px)}20%,80%{opacity:1;transform:translateY(0)}}
+@keyframes check-pulse{0%,100%{opacity:.6}50%{opacity:1}}
+@keyframes float-badge{0%,100%{opacity:0;transform:translateY(6px)}15%,85%{opacity:1;transform:translateY(0)}}
+
+.car-anim{animation:car-move 4s ease-in-out infinite}
+.rfid-ring-1{animation:rfid-ring 1.8s ease-in-out infinite}
+.rfid-ring-2{animation:rfid-ring 1.8s ease-in-out .35s infinite}
+.barrier-anim{animation:barrier-lift 1.2s ease-in-out .8s forwards;transform-origin:left center}
+.scan-anim{animation:scan-sweep 2.5s ease-in-out infinite}
+.notify-anim{animation:notify-pop 4s ease-in-out .5s infinite}
+.check-anim{animation:check-pulse 1.5s ease-in-out infinite}
+.badge-anim{animation:float-badge 4s ease-in-out 1.2s infinite}
+
+@media(max-width:900px){
+  .nav-links{display:none}
+  .hero-grid,.sol-grid{grid-template-columns:1fr}
+  .prob-grid{grid-template-columns:1fr}
+  .vf-grid{grid-template-columns:1fr 1fr}
+  .stats-grid{grid-template-columns:1fr 1fr}
+  .footer-top{grid-template-columns:1fr 1fr}
+  .related-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:600px){
+  .stats-grid{grid-template-columns:1fr 1fr}
+  .footer-top{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav role="navigation" aria-label="Main navigation">
+  <div class="container nav-in">
+    <a href="/" class="nav-logo"><span class="nav-ln">Dwaar AI</span><span class="nav-lt">Open the right doors.</span></a>
+    <ul class="nav-links" role="list">
+      <li><a href="/how-it-works">How it works</a></li>
+      <li><a href="/solutions" class="active" aria-current="page">Solutions</a></li>
+      <li><a href="/resources">Resources</a></li>
+      <li><a href="/about">About</a></li>
+      <li><a href="/contact">Contact</a></li>
+    </ul>
+    <button class="nav-cta" onclick="window.location='/demo'">Book a demo</button>
+  </div>
+</nav>
+
+<!-- BREADCRUMB -->
+<div class="breadcrumb" role="navigation" aria-label="Breadcrumb">
+  <div class="container bc-inner">
+    <a href="/">Dwaar AI</a><span class="bc-sep">/</span>
+    <a href="/solutions">Solutions</a><span class="bc-sep">/</span>
+    <span class="bc-current">Corporate offices</span>
+    <span class="bc-tag">Commercial</span>
+  </div>
+</div>
+
+<main>
+
+<!-- HERO -->
+<section class="hero fade-in" aria-labelledby="hero-h">
+  <div class="container">
+    <div class="hero-grid">
+      <div class="hero-text">
+        <span class="eyebrow">Gate management for corporate offices & IT parks</span>
+        <h1 id="hero-h">Your employees deserve a gate that <em>doesn't slow them down.</em></h1>
+        <p class="hero-sub">Dwaar AI gives your employees frictionless RFID entry, your visitors instant digital passes, and your security team a live compliance-ready log — all from one platform.</p>
+        <div class="hero-actions">
+          <button class="btn-p" onclick="window.location='/demo'">Book a demo</button>
+          <button class="btn-s" onclick="window.location='/how-it-works'">See how it works</button>
+        </div>
+        <div class="hero-trust" role="list">
+          <div class="ht-item" role="listitem"><div class="ht-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#185FA5" stroke-width="1.5" stroke-linecap="round"/></svg></div>Employees clear in under 2 seconds — no stopping</div>
+          <div class="ht-item" role="listitem"><div class="ht-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#185FA5" stroke-width="1.5" stroke-linecap="round"/></svg></div>Audit-ready logs — ISO, SOC, internal security</div>
+          <div class="ht-item" role="listitem"><div class="ht-dot" aria-hidden="true"><svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#185FA5" stroke-width="1.5" stroke-linecap="round"/></svg></div>Contractor access revoked instantly from dashboard</div>
+        </div>
+      </div>
+
+      <!-- Corporate Hero Illustration -->
+      <div class="gate-scene" aria-label="Animated corporate gate scene with RFID and visitor management" role="img">
+        <svg width="100%" viewBox="0 0 440 280" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect width="440" height="280" fill="#0A1528"/>
+          <!-- Ground / road -->
+          <rect x="0" y="195" width="440" height="85" fill="#061020"/>
+          <rect x="200" y="195" width="40" height="85" fill="#0A1528"/>
+          <!-- Road markings -->
+          <rect x="214" y="205" width="12" height="16" rx="2" fill="rgba(255,255,255,.05)"/>
+          <rect x="214" y="230" width="12" height="16" rx="2" fill="rgba(255,255,255,.05)"/>
+
+          <!-- Corporate building facade -->
+          <rect x="300" y="40" width="120" height="155" rx="4" fill="#0d1e38"/>
+          <rect x="304" y="44" width="112" height="147" rx="3" fill="#0f2040"/>
+          <!-- Building windows grid -->
+          <rect x="310" y="52" width="18" height="12" rx="2" fill="#1a4070" opacity=".8"/>
+          <rect x="334" y="52" width="18" height="12" rx="2" fill="#1a4070" opacity=".6"/>
+          <rect x="358" y="52" width="18" height="12" rx="2" fill="#1a5090" opacity=".9"/>
+          <rect x="382" y="52" width="18" height="12" rx="2" fill="#1a4070" opacity=".7"/>
+          <rect x="310" y="70" width="18" height="12" rx="2" fill="#1a4070" opacity=".5"/>
+          <rect x="334" y="70" width="18" height="12" rx="2" fill="#1a5090" opacity=".8"/>
+          <rect x="358" y="70" width="18" height="12" rx="2" fill="#1a4070" opacity=".6"/>
+          <rect x="382" y="70" width="18" height="12" rx="2" fill="#1a4070" opacity=".7"/>
+          <rect x="310" y="88" width="18" height="12" rx="2" fill="#1a5090" opacity=".7"/>
+          <rect x="334" y="88" width="18" height="12" rx="2" fill="#1a4070" opacity=".6"/>
+          <rect x="358" y="88" width="18" height="12" rx="2" fill="#1a4070" opacity=".5"/>
+          <rect x="382" y="88" width="18" height="12" rx="2" fill="#1a5090" opacity=".8"/>
+          <!-- Company sign -->
+          <rect x="320" y="155" width="80" height="22" rx="3" fill="#185FA5"/>
+          <text x="360" y="170" text-anchor="middle" font-family="sans-serif" font-size="9" fill="white" font-weight="500">TECHCORP INDIA</text>
+
+          <!-- Gate posts -->
+          <rect x="148" y="95" width="12" height="110" rx="3" fill="#0d1e38"/>
+          <rect x="248" y="95" width="12" height="110" rx="3" fill="#0d1e38"/>
+
+          <!-- Gate signage bar -->
+          <rect x="148" y="95" width="112" height="20" rx="3" fill="#185FA5"/>
+          <text x="204" y="109" text-anchor="middle" font-family="sans-serif" font-size="8" fill="white" font-weight="500">Employee Entry · Gate 1</text>
+
+          <!-- RFID reader -->
+          <rect x="136" y="140" width="18" height="28" rx="3" fill="#061020"/>
+          <rect x="139" y="143" width="12" height="9" rx="2" fill="#185FA5" opacity=".6"/>
+          <circle cx="145" cy="161" r="4" fill="#60A5FA" class="check-anim"/>
+          <!-- RFID waves (blue for corporate) -->
+          <ellipse cx="172" cy="150" rx="12" ry="7" stroke="#60A5FA" stroke-width="1" fill="none" class="rfid-ring-1"/>
+          <ellipse cx="172" cy="150" rx="20" ry="12" stroke="#60A5FA" stroke-width=".7" fill="none" class="rfid-ring-2"/>
+
+          <!-- Boom barrier (blue) -->
+          <rect x="160" y="140" width="72" height="7" rx="3.5" fill="#185FA5" class="barrier-anim"/>
+          <circle cx="160" cy="143.5" r="5" fill="#0C447C"/>
+
+          <!-- Car -->
+          <g class="car-anim" aria-label="Employee vehicle approaching">
+            <rect x="20" y="203" width="64" height="30" rx="5" fill="#1a2a3a"/>
+            <rect x="28" y="193" width="46" height="22" rx="4" fill="#1e3248"/>
+            <rect x="33" y="196" width="18" height="14" rx="2" fill="#AED6F1" opacity=".7"/>
+            <rect x="56" y="196" width="14" height="14" rx="2" fill="#AED6F1" opacity=".7"/>
+            <circle cx="33" cy="233" r="7" fill="#0a0a0a"/>
+            <circle cx="33" cy="233" r="4" fill="#222"/>
+            <circle cx="67" cy="233" r="7" fill="#0a0a0a"/>
+            <circle cx="67" cy="233" r="4" fill="#222"/>
+            <rect x="38" y="197" width="10" height="6" rx="1" fill="#60A5FA" opacity=".8"/>
+            <g class="badge-anim">
+              <rect x="14" y="182" width="82" height="16" rx="4" fill="#061020" stroke="rgba(96,165,250,.3)" stroke-width=".8"/>
+              <text x="55" y="193" text-anchor="middle" font-family="monospace" font-size="8" fill="#60A5FA">KA 05 EMP 0234 ✓</text>
+            </g>
+          </g>
+
+          <!-- Visitor management panel -->
+          <g class="notify-anim">
+            <rect x="18" y="40" width="110" height="90" rx="8" fill="#061020" stroke="rgba(96,165,250,.25)" stroke-width=".8"/>
+            <rect x="26" y="48" width="94" height="12" rx="3" fill="rgba(24,95,165,.5)"/>
+            <text x="73" y="58" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#60A5FA">Visitor pass · Reception</text>
+            <rect x="26" y="64" width="94" height="56" rx="4" fill="rgba(255,255,255,.03)"/>
+            <circle cx="45" cy="82" r="10" fill="#0d2040"/>
+            <text x="45" y="85" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#60A5FA">AS</text>
+            <text x="64" y="76" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.7)" font-weight="500">Anita Shah</text>
+            <text x="64" y="87" font-family="sans-serif" font-size="7" fill="rgba(255,255,255,.35)">Meeting: Vikram R · 2F</text>
+            <text x="64" y="98" font-family="sans-serif" font-size="7" fill="rgba(255,255,255,.35)">Pass: 14:00–16:00</text>
+            <rect x="26" y="110" width="48" height="10" rx="3" fill="rgba(24,95,165,.6)"/>
+            <text x="50" y="118" text-anchor="middle" font-family="sans-serif" font-size="7" fill="white">✓ Pre-approved</text>
+          </g>
+
+          <!-- ANPR scan on road -->
+          <rect x="148" y="163" width="115" height="2" fill="rgba(96,165,250,.4)" class="scan-anim"/>
+
+          <!-- Labels -->
+          <text x="144" y="185" font-family="sans-serif" font-size="7.5" fill="rgba(255,255,255,.25)" text-anchor="middle">RFID reader</text>
+          <text x="73" y="36" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.25)" text-anchor="middle">Visitor management</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PROBLEM -->
+<section class="problem-section fade-in" aria-labelledby="prob-h">
+  <div class="container">
+    <div style="text-align:center;max-width:580px;margin:0 auto">
+      <span class="eyebrow">The problem</span>
+      <h2 class="sec-h" id="prob-h">Your office gate is the first impression. Right now, it's a bottleneck.</h2>
+    </div>
+    <div class="prob-grid">
+      <div class="prob-card">
+        <div class="prob-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="8" stroke="#D97706" stroke-width="1.4"/><path d="M11 7v4l3 3" stroke="#D97706" stroke-width="1.4" stroke-linecap="round"/></svg></div>
+        <h3>Morning peak means 20 minutes lost before employees even get in.</h3>
+        <p>Every car stops at the barrier. Guard checks ID or calls reception. Reception searches a spreadsheet. Gate opens. Repeat 200 times. Your office starts 20 minutes late every morning.</p>
+        <div class="prob-quote">"Our parking gate queue was 40 cars by 9am. Employees were stressed before they even got to their desks." — Facilities Head, Bengaluru IT park</div>
+      </div>
+      <div class="prob-card">
+        <div class="prob-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M4 4l14 14M4 18L18 4" stroke="#D97706" stroke-width="1.4" stroke-linecap="round"/></svg></div>
+        <h3>Visitor process is broken — paper books, no photo, no audit trail.</h3>
+        <p>Visitors sign a paper register at reception. No photo, no ID check, no connection to the gate. Someone could write any name. Your "visitor log" proves nothing to an auditor.</p>
+        <div class="prob-quote">"Our ISO auditor asked for visitor logs from 3 months ago. We had a notebook with illegible signatures." — Admin Manager, Mumbai corporate campus</div>
+      </div>
+      <div class="prob-card">
+        <div class="prob-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 22 22" fill="none"><rect x="3" y="7" width="16" height="12" rx="2" stroke="#D97706" stroke-width="1.4"/><path d="M7 7V5a4 4 0 018 0v2" stroke="#D97706" stroke-width="1.4"/><path d="M9 13l2 2 4-4" stroke="#D97706" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3>Contractor access lives in spreadsheets and relies on a guard to enforce it.</h3>
+        <p>You agreed a vendor can access Block B only on weekdays. That policy exists in an email. Your guard has a printed list. The list is 6 months old. And the vendor who resigned still has access.</p>
+        <div class="prob-quote">"We found a contractor's vehicle in our secure lot 3 months after their contract ended. Nobody had updated the access list." — Security Manager, Delhi NCR campus</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SOLUTION -->
+<section class="solution-section fade-in" aria-labelledby="sol-h">
+  <div class="container">
+    <span class="eyebrow">How Dwaar AI solves it</span>
+    <h2 class="sec-h" id="sol-h">Frictionless entry. Controlled access. Compliance-ready logs.</h2>
+    <div class="sol-grid">
+      <div class="sol-cards">
+        <div class="sol-card">
+          <div class="sol-card-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="10" width="14" height="8" rx="2" stroke="#185FA5" stroke-width="1.3"/><rect x="6" y="6" width="8" height="6" rx="1.5" stroke="#185FA5" stroke-width="1.3"/><circle cx="10" cy="3" r="2" stroke="#185FA5" stroke-width="1.3"/></svg></div>
+          <div class="sol-card-text"><h4>RFID clears every employee vehicle before it stops.</h4><p>Registered employee cars are identified from 3–5 metres. The barrier opens automatically. Zero stopping, zero guard check. Your 200-car morning peak takes 8 minutes, not 40.</p></div>
+        </div>
+        <div class="sol-card">
+          <div class="sol-card-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="5" width="14" height="12" rx="2" stroke="#185FA5" stroke-width="1.3"/><path d="M7 5V4a3 3 0 016 0v1" stroke="#185FA5" stroke-width="1.3"/><path d="M7 11l2 2 4-4" stroke="#185FA5" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="sol-card-text"><h4>Digital visitor passes — issued before the guest arrives.</h4><p>Meeting hosts send visitors a digital pass from their phone or email. Visitor shows the OTP at the gate. Cleared in seconds, photo logged, audit trail created — no paper, no calls.</p></div>
+        </div>
+        <div class="sol-card">
+          <div class="sol-card-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 3a7 7 0 100 14A7 7 0 0010 3z" stroke="#185FA5" stroke-width="1.3"/><path d="M10 7v3l2 2" stroke="#185FA5" stroke-width="1.3" stroke-linecap="round"/><path d="M6 17l1-2M14 17l-1-2" stroke="#185FA5" stroke-width="1.1" stroke-linecap="round"/></svg></div>
+          <div class="sol-card-text"><h4>Contractor access — time-limited, instantly revocable.</h4><p>Set start and end dates for contractor access. Restrict to specific gates or time windows. When the contract ends, revoke access from the admin portal. Effective immediately — no badge collection.</p></div>
+        </div>
+        <div class="sol-card">
+          <div class="sol-card-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="14" height="14" rx="2" stroke="#185FA5" stroke-width="1.3"/><path d="M7 7h6M7 10h6M7 13h4" stroke="#185FA5" stroke-width="1.2" stroke-linecap="round"/></svg></div>
+          <div class="sol-card-text"><h4>One-click audit reports — ISO, SOC, internal security.</h4><p>Every gate event is logged with photo, timestamp, identification method and clearance status. Export as PDF or CSV for any date range. Your auditor gets clean data, not a notebook.</p></div>
+        </div>
+      </div>
+
+      <!-- Corporate dashboard visual -->
+      <div aria-label="Corporate admin dashboard" role="img">
+        <svg width="100%" viewBox="0 0 380 440" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect width="380" height="440" rx="16" fill="#FAFAF7" stroke="rgba(0,0,0,.08)" stroke-width=".8"/>
+          <!-- Browser chrome -->
+          <rect width="380" height="40" rx="16" fill="#0A1528"/>
+          <rect x="0" y="24" width="380" height="16" fill="#0A1528"/>
+          <circle cx="18" cy="14" r="4" fill="#FF5F57"/>
+          <circle cx="32" cy="14" r="4" fill="#FFBD2E"/>
+          <circle cx="46" cy="14" r="4" fill="#28CA41"/>
+          <text x="200" y="20" text-anchor="middle" font-family="sans-serif" font-size="10" fill="rgba(255,255,255,.5)">Dwaar AI Admin — TechCorp India Campus</text>
+
+          <!-- Stats row -->
+          <text x="16" y="58" font-family="sans-serif" font-size="8" fill="#8A8A84" font-weight="500" letter-spacing=".04em">TODAY'S OVERVIEW</text>
+          <rect x="16" y="64" width="78" height="48" rx="8" fill="white" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <text x="55" y="83" text-anchor="middle" font-family="sans-serif" font-size="20" fill="#185FA5" font-weight="500">847</text>
+          <text x="55" y="97" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#8A8A84">entries today</text>
+          <text x="55" y="107" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#8A8A84">+12% vs yesterday</text>
+
+          <rect x="102" y="64" width="78" height="48" rx="8" fill="white" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <text x="141" y="83" text-anchor="middle" font-family="sans-serif" font-size="20" fill="#185FA5" font-weight="500">97%</text>
+          <text x="141" y="97" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#8A8A84">auto-cleared</text>
+          <text x="141" y="107" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#8A8A84">3% guard action</text>
+
+          <rect x="188" y="64" width="78" height="48" rx="8" fill="white" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <text x="227" y="83" text-anchor="middle" font-family="sans-serif" font-size="20" fill="#185FA5" font-weight="500">12</text>
+          <text x="227" y="97" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#8A8A84">visitors today</text>
+          <text x="227" y="107" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#8A8A84">8 pre-cleared</text>
+
+          <rect x="274" y="64" width="90" height="48" rx="8" fill="#E6F1FB" stroke="rgba(24,95,165,.15)" stroke-width=".8"/>
+          <text x="319" y="83" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#185FA5" font-weight="500">&lt;2s</text>
+          <text x="319" y="97" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#0C447C">avg employee</text>
+          <text x="319" y="107" text-anchor="middle" font-family="sans-serif" font-size="7" fill="#0C447C">clearance time</text>
+
+          <!-- Gate status -->
+          <text x="16" y="132" font-family="sans-serif" font-size="8" fill="#8A8A84" font-weight="500" letter-spacing=".04em">GATE STATUS</text>
+          <rect x="16" y="138" width="348" height="36" rx="8" fill="white" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <rect x="24" y="146" width="20" height="20" rx="5" fill="#E6F1FB"/>
+          <text x="34" y="160" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#185FA5">G1</text>
+          <text x="54" y="152" font-family="sans-serif" font-size="11" fill="#1C1C1A" font-weight="500">Employee Vehicle Gate · Block A</text>
+          <text x="54" y="164" font-family="sans-serif" font-size="8" fill="#8A8A84">RFID + ANPR active · 342 entries today</text>
+          <rect x="290" y="148" width="66" height="14" rx="7" fill="#E1F5EE"/>
+          <text x="323" y="159" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#0F6E56" font-weight="500">● Healthy</text>
+
+          <rect x="16" y="180" width="348" height="36" rx="8" fill="white" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <rect x="24" y="188" width="20" height="20" rx="5" fill="#E6F1FB"/>
+          <text x="34" y="202" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#185FA5">G2</text>
+          <text x="54" y="194" font-family="sans-serif" font-size="11" fill="#1C1C1A" font-weight="500">Visitor & Contractor Gate · Reception</text>
+          <text x="54" y="206" font-family="sans-serif" font-size="8" fill="#8A8A84">ANPR + Face active · 47 visitors today</text>
+          <rect x="290" y="190" width="66" height="14" rx="7" fill="#E1F5EE"/>
+          <text x="323" y="201" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#0F6E56" font-weight="500">● Healthy</text>
+
+          <!-- Access control -->
+          <text x="16" y="232" font-family="sans-serif" font-size="8" fill="#8A8A84" font-weight="500" letter-spacing=".04em">ACCESS CONTROL</text>
+          <rect x="16" y="238" width="348" height="36" rx="8" fill="white" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <rect x="24" y="247" width="20" height="18" rx="4" fill="#FEF3C7"/>
+          <text x="34" y="259" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#D97706">⚠</text>
+          <text x="54" y="252" font-family="sans-serif" font-size="11" fill="#1C1C1A" font-weight="500">Kumar Electricals · Contractor</text>
+          <text x="54" y="263" font-family="sans-serif" font-size="8" fill="#D97706">Contract ends today · Revoke access?</text>
+          <rect x="280" y="249" width="76" height="14" rx="7" fill="#FEF3C7"/>
+          <text x="318" y="260" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#D97706" font-weight="500">Revoke access</text>
+
+          <rect x="16" y="280" width="348" height="36" rx="8" fill="white" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <rect x="24" y="289" width="20" height="18" rx="4" fill="#E1F5EE"/>
+          <text x="34" y="301" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#0F6E56">✓</text>
+          <text x="54" y="294" font-family="sans-serif" font-size="11" fill="#1C1C1A" font-weight="500">Tech Solutions Ltd · Maintenance</text>
+          <text x="54" y="305" font-family="sans-serif" font-size="8" fill="#8A8A84">Access: Weekdays 08:00–18:00 · Block B only</text>
+          <rect x="290" y="291" width="66" height="14" rx="7" fill="#E1F5EE"/>
+          <text x="323" y="302" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#0F6E56" font-weight="500">Active</text>
+
+          <!-- Reports section -->
+          <text x="16" y="332" font-family="sans-serif" font-size="8" fill="#8A8A84" font-weight="500" letter-spacing=".04em">REPORTS & COMPLIANCE</text>
+          <rect x="16" y="338" width="168" height="40" rx="8" fill="#E6F1FB" stroke="rgba(24,95,165,.15)" stroke-width=".8"/>
+          <text x="100" y="352" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#185FA5" font-weight="500">Monthly audit report</text>
+          <text x="100" y="365" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#0C447C">October · 18,432 events · Export PDF</text>
+          <rect x="196" y="338" width="168" height="40" rx="8" fill="white" stroke="rgba(0,0,0,.06)" stroke-width=".8"/>
+          <text x="280" y="352" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#1C1C1A" font-weight="500">Contractor visit history</text>
+          <text x="280" y="365" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#8A8A84">34 contractors · All visits logged</text>
+
+          <!-- Bottom strip -->
+          <rect x="0" y="394" width="380" height="46" rx="0" fill="#F2F2EE"/>
+          <rect x="0" y="394" width="380" height="6" fill="#F2F2EE"/>
+          <rect x="0" y="428" width="380" height="12" rx="16" fill="#F2F2EE"/>
+          <text x="190" y="420" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#8A8A84">All events logged with photo · timestamp · method · clearance status</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- VISITOR FLOW -->
+<section class="visitor-flow-section fade-in" aria-labelledby="vf-h">
+  <div class="container">
+    <div style="text-align:center;max-width:560px;margin:0 auto">
+      <span class="eyebrow">Visitor management flow</span>
+      <h2 class="sec-h" id="vf-h">From meeting invite to gate entry — zero friction.</h2>
+    </div>
+    <div class="vf-grid" role="list">
+      <div class="vf-step" role="listitem">
+        <span style="font-size:11px;font-weight:500;color:var(--accent);letter-spacing:.04em">Step 1</span>
+        <div class="vf-icon" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 26 26" fill="none"><rect x="3" y="5" width="20" height="17" rx="3" stroke="#185FA5" stroke-width="1.3"/><path d="M8 5V3M18 5V3" stroke="#185FA5" stroke-width="1.3" stroke-linecap="round"/><path d="M3 10h20" stroke="#185FA5" stroke-width="1.2"/><rect x="8" y="14" width="4" height="4" rx="1" fill="#185FA5"/></svg></div>
+        <span class="vf-step-label">Host creates visitor pass</span>
+        <span class="vf-step-detail">Meeting host generates a digital OTP pass from their phone — with visitor name, purpose and time window.</span>
+      </div>
+      <div class="vf-step" role="listitem">
+        <span style="font-size:11px;font-weight:500;color:var(--accent);letter-spacing:.04em">Step 2</span>
+        <div class="vf-icon" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 26 26" fill="none"><rect x="5" y="4" width="10" height="18" rx="3" stroke="#185FA5" stroke-width="1.3"/><circle cx="18" cy="13" r="5" stroke="#185FA5" stroke-width="1.3"/><path d="M15.5 13h5M18 10.5v5" stroke="#185FA5" stroke-width="1.2" stroke-linecap="round"/></svg></div>
+        <span class="vf-step-label">Pass shared via WhatsApp</span>
+        <span class="vf-step-detail">Visitor receives a 6-digit OTP via WhatsApp, SMS or email. No app download needed. Works on any phone.</span>
+      </div>
+      <div class="vf-step" role="listitem">
+        <span style="font-size:11px;font-weight:500;color:var(--accent);letter-spacing:.04em">Step 3</span>
+        <div class="vf-icon" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 26 26" fill="none"><rect x="3" y="10" width="20" height="12" rx="3" stroke="#185FA5" stroke-width="1.3"/><rect x="7" y="6" width="12" height="6" rx="2" stroke="#185FA5" stroke-width="1.3"/><circle cx="13" cy="16" r="2" stroke="#185FA5" stroke-width="1.2"/></svg></div>
+        <span class="vf-step-label">Guard verifies OTP</span>
+        <span class="vf-step-detail">Visitor shows OTP. Guard sees host name, flat/cabin, and time validity on tablet. Verified in one tap. Plate and face logged.</span>
+      </div>
+      <div class="vf-step" role="listitem">
+        <span style="font-size:11px;font-weight:500;color:var(--accent);letter-spacing:.04em">Step 4</span>
+        <div class="vf-icon" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 26 26" fill="none"><path d="M4 13l6 6 12-12" stroke="#185FA5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <span class="vf-step-label">Entry logged. Host notified.</span>
+        <span class="vf-step-detail">Entry timestamped with photo. Host receives a push notification. Admin portal updated. Full audit trail created automatically.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- EVENTS LOG -->
+<section class="events-section fade-in" aria-labelledby="ev-h">
+  <div class="container">
+    <span class="eyebrow">Real event types handled</span>
+    <h2 class="sec-h" id="ev-h">Every scenario at a corporate gate — handled automatically.</h2>
+    <div class="events-graphic" role="region" aria-label="Corporate gate event log">
+      <div class="eg-header">
+        <span class="eg-title">Gate event log — Employee Entry · TechCorp India Campus</span>
+        <span class="eg-live"><span class="eg-live-dot" aria-hidden="true"></span>Live</span>
+      </div>
+      <div class="eg-row"><span class="eg-time">09:04</span><div class="eg-icon" style="background:#E6F1FB;" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="7" width="14" height="7" rx="2" stroke="#185FA5" stroke-width="1.1"/><rect x="3" y="5" width="10" height="4" rx="1.5" stroke="#185FA5" stroke-width="1.1"/><circle cx="4" cy="14" r="1.5" fill="#185FA5"/><circle cx="12" cy="14" r="1.5" fill="#185FA5"/></svg></div><div class="eg-main"><p class="eg-name">KA 05 EMP 0234 · Honda City</p><p class="eg-detail">Employee vehicle · Priya Menon · Engineering floor 4</p></div><span class="eg-method em-rfid">RFID</span><span class="eg-status es-cleared">Auto-cleared</span></div>
+      <div class="eg-row"><span class="eg-time">09:12</span><div class="eg-icon" style="background:#E6F1FB;" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="7" width="14" height="7" rx="2" stroke="#185FA5" stroke-width="1.1"/><rect x="3" y="5" width="10" height="4" rx="1.5" stroke="#185FA5" stroke-width="1.1"/><circle cx="4" cy="14" r="1.5" fill="#185FA5"/><circle cx="12" cy="14" r="1.5" fill="#185FA5"/></svg></div><div class="eg-main"><p class="eg-name">MH 02 SR 7801 · Maruti Baleno</p><p class="eg-detail">Employee vehicle · Vikram Rao · Sales floor 2</p></div><span class="eg-method em-anpr">ANPR</span><span class="eg-status es-cleared">Auto-cleared</span></div>
+      <div class="eg-row"><span class="eg-time">10:30</span><div class="eg-icon" style="background:#EEEDFE;" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="6" r="3" stroke="#534AB7" stroke-width="1.1"/><path d="M2 15c0-3.31 2.69-6 6-6s6 2.69 6 6" stroke="#534AB7" stroke-width="1.1" stroke-linecap="round"/></svg></div><div class="eg-main"><p class="eg-name">Anita Shah · External visitor</p><p class="eg-detail">Meeting: Vikram Rao · Pre-cleared OTP pass · Cabin 2F-14</p></div><span class="eg-method em-vis">OTP pass</span><span class="eg-status es-cleared">Cleared — logged</span></div>
+      <div class="eg-row"><span class="eg-time">11:15</span><div class="eg-icon" style="background:#E1F5EE;" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="5" width="12" height="9" rx="2" stroke="#0F6E56" stroke-width="1.1"/><path d="M5 5V4a3 3 0 016 0v1" stroke="#0F6E56" stroke-width="1.1"/></svg></div><div class="eg-main"><p class="eg-name">Kumar Electricals · Maintenance van</p><p class="eg-detail">Contractor · Weekday access 08:00–18:00 · Block B</p></div><span class="eg-method em-anpr">ANPR</span><span class="eg-status es-cleared">Cleared — in contract window</span></div>
+      <div class="eg-row"><span class="eg-time">14:45</span><div class="eg-icon" style="background:#FEF3C7;" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3v5M8 11v1" stroke="#D97706" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="8" r="6" stroke="#D97706" stroke-width="1.1"/></svg></div><div class="eg-main"><p class="eg-name">GJ 05 UN 4422 · Unknown vehicle</p><p class="eg-detail">Plate not in registry · Visitor flow triggered · Guard action</p></div><span class="eg-method em-anpr">ANPR</span><span class="eg-status es-pending">Guard action — logged</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- STATS -->
+<section class="stats-strip" aria-labelledby="stats-h">
+  <div class="container">
+    <h2 class="sr-only" id="stats-h">Performance stats for corporate gate management</h2>
+    <div class="stats-grid" role="list">
+      <div class="stat-item" role="listitem"><span class="stat-num">&lt;2s</span><span class="stat-label">Employee clearance time</span></div>
+      <div class="stat-item" role="listitem"><span class="stat-num">97%</span><span class="stat-label">Entries auto-cleared</span></div>
+      <div class="stat-item" role="listitem"><span class="stat-num">1-click</span><span class="stat-label">Audit report export</span></div>
+      <div class="stat-item" role="listitem"><span class="stat-num">Instant</span><span class="stat-label">Contractor access revocation</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="faq-section fade-in" aria-labelledby="faq-h">
+  <div class="container" style="max-width:740px">
+    <span class="eyebrow">Common questions</span>
+    <h2 class="sec-h" id="faq-h">What facility managers ask before every demo.</h2>
+    <div class="faq-list" role="list">
+      <div class="faq-item" role="listitem">
+        <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">How does gate management work for corporate offices?<div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div></button>
+        <div class="faq-a" role="region"><p class="faq-a-inner">Dwaar AI installs RFID readers for registered employee vehicles, ANPR cameras for all vehicle logging, and facial detection for pedestrian staff gates. Employee vehicles clear automatically before stopping. Visitors receive digital OTP passes from their meeting host. Contractors are registered with time-limited, gate-specific access. All entries are logged with photo, timestamp and method — available for compliance reports.</p></div>
+      </div>
+      <div class="faq-item" role="listitem">
+        <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">How does visitor management work for a corporate office?<div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div></button>
+        <div class="faq-a" role="region"><p class="faq-a-inner">For pre-booked visitors, the meeting host sends a digital OTP pass before the visitor arrives. When the visitor reaches the gate, the guard verifies the OTP on their tablet and sees the host name, location, and pass validity. For walk-in visitors, the guard registers them with a photo and vehicle plate, and issues a temporary pass. All visitor data is logged for audit — entry time, host, purpose, and vehicle plate.</p></div>
+      </div>
+      <div class="faq-item" role="listitem">
+        <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">Can Dwaar AI provide compliance-ready audit logs for ISO or SOC audits?<div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div></button>
+        <div class="faq-a" role="region"><p class="faq-a-inner">Yes. Every gate event is logged with a timestamp, identification method, photo snapshot, and clearance status. These logs are stored in the admin portal and can be exported as PDF or CSV for any date range in one click. This satisfies visitor log requirements for ISO 27001, SOC 2, internal security audits, and incident investigation. Contractor visit history — including entry times, gates used, and dates — is also available as a report.</p></div>
+      </div>
+      <div class="faq-item" role="listitem">
+        <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">How does contractor access control work?<div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div></button>
+        <div class="faq-a" role="region"><p class="faq-a-inner">Contractors are registered in the admin portal with their vehicle plate and face photo. Access can be restricted by gate (e.g., Block B service entrance only), by time window (e.g., weekdays 08:00–18:00), and by date range (contract start and end). When the contract ends, access is revoked from the admin portal — effective immediately at the next gate scan. No badge collection needed. Full contractor visit history is retained for audit.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- RELATED -->
+<section class="related-section fade-in" aria-labelledby="rel-h">
+  <div class="container">
+    <span class="eyebrow">Related solutions</span>
+    <h2 class="sec-h" id="rel-h" style="font-size:22px">Dwaar AI across your entire portfolio.</h2>
+    <div class="related-grid" role="list">
+      <div class="rel-card" role="listitem" onclick="window.location='/solutions/it-parks'" tabindex="0"><span class="rel-tag" style="background:#E6F1FB;color:#0C447C;">Commercial</span><p class="rel-title">IT parks</p><p class="rel-sub">Multi-block campus, shift-based access, contractor zones →</p></div>
+      <div class="rel-card" role="listitem" onclick="window.location='/solutions/warehouses'" tabindex="0"><span class="rel-tag" style="background:#FAEEDA;color:#633806;">Industrial</span><p class="rel-title">Warehouses</p><p class="rel-sub">ANPR truck logging, driver verification, compliance reports →</p></div>
+      <div class="rel-card" role="listitem" onclick="window.location='/solutions/hospitals'" tabindex="0"><span class="rel-tag" style="background:#E6F1FB;color:#0C447C;">Commercial</span><p class="rel-title">Hospitals</p><p class="rel-sub">Ambulance priority, staff face ID, visitor management →</p></div>
+      <div class="rel-card" role="listitem" onclick="window.location='/solutions'" tabindex="0"><span class="rel-tag" style="background:#F2F2EE;color:#5C5C58;">All sectors</span><p class="rel-title">See all 17 solutions</p><p class="rel-sub">Societies, schools, ports, stadiums and more →</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section" aria-labelledby="cta-h">
+  <div class="container">
+    <span class="eyebrow" style="background:rgba(96,165,250,.15);color:#60A5FA">Ready to upgrade your campus gate?</span>
+    <h2 id="cta-h">Your employees deserve a gate<br>that's <em>never in their way.</em></h2>
+    <p>Book a 30-minute demo. We'll show you exactly how RFID, visitor passes, and contractor control work for a campus your size.</p>
+    <div class="cta-btns">
+      <button class="btn-cta" onclick="window.location='/demo'">Book a free demo</button>
+      <button class="btn-cta-g" onclick="window.location='/how-it-works'">See the technology first</button>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- FOOTER -->
+<footer role="contentinfo">
+  <div class="container">
+    <div class="footer-top">
+      <div><p class="f-brand-n">Dwaar AI</p><p class="f-brand-t">Open the right doors.</p><p class="f-brand-d">AI-powered gate management for gated societies, corporate campuses, warehouses and institutions across India.</p></div>
+      <div><p class="f-col-h">Platform</p><ul class="f-links"><li><a href="/how-it-works">How it works</a></li><li><a href="/how-it-works#technology">Technology stack</a></li><li><a href="/how-it-works#products">Guard App</a></li><li><a href="/how-it-works#products">Admin Portal</a></li><li><a href="/partners">Hardware partners</a></li></ul></div>
+      <div><p class="f-col-h">Solutions</p><ul class="f-links"><li><a href="/solutions/gated-societies">Gated societies</a></li><li><a href="/solutions/corporate-offices">Corporate offices</a></li><li><a href="/solutions/warehouses">Warehouses</a></li><li><a href="/solutions/hospitals">Hospitals</a></li><li><a href="/solutions">All 17 sectors →</a></li></ul></div>
+      <div><p class="f-col-h">Company</p><ul class="f-links"><li><a href="/about">Our story</a></li><li><a href="/resources/blog">Blog</a></li><li><a href="/resources/case-studies">Case studies</a></li><li><a href="/contact">Contact</a></li><li><a href="/demo">Book a demo</a></li></ul></div>
+    </div>
+    <div class="f-bottom">
+      <p class="f-copy">© 2025 Dwaar AI. All rights reserved. · <a href="/privacy" style="color:rgba(255,255,255,.2)">Privacy</a> · <a href="/terms" style="color:rgba(255,255,255,.2)">Terms</a></p>
+      <p class="f-tag-sm">Open the right doors.</p>
+    </div>
+  </div>
+</footer>
+
+<script>
+function toggleFaq(btn){
+  const item=btn.closest('.faq-item');
+  const isOpen=item.classList.contains('open');
+  document.querySelectorAll('.faq-item.open').forEach(i=>{i.classList.remove('open');i.querySelector('.faq-q').setAttribute('aria-expanded','false')});
+  if(!isOpen){item.classList.add('open');btn.setAttribute('aria-expanded','true')}
+}
+const io=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('vis');io.unobserve(e.target)}})},{threshold:.08});
+document.querySelectorAll('.fade-in').forEach(el=>io.observe(el));
+</script>
+</body>
+</html>

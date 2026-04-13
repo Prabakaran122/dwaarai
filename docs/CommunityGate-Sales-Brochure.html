@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dwaarai - Smart Gate Access Control</title>
+<style>
+  @page {
+    size: A4;
+    margin: 0;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    color: #1a1a2e;
+    line-height: 1.6;
+    background: #fff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ── Cover Page ── */
+  .cover {
+    height: 100vh;
+    background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    color: #fff;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 30% 70%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 70% 30%, rgba(168, 85, 247, 0.1) 0%, transparent 50%);
+  }
+  .cover-content { position: relative; z-index: 1; }
+  .cover-logo {
+    font-size: 72px;
+    font-weight: 800;
+    letter-spacing: -2px;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #818cf8, #c084fc, #f472b6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .cover-domain {
+    font-size: 18px;
+    color: #a5b4fc;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 40px;
+  }
+  .cover-tagline {
+    font-size: 28px;
+    font-weight: 300;
+    color: #e0e7ff;
+    max-width: 600px;
+    line-height: 1.4;
+  }
+  .cover-sub {
+    margin-top: 24px;
+    font-size: 15px;
+    color: #94a3b8;
+    max-width: 500px;
+  }
+  .cover-footer {
+    position: absolute;
+    bottom: 40px;
+    font-size: 13px;
+    color: #64748b;
+    z-index: 1;
+  }
+
+  /* ── Section Pages ── */
+  .page {
+    padding: 50px 60px;
+    page-break-after: always;
+    min-height: 100vh;
+  }
+  .page:last-child { page-break-after: auto; }
+
+  h1 {
+    font-size: 32px;
+    font-weight: 700;
+    color: #1e1b4b;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+  .section-line {
+    width: 60px;
+    height: 4px;
+    background: linear-gradient(90deg, #6366f1, #a855f7);
+    border-radius: 2px;
+    margin-bottom: 30px;
+  }
+  h2 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #312e81;
+    margin: 28px 0 12px 0;
+  }
+  h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #4338ca;
+    margin: 18px 0 8px 0;
+  }
+  p, li {
+    font-size: 14px;
+    color: #374151;
+    line-height: 1.7;
+  }
+  ul { padding-left: 20px; margin: 8px 0; }
+  li { margin-bottom: 4px; }
+
+  /* ── Cards Grid ── */
+  .cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin: 20px 0;
+  }
+  .card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .card-icon {
+    font-size: 28px;
+    margin-bottom: 10px;
+    display: block;
+  }
+  .card h3 {
+    margin: 0 0 8px 0;
+    color: #1e1b4b;
+    font-size: 17px;
+  }
+  .card p {
+    font-size: 13px;
+    color: #64748b;
+    margin: 0;
+  }
+
+  /* ── Highlight Box ── */
+  .highlight {
+    background: linear-gradient(135deg, #eef2ff, #faf5ff);
+    border-left: 4px solid #6366f1;
+    border-radius: 0 12px 12px 0;
+    padding: 20px 24px;
+    margin: 20px 0;
+  }
+  .highlight p { color: #4338ca; font-weight: 500; font-size: 15px; }
+
+  /* ── Flow Diagram ── */
+  .flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin: 24px 0;
+    flex-wrap: wrap;
+  }
+  .flow-step {
+    background: #f0f0ff;
+    border: 2px solid #c7d2fe;
+    border-radius: 12px;
+    padding: 14px 18px;
+    text-align: center;
+    min-width: 130px;
+    max-width: 160px;
+  }
+  .flow-step .step-icon { font-size: 24px; display: block; margin-bottom: 6px; }
+  .flow-step .step-label { font-size: 12px; font-weight: 600; color: #312e81; }
+  .flow-step .step-time { font-size: 11px; color: #6366f1; margin-top: 2px; }
+  .flow-arrow { font-size: 22px; color: #a5b4fc; margin: 0 6px; }
+
+  /* ── Hardware Table ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 13.5px;
+  }
+  thead { background: #1e1b4b; color: #fff; }
+  th {
+    padding: 12px 16px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.3px;
+  }
+  td {
+    padding: 11px 16px;
+    border-bottom: 1px solid #e5e7eb;
+    color: #374151;
+  }
+  tr:nth-child(even) { background: #f9fafb; }
+  .price { font-weight: 700; color: #059669; }
+  .total-row { background: #eef2ff !important; font-weight: 700; }
+  .total-row td { color: #1e1b4b; border-top: 2px solid #6366f1; }
+
+  /* ── Software Grid ── */
+  .sw-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .sw-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+  }
+  .sw-card .sw-icon { font-size: 32px; margin-bottom: 8px; display: block; }
+  .sw-card h3 { margin: 0 0 6px 0; font-size: 15px; color: #1e1b4b; }
+  .sw-card p { font-size: 12px; color: #64748b; margin: 0; }
+  .sw-card ul { text-align: left; font-size: 12px; margin-top: 8px; padding-left: 16px; }
+  .sw-card li { font-size: 12px; color: #64748b; margin-bottom: 2px; }
+
+  /* ── Two Column Layout ── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    margin: 16px 0;
+  }
+
+  /* ── Badge ── */
+  .badge {
+    display: inline-block;
+    background: #dbeafe;
+    color: #1e40af;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin-right: 6px;
+    margin-bottom: 4px;
+  }
+  .badge.green { background: #dcfce7; color: #166534; }
+  .badge.purple { background: #f3e8ff; color: #6b21a8; }
+  .badge.orange { background: #ffedd5; color: #9a3412; }
+
+  /* ── Numbered Steps ── */
+  .steps { counter-reset: step; margin: 16px 0; }
+  .step-item {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+    align-items: flex-start;
+  }
+  .step-num {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .step-text h3 { margin: 0 0 4px 0; font-size: 15px; }
+  .step-text p { font-size: 13px; color: #6b7280; margin: 0; }
+
+  /* ── Contact Page ── */
+  .contact-page {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+    color: #fff;
+    page-break-after: auto;
+  }
+  .contact-page h1 { color: #e0e7ff; font-size: 36px; margin-bottom: 16px; }
+  .contact-page p { color: #a5b4fc; font-size: 18px; }
+  .contact-box {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 32px 48px;
+    margin-top: 32px;
+  }
+  .contact-box p { font-size: 16px; color: #c7d2fe; margin: 8px 0; }
+  .contact-box .label { font-size: 12px; color: #818cf8; text-transform: uppercase; letter-spacing: 2px; margin-top: 16px; }
+
+  @media print {
+    .page { min-height: auto; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════ COVER PAGE ════════════ -->
+<div class="cover">
+  <div class="cover-content">
+    <div class="cover-logo">Dwaarai</div>
+    <div class="cover-domain">dwaarai.in</div>
+    <div class="cover-tagline">Smart Vehicle Access Control<br>for Residential Communities</div>
+    <p class="cover-sub">
+      Automated gate entry using FASTag RFID, ANPR cameras, and intelligent cloud management &mdash; replacing manual logbooks with seamless, secure access.
+    </p>
+  </div>
+  <div class="cover-footer">Confidential &mdash; For Internal Sales Use Only &mdash; April 2026</div>
+</div>
+
+<!-- ════════════ PAGE 2: WHAT IS DWAARAI ════════════ -->
+<div class="page">
+  <h1>What is Dwaarai?</h1>
+  <div class="section-line"></div>
+
+  <p>Dwaarai is a <strong>cloud-managed, edge-powered vehicle access control platform</strong> built for gated residential communities. It replaces paper logbooks, manual boom barrier operation, and unreliable intercom systems with fully automated gate entry.</p>
+
+  <div class="highlight">
+    <p>A registered vehicle with a FASTag drives up &rarr; the gate opens automatically in under 500 milliseconds &mdash; no stop, no wait, no guard interaction.</p>
+  </div>
+
+  <h2>Core Capabilities</h2>
+  <div class="cards">
+    <div class="card">
+      <span class="card-icon">&#128663;</span>
+      <h3>FASTag Auto-Entry</h3>
+      <p>UHF RFID reads the vehicle's existing FASTag at 2-5 metre range. Known vehicles get instant gate-open (&lt;500ms). New FASTags are auto-paired on first drive-through.</p>
+    </div>
+    <div class="card">
+      <span class="card-icon">&#128247;</span>
+      <h3>ANPR Camera</h3>
+      <p>Automatic Number Plate Recognition captures every vehicle's plate for verification, auto-pairing, and a complete visual audit trail with timestamped snapshots.</p>
+    </div>
+    <div class="card">
+      <span class="card-icon">&#128100;</span>
+      <h3>Visitor Management</h3>
+      <p>Residents create time-bound visitor passes with OTP codes. Share via WhatsApp. Guards verify at gate. Residents get push notifications to approve or deny.</p>
+    </div>
+    <div class="card">
+      <span class="card-icon">&#128274;</span>
+      <h3>Offline Resilient</h3>
+      <p>Edge nodes maintain a local whitelist. Known vehicles enter even without internet. Events queue locally and sync to cloud when connectivity restores.</p>
+    </div>
+  </div>
+
+  <h2>Three Access Methods</h2>
+  <div class="flow">
+    <div class="flow-step">
+      <span class="step-icon">&#128225;</span>
+      <div class="step-label">FASTag RFID</div>
+      <div class="step-time">&lt; 500ms</div>
+    </div>
+    <span class="flow-arrow">&#8594;</span>
+    <div class="flow-step">
+      <span class="step-icon">&#128247;</span>
+      <div class="step-label">ANPR Plate</div>
+      <div class="step-time">1 &ndash; 3 sec</div>
+    </div>
+    <span class="flow-arrow">&#8594;</span>
+    <div class="flow-step">
+      <span class="step-icon">&#128113;</span>
+      <div class="step-label">Guard Review</div>
+      <div class="step-time">Manual</div>
+    </div>
+    <span class="flow-arrow">&#8594;</span>
+    <div class="flow-step" style="border-color: #86efac; background: #f0fdf4;">
+      <span class="step-icon">&#9989;</span>
+      <div class="step-label">Gate Opens</div>
+      <div class="step-time">Logged &amp; Notified</div>
+    </div>
+  </div>
+  <p style="text-align: center; font-size: 13px; color: #94a3b8;">Priority cascading &mdash; fastest match wins. Every event is logged regardless of method.</p>
+</div>
+
+<!-- ════════════ PAGE 3: HOW IT WORKS ════════════ -->
+<div class="page">
+  <h1>How It Works</h1>
+  <div class="section-line"></div>
+
+  <h2>Resident Vehicle Entry (Automatic)</h2>
+  <div class="steps">
+    <div class="step-item">
+      <div class="step-num">1</div>
+      <div class="step-text">
+        <h3>Vehicle Approaches Gate</h3>
+        <p>UHF RFID reader detects the vehicle's FASTag at 2&ndash;5m range. No stopping required.</p>
+      </div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">2</div>
+      <div class="step-text">
+        <h3>Instant Verification</h3>
+        <p>Edge controller checks the FASTag against the local whitelist. Match found &rarr; gate opens in under 500ms.</p>
+      </div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">3</div>
+      <div class="step-text">
+        <h3>ANPR Captures Plate</h3>
+        <p>Camera simultaneously captures the licence plate for audit records and a visual snapshot.</p>
+      </div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">4</div>
+      <div class="step-text">
+        <h3>Resident Notified</h3>
+        <p>Push notification sent to the resident's phone: "Your KA05MF1234 entered Main Gate at 8:42 AM".</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>First-Time FASTag Pairing (Zero Setup)</h2>
+  <div class="highlight">
+    <p>Residents don't need to "register" their FASTag. They simply register their vehicle plate. On the first drive-through, the system auto-detects and links the FASTag &mdash; all future entries are instant.</p>
+  </div>
+  <div class="steps">
+    <div class="step-item">
+      <div class="step-num">1</div>
+      <div class="step-text">
+        <h3>Unknown FASTag Detected</h3>
+        <p>UHF reader picks up a new FASTag not yet in the system.</p>
+      </div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">2</div>
+      <div class="step-text">
+        <h3>ANPR Matches Registered Plate</h3>
+        <p>Camera reads the plate and matches it to a registered vehicle in the community.</p>
+      </div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">3</div>
+      <div class="step-text">
+        <h3>Auto-Pair &amp; Open</h3>
+        <p>FASTag is permanently linked to the vehicle. Gate opens. Resident receives a confirmation: "FASTag linked &mdash; auto-entry active!"</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>Visitor Entry</h2>
+  <div class="two-col">
+    <div>
+      <h3>Resident Creates Pass</h3>
+      <ul>
+        <li>Opens Dwaarai app &rarr; Visitors tab</li>
+        <li>Enters visitor name, validity, max visits</li>
+        <li>System generates a 6-digit OTP</li>
+        <li>Shares OTP via WhatsApp / SMS</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Visitor Arrives at Gate</h3>
+      <ul>
+        <li>Provides OTP to guard</li>
+        <li>Guard verifies on tablet &rarr; gate opens</li>
+        <li>Or: Guard taps "Notify Resident"</li>
+        <li>Resident gets push notification to approve / deny</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ PAGE 4: SOFTWARE COMPONENTS ════════════ -->
+<div class="page">
+  <h1>Software Components</h1>
+  <div class="section-line"></div>
+
+  <p>Dwaarai is a complete platform &mdash; not just hardware. Five integrated software components cover every user role.</p>
+
+  <div class="sw-grid">
+    <div class="sw-card">
+      <span class="sw-icon">&#128241;</span>
+      <h3>Resident App</h3>
+      <p>iOS &amp; Android</p>
+      <ul>
+        <li>Self-registration with community invite code</li>
+        <li>Vehicle management with FASTag status</li>
+        <li>Create &amp; share visitor passes</li>
+        <li>Live activity feed of all entries/exits</li>
+        <li>Push notifications for vehicle events</li>
+        <li>Approve / deny visitors remotely</li>
+      </ul>
+    </div>
+    <div class="sw-card">
+      <span class="sw-icon">&#128187;</span>
+      <h3>Guard App</h3>
+      <p>Android Tablet</p>
+      <ul>
+        <li>Single-screen workstation UI</li>
+        <li>Live queue of gate events</li>
+        <li>Approve / Deny / Register vehicle</li>
+        <li>OTP verification for visitors</li>
+        <li>Notify resident of unknown visitors</li>
+        <li>Manual gate open/close controls</li>
+      </ul>
+    </div>
+    <div class="sw-card">
+      <span class="sw-icon">&#127760;</span>
+      <h3>Admin Portal</h3>
+      <p>Web Dashboard</p>
+      <ul>
+        <li>Multi-community management</li>
+        <li>Vehicle &amp; resident registry</li>
+        <li>Gate configuration &amp; status</li>
+        <li>Event logs with filtering</li>
+        <li>Real-time dashboard &amp; reports</li>
+        <li>Role-based access (Super/Community Admin)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="two-col" style="margin-top: 24px;">
+    <div class="card">
+      <span class="card-icon">&#9729;&#65039;</span>
+      <h3>Cloud Platform</h3>
+      <p>Hosted on AWS. Manages all communities, vehicles, visitors, and gate commands centrally. Provides REST API, WebSocket real-time updates, MQTT messaging to edge nodes, and push notification delivery. PostgreSQL database with monthly-partitioned audit logs.</p>
+      <div style="margin-top: 10px;">
+        <span class="badge">Node.js</span>
+        <span class="badge">PostgreSQL</span>
+        <span class="badge">Redis</span>
+        <span class="badge">MQTT</span>
+        <span class="badge purple">AWS</span>
+      </div>
+    </div>
+    <div class="card">
+      <span class="card-icon">&#9881;&#65039;</span>
+      <h3>Edge Controller</h3>
+      <p>Runs on a mini-PC at each gate. Interfaces with the ZKTeco C3-100 access controller, UHF RFID reader, and ANPR camera. Makes local access decisions using a cached whitelist. Queues events when offline and syncs to cloud on reconnect.</p>
+      <div style="margin-top: 10px;">
+        <span class="badge green">Python</span>
+        <span class="badge green">SQLite</span>
+        <span class="badge">MQTT</span>
+        <span class="badge orange">Offline-First</span>
+      </div>
+    </div>
+  </div>
+
+  <h2>User Roles</h2>
+  <table>
+    <thead>
+      <tr><th>Role</th><th>Access Via</th><th>Capabilities</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Super Admin</strong></td><td>Admin Portal</td><td>Manage all communities, gates, admins. Platform-wide reports.</td></tr>
+      <tr><td><strong>Community Admin</strong></td><td>Admin Portal</td><td>Manage vehicles, residents, gates, events for their community.</td></tr>
+      <tr><td><strong>Guard</strong></td><td>Guard App (Tablet)</td><td>Gate operations, vehicle approval, OTP verify, notify residents.</td></tr>
+      <tr><td><strong>Resident</strong></td><td>Resident App (Phone)</td><td>Register vehicles, manage visitors, view activity, approve entry.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ════════════ PAGE 5: HARDWARE REQUIREMENTS ════════════ -->
+<div class="page">
+  <h1>Hardware Requirements</h1>
+  <div class="section-line"></div>
+
+  <p>Each gate requires a set of hardware components. The system is designed to work with <strong>off-the-shelf, commercially available</strong> equipment &mdash; no proprietary hardware.</p>
+
+  <h2>Entry Gate &mdash; Hardware Bill of Materials</h2>
+  <table>
+    <thead>
+      <tr><th>Component</th><th>Purpose</th><th>Specifications</th><th style="text-align:right">Est. Cost (INR)</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>ZKTeco C3-100 Plus</strong></td>
+        <td>Access controller</td>
+        <td>1-door controller, Wiegand input, relay output, TCP/IP, stores 30K cards offline</td>
+        <td style="text-align:right" class="price">8,000 &ndash; 12,000</td>
+      </tr>
+      <tr>
+        <td><strong>UHF RFID Reader</strong></td>
+        <td>FASTag detection</td>
+        <td>Wiegand output, 860&ndash;960 MHz, 2&ndash;5m read range, circular polarised antenna</td>
+        <td style="text-align:right" class="price">8,000 &ndash; 15,000</td>
+      </tr>
+      <tr>
+        <td><strong>ANPR IP Camera</strong></td>
+        <td>Number plate capture</td>
+        <td>2MP+ IP camera with IR night vision, HTTP POST / ONVIF, weather-proof (IP67)</td>
+        <td style="text-align:right" class="price">8,000 &ndash; 25,000</td>
+      </tr>
+      <tr>
+        <td><strong>Mini-PC / Edge Node</strong></td>
+        <td>Edge controller</td>
+        <td>Intel N100/N95 or ARM64, 4GB+ RAM, Ethernet, USB, runs Python 3.11+</td>
+        <td style="text-align:right" class="price">12,000 &ndash; 15,000</td>
+      </tr>
+      <tr>
+        <td><strong>Networking</strong></td>
+        <td>Connectivity</td>
+        <td>Ethernet switch (5-port), Cat6 cables, SIM router (4G backup)</td>
+        <td style="text-align:right" class="price">3,000 &ndash; 6,000</td>
+      </tr>
+      <tr>
+        <td><strong>Mounting &amp; Cabling</strong></td>
+        <td>Installation</td>
+        <td>Poles, brackets, junction boxes, power supply units, cable conduit</td>
+        <td style="text-align:right" class="price">3,000 &ndash; 5,000</td>
+      </tr>
+      <tr class="total-row">
+        <td colspan="3"><strong>Total Per Entry Gate</strong> (excluding boom barrier)</td>
+        <td style="text-align:right"><strong>42,000 &ndash; 78,000</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Exit Gate &mdash; Hardware Bill of Materials</h2>
+  <table>
+    <thead>
+      <tr><th>Component</th><th>Purpose</th><th>Specifications</th><th style="text-align:right">Est. Cost (INR)</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>ANPR IP Camera</strong></td>
+        <td>Plate capture (audit)</td>
+        <td>Same as entry gate spec</td>
+        <td style="text-align:right" class="price">8,000 &ndash; 25,000</td>
+      </tr>
+      <tr>
+        <td><strong>Vehicle Sensor</strong></td>
+        <td>Presence detection</td>
+        <td>IR beam sensor or inductive loop &mdash; triggers auto-open on exit</td>
+        <td style="text-align:right" class="price">2,000 &ndash; 5,000</td>
+      </tr>
+      <tr>
+        <td><strong>Networking &amp; Mounting</strong></td>
+        <td>Installation</td>
+        <td>Ethernet, power, brackets</td>
+        <td style="text-align:right" class="price">2,000 &ndash; 4,000</td>
+      </tr>
+      <tr class="total-row">
+        <td colspan="3"><strong>Total Per Exit Gate</strong> (excluding boom barrier)</td>
+        <td style="text-align:right"><strong>12,000 &ndash; 34,000</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="highlight">
+    <p><strong>Note:</strong> Existing boom barriers can be retained and integrated. The ZKTeco C3-100 relay output connects directly to most boom barrier brands. If a new boom barrier is needed, budget an additional &#8377;15,000 &ndash; &#8377;40,000 per gate.</p>
+  </div>
+
+  <h2>Example: Typical Community (2 Entry + 2 Exit Gates)</h2>
+  <table>
+    <thead>
+      <tr><th>Item</th><th>Qty</th><th style="text-align:right">Unit Cost (INR)</th><th style="text-align:right">Total (INR)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Entry Gate Hardware</td><td>2</td><td style="text-align:right">~60,000</td><td style="text-align:right">1,20,000</td></tr>
+      <tr><td>Exit Gate Hardware</td><td>2</td><td style="text-align:right">~23,000</td><td style="text-align:right">46,000</td></tr>
+      <tr><td>Guard Tablet (Android)</td><td>2</td><td style="text-align:right">~15,000</td><td style="text-align:right">30,000</td></tr>
+      <tr><td>Installation &amp; Commissioning</td><td>1</td><td style="text-align:right">&mdash;</td><td style="text-align:right">25,000</td></tr>
+      <tr class="total-row"><td colspan="3"><strong>Total Hardware + Setup</strong></td><td style="text-align:right"><strong>~2,21,000</strong></td></tr>
+    </tbody>
+  </table>
+  <p style="font-size: 12px; color: #94a3b8; margin-top: 8px;">* Estimates are indicative. Actual costs vary by vendor and quantity. Boom barriers excluded (typically existing).</p>
+</div>
+
+<!-- ════════════ PAGE 6: INFRASTRUCTURE & REQUIREMENTS ════════════ -->
+<div class="page">
+  <h1>Infrastructure &amp; Requirements</h1>
+  <div class="section-line"></div>
+
+  <h2>Cloud Hosting (Per Community Cluster)</h2>
+  <table>
+    <thead>
+      <tr><th>Service</th><th>Specification</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Application Server</td><td>AWS EC2 t3.medium (2 vCPU, 4GB RAM) or equivalent</td><td>API Gateway + Admin Portal</td></tr>
+      <tr><td>Database</td><td>PostgreSQL 15 (RDS db.t3.micro or self-managed)</td><td>All operational data + audit logs</td></tr>
+      <tr><td>Cache</td><td>Redis 7 (ElastiCache or self-managed)</td><td>Access decision caching, rate limiting</td></tr>
+      <tr><td>Message Broker</td><td>AWS IoT Core or Eclipse Mosquitto</td><td>MQTT communication with edge nodes</td></tr>
+      <tr><td>SSL Certificate</td><td>Let's Encrypt (free) or ACM</td><td>HTTPS for API &amp; portal</td></tr>
+    </tbody>
+  </table>
+
+  <h2>On-Site Requirements (Per Gate)</h2>
+  <div class="two-col">
+    <div>
+      <h3>Electrical</h3>
+      <ul>
+        <li>Stable power supply to gate area</li>
+        <li>UPS recommended for edge node + camera</li>
+        <li>5V relay power for boom barrier trigger</li>
+        <li>12V DC for RFID reader &amp; C3-100</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Network</h3>
+      <ul>
+        <li>Wired Ethernet (Cat6) to each gate</li>
+        <li>Internet uplink &mdash; broadband or 4G</li>
+        <li>Minimum 2 Mbps upload per gate</li>
+        <li>4G backup SIM router (recommended)</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Key Advantages for Communities</h2>
+  <div class="cards">
+    <div class="card">
+      <span class="card-icon">&#9889;</span>
+      <h3>Instant Entry</h3>
+      <p>No more queues at peak hours. FASTag opens the gate before the vehicle even stops. Under 500ms response time.</p>
+    </div>
+    <div class="card">
+      <span class="card-icon">&#128274;</span>
+      <h3>Complete Security</h3>
+      <p>Every entry/exit is logged with plate photo, timestamp, and method. Blacklisted vehicles are blocked automatically. Full audit trail.</p>
+    </div>
+    <div class="card">
+      <span class="card-icon">&#128241;</span>
+      <h3>Resident Control</h3>
+      <p>Residents manage their own vehicles and visitors from their phone. Real-time notifications. Approve visitors remotely.</p>
+    </div>
+    <div class="card">
+      <span class="card-icon">&#128176;</span>
+      <h3>Low TCO</h3>
+      <p>Uses existing FASTag stickers (no new RFID tags to buy). Off-the-shelf hardware. Leverages existing boom barriers. Cloud-managed &mdash; no on-site servers.</p>
+    </div>
+  </div>
+
+  <h2>What Residents Need</h2>
+  <div class="highlight">
+    <p><strong>Nothing extra.</strong> Dwaarai uses the FASTag already on every vehicle's windshield. Residents just install the app, register their vehicle plate, and the system does the rest on first drive-through.</p>
+  </div>
+</div>
+
+<!-- ════════════ PAGE 7: CONTACT ════════════ -->
+<div class="contact-page">
+  <div class="cover-content">
+    <div class="cover-logo" style="font-size: 56px;">Dwaarai</div>
+    <h1>Let's Get Started</h1>
+    <p>Smart gate access for your community</p>
+    <div class="contact-box">
+      <p class="label">Website</p>
+      <p><strong>dwaarai.in</strong></p>
+      <p class="label" style="margin-top: 20px;">Ready to discuss?</p>
+      <p>Contact your Dwaarai sales representative<br>for a site survey and customised quote.</p>
+    </div>
+    <p style="margin-top: 40px; font-size: 13px; color: #64748b;">&copy; 2026 Dwaarai. All rights reserved.</p>
+  </div>
+</div>
+
+</body>
+</html>

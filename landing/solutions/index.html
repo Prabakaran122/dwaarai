@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Solutions — Dwaar AI Gate Management for Every Sector</title>
+  <meta name="description" content="Dwaar AI provides AI-powered gate management for 17+ sectors — gated societies, corporate offices, warehouses, hospitals, schools, factories, hotels, and more. RFID + ANPR + AI facial detection.">
+  <link rel="canonical" href="https://dwaarai.in/solutions">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300;1,9..40,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:          #FAFAF7;
+      --surface:     #FFFFFF;
+      --surface-2:   #F2F2EE;
+      --border:      rgba(0,0,0,0.08);
+      --border-mid:  rgba(0,0,0,0.12);
+      --text-1:      #1C1C1A;
+      --text-2:      #5C5C58;
+      --text-3:      #8A8A84;
+      --green:       #0F6E56;
+      --green-dark:  #0A4F3E;
+      --green-light: #E1F5EE;
+      --teal:        #5DCAA5;
+      --dark:        #0F2920;
+      --radius-sm:   6px;
+      --radius-md:   10px;
+      --radius-lg:   14px;
+      --radius-xl:   20px;
+      --font:        'DM Sans', sans-serif;
+      --transition:  0.18s ease;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; font-size: 16px; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text-1);
+      -webkit-font-smoothing: antialiased;
+    }
+    a { text-decoration: none; color: inherit; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+    /* NAV */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      height: 60px;
+    }
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 100%;
+    }
+    .nav-logo {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      text-decoration: none;
+    }
+    .nav-logo-name {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--text-1);
+      letter-spacing: -0.02em;
+      line-height: 1;
+    }
+    .nav-logo-tag {
+      font-size: 9.5px;
+      color: var(--green);
+      letter-spacing: 0.01em;
+      line-height: 1;
+      font-style: italic;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      list-style: none;
+    }
+    .nav-links a {
+      font-size: 13.5px;
+      color: var(--text-2);
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      transition: color var(--transition), background var(--transition);
+    }
+    .nav-links a:hover { color: var(--text-1); background: var(--surface-2); }
+    .nav-links a.active { color: var(--green); font-weight: 500; }
+    .nav-actions { display: flex; align-items: center; gap: 8px; }
+    .nav-demo {
+      font-size: 13px;
+      font-weight: 500;
+      background: var(--green);
+      color: #fff;
+      padding: 8px 18px;
+      border-radius: var(--radius-md);
+      border: none;
+      cursor: pointer;
+      font-family: var(--font);
+      transition: background var(--transition);
+    }
+    .nav-demo:hover { background: var(--green-dark); }
+
+    /* HERO */
+    .hero {
+      padding: 80px 0 48px;
+      text-align: center;
+    }
+    .eyebrow {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--green);
+      background: var(--green-light);
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 16px;
+    }
+    .hero h1 {
+      font-size: clamp(30px, 4.5vw, 44px);
+      font-weight: 500;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      color: var(--text-1);
+      margin-bottom: 16px;
+    }
+    .hero p {
+      font-size: 17px;
+      color: var(--text-2);
+      line-height: 1.6;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    /* SECTOR GRID */
+    .sectors {
+      padding: 0 0 100px;
+    }
+    .sector-group-label {
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sector-group {
+      margin-bottom: 56px;
+    }
+    .sector-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .sector-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 28px 24px;
+      transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .sector-card:hover {
+      border-color: var(--border-mid);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+      transform: translateY(-2px);
+    }
+    .sector-icon {
+      font-size: 28px;
+      line-height: 1;
+    }
+    .sector-card h3 {
+      font-size: 17px;
+      font-weight: 500;
+      color: var(--text-1);
+      letter-spacing: -0.01em;
+    }
+    .sector-card p {
+      font-size: 14px;
+      color: var(--text-2);
+      line-height: 1.55;
+    }
+    .sector-card .arrow {
+      margin-top: auto;
+      font-size: 13px;
+      color: var(--green);
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding-top: 8px;
+    }
+
+    /* FOOTER */
+    footer {
+      background: var(--dark);
+      color: rgba(255,255,255,0.55);
+      padding: 64px 0 32px;
+      font-size: 14px;
+    }
+    .footer-top {
+      display: grid;
+      grid-template-columns: 1.5fr 1fr 1fr 1fr;
+      gap: 48px;
+      padding-bottom: 40px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .footer-brand-name { font-size: 16px; font-weight: 500; color: #fff; letter-spacing: -0.02em; }
+    .footer-brand-tag { font-size: 10px; color: var(--teal); font-style: italic; letter-spacing: 0.01em; margin-top: 2px; }
+    .footer-brand-desc { font-size: 13px; color: rgba(255,255,255,0.35); line-height: 1.6; margin-top: 12px; max-width: 280px; }
+    .footer-col-title { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; color: rgba(255,255,255,0.3); margin-bottom: 14px; }
+    .footer-links { list-style: none; display: flex; flex-direction: column; gap: 9px; }
+    .footer-links a { font-size: 13px; color: rgba(255,255,255,0.45); transition: color var(--transition); }
+    .footer-links a:hover { color: rgba(255,255,255,0.9); }
+    .footer-bottom { display: flex; justify-content: space-between; align-items: center; padding-top: 24px; }
+    .footer-copy { font-size: 12px; color: rgba(255,255,255,0.2); }
+    .footer-tagline-small { font-size: 11px; color: rgba(93,202,165,0.4); letter-spacing: 0.04em; font-style: italic; }
+
+    /* FADE IN */
+    .fade-in {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.55s ease, transform 0.55s ease;
+    }
+    .fade-in.visible { opacity: 1; transform: translateY(0); }
+
+    /* RESPONSIVE */
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .sector-grid { grid-template-columns: 1fr 1fr; }
+      .footer-top { grid-template-columns: 1fr 1fr; gap: 32px; }
+    }
+    @media (max-width: 480px) {
+      .sector-grid { grid-template-columns: 1fr; }
+      .footer-top { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav role="navigation" aria-label="Main navigation">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <span class="nav-logo-name">Dwaar AI</span>
+        <span class="nav-logo-tag">Open the right doors.</span>
+      </a>
+      <ul class="nav-links" role="list">
+        <li><a href="/how-it-works">How it works</a></li>
+        <li><a href="/solutions" class="active">Solutions</a></li>
+        <li><a href="/resources">Resources</a></li>
+        <li><a href="/about">About</a></li>
+        <li><a href="/contact">Contact</a></li>
+      </ul>
+      <div class="nav-actions">
+        <button class="nav-demo" onclick="window.location='/contact'">Book a demo</button>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <span class="eyebrow fade-in">17 Sectors</span>
+        <h1 class="fade-in">Wherever there's a barrier,<br>Dwaar AI runs the gate.</h1>
+        <p class="fade-in">One platform. Every type of gate. From housing societies to container ports — the same RFID + ANPR + AI stack adapts to your sector.</p>
+      </div>
+    </section>
+
+    <section class="sectors">
+      <div class="container">
+
+        <!-- Residential -->
+        <div class="sector-group fade-in">
+          <p class="sector-group-label">Residential</p>
+          <div class="sector-grid">
+            <a href="/solutions/gated-societies" class="sector-card">
+              <span class="sector-icon">&#127960;</span>
+              <h3>Gated Societies</h3>
+              <p>RFID vehicle entry, ANPR plate recognition, visitor OTP passes, and real-time resident notifications.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+            <a href="/solutions/villa-townships" class="sector-card">
+              <span class="sector-icon">&#127969;</span>
+              <h3>Villa Townships</h3>
+              <p>Multi-entrance RFID, ANPR perimeter monitoring, and unified access for plotted communities.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+            <a href="/solutions/senior-living" class="sector-card">
+              <span class="sector-icon">&#128116;</span>
+              <h3>Senior Living</h3>
+              <p>Emergency vehicle priority lanes, caregiver access management, and family notification system.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+            <a href="/solutions/rwa" class="sector-card">
+              <span class="sector-icon">&#128202;</span>
+              <h3>RWA Committees</h3>
+              <p>Complete gate management platform with resident app, guard controls, and committee-level reporting.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- Commercial -->
+        <div class="sector-group fade-in">
+          <p class="sector-group-label">Commercial &amp; Corporate</p>
+          <div class="sector-grid">
+            <a href="/solutions/corporate-offices" class="sector-card">
+              <span class="sector-icon">&#127970;</span>
+              <h3>Corporate Offices</h3>
+              <p>RFID employee entry, ANPR for fleet vehicles, visitor pre-registration, and compliance-ready logs.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+            <a href="/solutions/it-parks" class="sector-card">
+              <span class="sector-icon">&#128187;</span>
+              <h3>IT Parks &amp; SEZs</h3>
+              <p>Multi-zone RFID access, shift-based entry, vendor management for tech campuses.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+            <a href="/solutions/hotels" class="sector-card">
+              <span class="sector-icon">&#127976;</span>
+              <h3>Hotels &amp; Resorts</h3>
+              <p>Guest vehicle ANPR, staff face verification, vendor access control, and VIP recognition.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+            <a href="/solutions/mall-parking" class="sector-card">
+              <span class="sector-icon">&#128722;</span>
+              <h3>Malls &amp; Retail</h3>
+              <p>Tokenless ANPR parking, real-time occupancy tracking, VIP lanes for retail complexes.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- Industrial & Logistics -->
+        <div class="sector-group fade-in">
+          <p class="sector-group-label">Industrial &amp; Logistics</p>
+          <div class="sector-grid">
+            <a href="/solutions/warehouses" class="sector-card">
+              <span class="sector-icon">&#128230;</span>
+              <h3>Warehouses</h3>
+              <p>ANPR truck logging, driver face verification, and material movement audit trails.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+            <a href="/solutions/factories" class="sector-card">
+              <span class="sector-icon">&#9881;&#65039;</span>
+              <h3>Factories</h3>
+              <p>Shift-based worker access, contractor zone management, and three-shift gate operations.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+            <a href="/solutions/logistics" class="sector-card">
+              <span class="sector-icon">&#128666;</span>
+              <h3>Logistics Parks</h3>
+              <p>ANPR fleet tracking, driver verification, and 3PL distribution centre management.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+            <a href="/solutions/ports" class="sector-card">
+              <span class="sector-icon">&#128674;</span>
+              <h3>Ports &amp; Terminals</h3>
+              <p>ANPR for truck and container logging, multi-lane processing for high-volume traffic.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+            <a href="/solutions/fuel-stations" class="sector-card">
+              <span class="sector-icon">&#9981;&#65039;</span>
+              <h3>Fuel Stations</h3>
+              <p>Vehicle entry logging, fleet customer management, and CNG pump access control.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- Institutions -->
+        <div class="sector-group fade-in">
+          <p class="sector-group-label">Institutions &amp; Public</p>
+          <div class="sector-grid">
+            <a href="/solutions/hospitals" class="sector-card">
+              <span class="sector-icon">&#127973;</span>
+              <h3>Hospitals</h3>
+              <p>Ambulance priority lanes, staff face ID, patient visitor management, and emergency access.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+            <a href="/solutions/schools" class="sector-card">
+              <span class="sector-icon">&#127979;</span>
+              <h3>Schools &amp; Colleges</h3>
+              <p>Parent drop-zone ANPR, staff face verification, visitor management with ID logging.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+            <a href="/solutions/government" class="sector-card">
+              <span class="sector-icon">&#127963;</span>
+              <h3>Government Buildings</h3>
+              <p>Strict visitor ID logging, official vehicle RFID, and high-security access protocols.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+            <a href="/solutions/stadiums" class="sector-card">
+              <span class="sector-icon">&#127943;</span>
+              <h3>Stadiums &amp; Venues</h3>
+              <p>ANPR for VIP and team vehicles, staff face verification, event-day surge management.</p>
+              <span class="arrow">View solution &#8594;</span>
+            </a>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <footer role="contentinfo">
+    <div class="container">
+      <div class="footer-top">
+        <div>
+          <p class="footer-brand-name">Dwaar AI</p>
+          <p class="footer-brand-tag">Open the right doors.</p>
+          <p class="footer-brand-desc">AI-powered gate management for gated societies, corporate campuses, warehouses, ports and institutions across India.</p>
+        </div>
+        <div>
+          <p class="footer-col-title">Platform</p>
+          <ul class="footer-links">
+            <li><a href="/how-it-works">How it works</a></li>
+            <li><a href="/how-it-works#resident-app">Resident App</a></li>
+            <li><a href="/how-it-works#guard-app">Guard App</a></li>
+            <li><a href="/how-it-works#admin-portal">Admin Portal</a></li>
+          </ul>
+        </div>
+        <div>
+          <p class="footer-col-title">Solutions</p>
+          <ul class="footer-links">
+            <li><a href="/solutions/gated-societies">Gated societies</a></li>
+            <li><a href="/solutions/corporate-offices">Corporate offices</a></li>
+            <li><a href="/solutions/warehouses">Warehouses</a></li>
+            <li><a href="/solutions/hospitals">Hospitals</a></li>
+            <li><a href="/solutions">See all 17 sectors</a></li>
+          </ul>
+        </div>
+        <div>
+          <p class="footer-col-title">Company</p>
+          <ul class="footer-links">
+            <li><a href="/about">Our story</a></li>
+            <li><a href="/contact">Contact us</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p class="footer-copy">&copy; 2025 Dwaar AI. All rights reserved.</p>
+        <p class="footer-tagline-small">Open the right doors.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.fade-in').forEach(el => obs.observe(el));
+  </script>
+
+</body>
+</html>

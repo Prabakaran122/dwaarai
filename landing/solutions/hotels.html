@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gate Management for Hotels, Resorts & Hospitality Venues</title>
+<meta name="description" content="Dwaar AI's AI-powered gate management for hotels and resorts. Guest vehicle ANPR, staff face verification, vendor access control, valet management, and seamless first impressions.">
+<meta name="keywords" content="hotel gate management system India, resort access control, hospitality venue gate automation, hotel vehicle management, hotel parking ANPR system, hotel security gate India, resort entry management, valet parking management system">
+<link rel="canonical" href="https://dwaarai.in/solutions/hotels">
+<meta property="og:title" content="Gate Management for Hotels, Resorts & Hospitality Venues">
+<meta property="og:description" content="Dwaar AI's AI-powered gate management for hotels and resorts. Guest vehicle ANPR, staff face verification, vendor access control, valet management, and seamless first impressions.">
+<meta property="og:url" content="https://dwaarai.in/solutions/hotels">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+  {"@type":"WebPage","@id":"https://dwaarai.in/solutions/hotels","url":"https://dwaarai.in/solutions/hotels","name":"Gate Management for Hotels, Resorts & Hospitality Venues","description":"Dwaar AI's AI-powered gate management for hotels and resorts. Guest vehicle ANPR, staff face verification, vendor access control, valet management, and seamless first impressions.","breadcrumb":{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Dwaar AI","item":"https://dwaarai.in"},{"@type":"ListItem","position":2,"name":"Solutions","item":"https://dwaarai.in/solutions"},{"@type":"ListItem","position":3,"name":"Commercial","item":"https://dwaarai.in/solutions/hotels"}]}},
+  {"@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How does Dwaar AI handle hotel guest vehicle entry?","acceptedAnswer":{"@type":"Answer","text":"When a guest provides their vehicle plate number during booking, Dwaar AI registers it against their reservation. On arrival, the ANPR camera reads the plate, matches it to the booking, and opens the barrier — before the guest stops. The front desk receives a notification showing the guest's name, b"}},{"@type":"Question","name":"How does staff access work at a hotel service gate?","acceptedAnswer":{"@type":"Answer","text":"All hotel staff — kitchen, housekeeping, maintenance, event crew — are registered with a face photo. At the service gate, the AI facial detection engine identifies each staff member and logs the shift entry with a timestamp. Proxy entry with a colleague's ID card is not possible. If an unregistered "}},{"@type":"Question","name":"How does Dwaar AI support valet and parking operations?","acceptedAnswer":{"@type":"Answer","text":"Every vehicle entry and exit is photographed and timestamped by ANPR. Valet teams can log vehicle handover times on the guard tablet. The admin portal shows full vehicle movement history for any date. In the event of a parking dispute or liability claim, the hotel can pull photographic evidence of t"}}]}
+]}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300;1,9..40,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FAFAF7;--surface:#FFFFFF;--s2:#F2F2EE;
+  --border:rgba(0,0,0,0.08);--bm:rgba(0,0,0,0.13);
+  --t1:#1C1C1A;--t2:#5C5C58;--t3:#8A8A84;
+  --green:#0F6E56;--gd:#0A4F3E;--gl:#E1F5EE;
+  --teal:#5DCAA5;--dark:#0F2920;
+  --accent:#185FA5;--accent-l:#E6F1FB;--accent-text:#0C447C;
+  --stat-color:#60A5FA;
+  --font:'DM Sans',sans-serif;--ease:0.2s ease;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--bg);color:var(--t1);line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.container{max-width:1080px;margin:0 auto;padding:0 24px}
+.eyebrow{display:inline-block;font-size:11px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:var(--accent);background:var(--accent-l);padding:4px 12px;border-radius:20px;margin-bottom:14px}
+.sec-h{font-size:clamp(24px,3.5vw,36px);font-weight:500;color:var(--t1);letter-spacing:-.025em;line-height:1.2}
+.sec-s{font-size:16px;color:var(--t2);line-height:1.65;margin-top:12px;max-width:560px}
+.btn-p{display:inline-flex;align-items:center;gap:6px;font-family:var(--font);font-size:14px;font-weight:500;background:var(--accent);color:#fff;padding:11px 24px;border-radius:10px;border:none;cursor:pointer;transition:opacity var(--ease),transform var(--ease)}
+.btn-p:hover{opacity:.85;transform:translateY(-1px)}
+.btn-s{display:inline-flex;align-items:center;gap:6px;font-family:var(--font);font-size:14px;color:var(--t1);padding:11px 24px;border-radius:10px;border:1px solid var(--bm);background:transparent;cursor:pointer;transition:background var(--ease)}
+.btn-s:hover{background:var(--s2)}
+.fade-in{opacity:0;transform:translateY(20px);transition:opacity .55s ease,transform .55s ease}
+.fade-in.vis{opacity:1;transform:none}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+nav{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.93);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:60px}
+.nav-in{display:flex;align-items:center;justify-content:space-between;height:100%}
+.nav-logo{display:flex;flex-direction:column;gap:1px}
+.nav-ln{font-size:16px;font-weight:500;color:var(--t1);letter-spacing:-.02em;line-height:1}
+.nav-lt{font-size:9.5px;color:var(--green);font-style:italic;line-height:1}
+.nav-links{display:flex;gap:2px;list-style:none}
+.nav-links a{font-size:13px;color:var(--t2);padding:6px 12px;border-radius:6px;transition:background var(--ease),color var(--ease)}
+.nav-links a:hover,.nav-links a.active{color:var(--t1);background:var(--s2)}
+.nav-cta{font-family:var(--font);font-size:13px;font-weight:500;background:var(--green);color:#fff;padding:8px 18px;border-radius:9px;border:none;cursor:pointer;transition:background var(--ease)}
+.nav-cta:hover{background:var(--gd)}
+.breadcrumb{padding:12px 0;border-bottom:1px solid var(--border);background:var(--surface)}
+.bc-inner{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--t3)}
+.bc-sep{opacity:.4}
+.bc-current{color:var(--t1);font-weight:500}
+.bc-tag{display:inline-block;font-size:10px;font-weight:500;padding:2px 8px;border-radius:20px;background:var(--accent-l);color:var(--accent-text);margin-left:8px}
+.hero{padding:64px 0 56px;background:var(--bg)}
+.hero-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center}
+.hero-text h1{font-size:clamp(26px,4vw,46px);font-weight:500;color:var(--t1);letter-spacing:-.03em;line-height:1.12;margin-bottom:16px}
+.hero-text h1 em{color:var(--accent);font-style:normal}
+.hero-sub{font-size:17px;color:var(--t2);line-height:1.65;margin-bottom:24px;max-width:460px}
+.hero-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px}
+.hero-trust{display:flex;flex-direction:column;gap:8px}
+.ht-item{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t2)}
+.ht-dot{width:18px;height:18px;border-radius:50%;background:var(--accent-l);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ht-dot svg{width:9px;height:9px}
+.hero-graphic{background:#0A1528;border-radius:16px;overflow:hidden;aspect-ratio:16/10;display:flex;align-items:center;justify-content:center}
+.problem-section{padding:72px 0;background:var(--surface);border-top:1px solid var(--border)}
+.prob-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:40px}
+.prob-card{background:var(--bg);border:1px solid var(--border);border-radius:14px;padding:24px}
+.prob-icon{width:44px;height:44px;border-radius:10px;background:#FEF3C7;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.prob-card h3{font-size:15px;font-weight:500;color:var(--t1);margin-bottom:8px;line-height:1.3}
+.prob-card p{font-size:13.5px;color:var(--t2);line-height:1.6}
+.prob-quote{background:var(--surface);border:1px solid var(--border);border-left:3px solid #D97706;border-radius:0 8px 8px 0;padding:10px 14px;margin-top:12px;font-size:12px;color:var(--t3);font-style:italic;line-height:1.5}
+.solution-section{padding:72px 0;background:var(--bg)}
+.sol-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:start;margin-top:40px}
+.sol-cards{display:flex;flex-direction:column;gap:14px}
+.sol-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px 22px;display:flex;gap:16px;align-items:flex-start;transition:border-color var(--ease),transform var(--ease)}
+.sol-card:hover{border-color:var(--teal);transform:translateX(4px)}
+.sol-card-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--accent-l)}
+.sol-card-text h4{font-size:14px;font-weight:500;color:var(--t1);margin-bottom:4px}
+.sol-card-text p{font-size:13px;color:var(--t2);line-height:1.5}
+.day-section{padding:72px 0;background:var(--surface);border-top:1px solid var(--border)}
+.day-timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-top:40px;position:relative}
+.day-timeline::before{content:'';position:absolute;top:30px;left:12.5%;right:12.5%;height:1px;background:linear-gradient(90deg,transparent,var(--accent),rgba(0,0,0,.1),var(--accent),transparent)}
+.day-step{display:flex;flex-direction:column;align-items:center;gap:10px;padding:0 12px;text-align:center}
+.day-time{font-size:11px;font-weight:500;color:var(--accent);letter-spacing:.04em}
+.day-icon{width:60px;height:60px;border-radius:50%;background:var(--surface);border:1.5px solid var(--accent);display:flex;align-items:center;justify-content:center;position:relative;z-index:1}
+.day-label{font-size:13px;font-weight:500;color:var(--t1);line-height:1.3}
+.day-detail{font-size:11.5px;color:var(--t3);line-height:1.45}
+.events-section{padding:72px 0;background:var(--bg)}
+.events-graphic{background:var(--bg);border:1px solid var(--border);border-radius:16px;overflow:hidden;margin-top:40px}
+.eg-header{background:#0A1528;padding:16px 22px;display:flex;align-items:center;justify-content:space-between}
+.eg-title{font-size:13px;font-weight:500;color:#F0F5F3}
+.eg-live{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--stat-color)}
+.eg-live-dot{width:7px;height:7px;border-radius:50%;background:var(--stat-color);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+.eg-row{display:flex;align-items:center;gap:0;padding:13px 22px;border-bottom:1px solid var(--border);transition:background var(--ease)}
+.eg-row:last-child{border-bottom:none}
+.eg-row:hover{background:var(--s2)}
+.eg-time{font-size:11px;color:var(--t3);width:56px;flex-shrink:0}
+.eg-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:12px;background:var(--accent-l)}
+.eg-main{flex:1}
+.eg-name{font-size:13px;font-weight:500;color:var(--t1)}
+.eg-detail{font-size:11px;color:var(--t3);margin-top:1px}
+.eg-method{font-size:10px;padding:2px 8px;border-radius:20px;margin-right:8px}
+.em-rfid{background:#E1F5EE;color:#085041}
+.em-anpr{background:#E6F1FB;color:#0C447C}
+.em-face{background:#EEEDFE;color:#3C3489}
+.em-otp{background:#FAEEDA;color:#633806}
+.eg-status{font-size:11px;font-weight:500}
+.es-cleared{color:var(--green)}
+.es-pending{color:#D97706}
+.stats-strip{padding:48px 0;background:#0A1528}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+.stat-item{text-align:center;padding:16px 20px;border-right:1px solid rgba(255,255,255,.08)}
+.stat-item:last-child{border-right:none}
+.stat-num{font-size:36px;font-weight:500;color:var(--stat-color);letter-spacing:-.02em;display:block;line-height:1;margin-bottom:6px}
+.stat-label{font-size:13px;color:rgba(255,255,255,.45)}
+.faq-section{padding:72px 0;background:var(--surface);border-top:1px solid var(--border)}
+.faq-list{margin-top:36px;border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.faq-item{border-bottom:1px solid var(--border)}
+.faq-item:last-child{border-bottom:none}
+.faq-q{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;cursor:pointer;font-size:14.5px;font-weight:500;color:var(--t1);background:var(--surface);transition:background var(--ease);user-select:none;width:100%;text-align:left;border:none;font-family:var(--font)}
+.faq-q:hover{background:var(--bg)}
+.faq-chev{width:20px;height:20px;border-radius:50%;background:var(--s2);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform var(--ease),background var(--ease)}
+.faq-chev svg{width:10px;height:10px}
+.faq-item.open .faq-chev{transform:rotate(180deg);background:var(--accent-l)}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .3s ease}
+.faq-item.open .faq-a{max-height:400px}
+.faq-a-inner{padding:0 22px 18px;font-size:14px;color:var(--t2);line-height:1.7}
+.related-section{padding:56px 0;background:var(--bg)}
+.related-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:24px}
+.rel-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:border-color var(--ease),transform var(--ease)}
+.rel-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.rel-tag{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:20px;display:inline-block;margin-bottom:8px}
+.rel-title{font-size:13px;font-weight:500;color:var(--t1);margin-bottom:3px}
+.rel-sub{font-size:11px;color:var(--t3)}
+.cta-section{padding:88px 0;background:#0A1528;text-align:center;position:relative;overflow:hidden}
+.cta-section::before{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:600px;height:400px;background:radial-gradient(ellipse,rgba(255,255,255,.05) 0%,transparent 70%);pointer-events:none}
+.cta-section h2{font-size:clamp(26px,4vw,44px);font-weight:500;color:#F0F5F3;letter-spacing:-.025em;line-height:1.2;margin-bottom:14px}
+.cta-section h2 em{color:var(--stat-color);font-style:normal}
+.cta-section p{font-size:16px;color:rgba(255,255,255,.5);max-width:460px;margin:0 auto 32px;line-height:1.65}
+.cta-btns{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
+.btn-cta{font-family:var(--font);font-size:14px;font-weight:500;background:#60A5FA;color:#0A1528;padding:13px 28px;border-radius:10px;border:none;cursor:pointer;transition:opacity var(--ease)}
+.btn-cta:hover{opacity:.9}
+.btn-cta-g{font-family:var(--font);font-size:14px;color:rgba(255,255,255,.6);padding:13px 28px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;cursor:pointer;transition:border-color var(--ease),color var(--ease)}
+.btn-cta-g:hover{border-color:rgba(255,255,255,.35);color:rgba(255,255,255,.9)}
+footer{background:#0F2920;border-top:1px solid rgba(255,255,255,.06);padding:44px 0 24px}
+.footer-top{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:36px;padding-bottom:32px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:20px}
+.f-brand-n{font-size:18px;font-weight:500;color:#F0F5F3;letter-spacing:-.02em;margin-bottom:3px}
+.f-brand-t{font-size:11px;color:#5DCAA5;font-style:italic;font-weight:300;margin-bottom:12px}
+.f-brand-d{font-size:12.5px;color:rgba(255,255,255,.3);line-height:1.6;max-width:220px}
+.f-col-h{font-size:10px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.3);margin-bottom:12px}
+.f-links{list-style:none;display:flex;flex-direction:column;gap:8px}
+.f-links a{font-size:12.5px;color:rgba(255,255,255,.45);transition:color var(--ease)}
+.f-links a:hover{color:rgba(255,255,255,.85)}
+.f-bottom{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+.f-copy{font-size:11px;color:rgba(255,255,255,.2)}
+.f-tag-sm{font-size:10px;color:rgba(93,202,165,.35);font-style:italic}
+@media(max-width:900px){
+  .nav-links{display:none}
+  .hero-grid,.sol-grid{grid-template-columns:1fr}
+  .prob-grid{grid-template-columns:1fr}
+  .day-timeline{grid-template-columns:1fr 1fr}
+  .stats-grid{grid-template-columns:1fr 1fr}
+  .footer-top{grid-template-columns:1fr 1fr}
+  .related-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:600px){
+  .stats-grid{grid-template-columns:1fr 1fr}
+  .footer-top{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<nav role="navigation" aria-label="Main navigation">
+  <div class="container nav-in">
+    <a href="/" class="nav-logo"><span class="nav-ln">Dwaar AI</span><span class="nav-lt">Open the right doors.</span></a>
+    <ul class="nav-links" role="list">
+      <li><a href="/how-it-works">How it works</a></li>
+      <li><a href="/solutions" class="active" aria-current="page">Solutions</a></li>
+      <li><a href="/resources">Resources</a></li>
+      <li><a href="/about">About</a></li>
+      <li><a href="/contact">Contact</a></li>
+    </ul>
+    <button class="nav-cta" onclick="window.location='/demo'">Book a demo</button>
+  </div>
+</nav>
+<div class="breadcrumb" role="navigation" aria-label="Breadcrumb">
+  <div class="container bc-inner">
+    <a href="/">Dwaar AI</a><span class="bc-sep">/</span>
+    <a href="/solutions">Solutions</a><span class="bc-sep">/</span>
+    <span class="bc-current">Commercial</span>
+    <span class="bc-tag">Commercial</span>
+  </div>
+</div>
+<main>
+<section class="hero fade-in" aria-labelledby="hero-h">
+  <div class="container">
+    <div class="hero-grid">
+      <div class="hero-text">
+        <span class="eyebrow">Gate management for commercial</span>
+        <h1 id="hero-h">Your hotel gate is the first<br><em>moment of your guest's experience.</em></h1>
+        <p class="hero-sub">Dwaar AI gives hotels frictionless guest vehicle entry, verified staff access, seamless vendor management, and a fully logged gate — so the first impression matches the hospitality inside.</p>
+        <div class="hero-actions">
+          <button class="btn-p" onclick="window.location='/demo'">Book a demo</button>
+          <button class="btn-s" onclick="window.location='/how-it-works'">See how it works</button>
+        </div>
+        <div class="hero-trust" role="list">
+          <div class="ht-item" role="listitem">
+            <div class="ht-dot" aria-hidden="true">
+              <svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#185FA5" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </div>Guests recognised on arrival — no stopping, no checking
+          </div>
+          <div class="ht-item" role="listitem">
+            <div class="ht-dot" aria-hidden="true">
+              <svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#185FA5" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </div>All hotel staff face-verified on every shift
+          </div>
+          <div class="ht-item" role="listitem">
+            <div class="ht-dot" aria-hidden="true">
+              <svg viewBox="0 0 9 8" fill="none"><path d="M1 4L3.5 6.5L8 1.5" stroke="#185FA5" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </div>Vendor access controlled — right time, right gate
+          </div></div>
+      </div>
+      <div class="hero-graphic" role="img" aria-label="Gate activity dashboard for commercial">
+    <svg width="100%" viewBox="0 0 380 300" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect width="380" height="300" rx="14" fill="#0A1528"/>
+      <text x="20" y="32" font-family="sans-serif" font-size="11" fill="rgba(255,255,255,.4)" font-weight="500" letter-spacing=".04em">LIVE GATE ACTIVITY</text>
+      <circle cx="352" cy="24" r="5" fill="#60A5FA" opacity=".8"/>
+      <!-- Modality pills -->
+      <rect x="16" y="44" width="104" height="42" rx="8" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.08)" stroke-width=".8"/>
+      <text x="68" y="60" text-anchor="middle" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.4)">RFID</text>
+      <text x="68" y="76" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#60A5FA" font-weight="500">Active</text>
+      <rect x="128" y="44" width="124" height="42" rx="8" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.08)" stroke-width=".8"/>
+      <text x="190" y="60" text-anchor="middle" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.4)">ANPR</text>
+      <text x="190" y="76" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#60A5FA" font-weight="500">Active</text>
+      <rect x="260" y="44" width="104" height="42" rx="8" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.08)" stroke-width=".8"/>
+      <text x="312" y="60" text-anchor="middle" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.4)">Face AI</text>
+      <text x="312" y="76" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#60A5FA" font-weight="500">Active</text>
+      <!-- Entry rows -->
+      <rect x="16" y="100" width="348" height="36" rx="7" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.07)" stroke-width=".8"/>
+      <text x="30" y="116" font-family="sans-serif" font-size="10" fill="rgba(255,255,255,.7)" font-weight="500">KA 09 GU 7723 · Guest arrival</text>
+      <text x="30" y="128" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.35)">Main Gate · Booking: Sharma, Anita · Suite 204 · ANPR</text>
+      <rect x="290" y="110" width="66" height="14" rx="7" fill="rgba(15,110,86,.5)"/>
+      <text x="323" y="121" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#5DCAA5" font-weight="500">Cleared</text>
+
+      <rect x="16" y="144" width="348" height="36" rx="7" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.07)" stroke-width=".8"/>
+      <text x="30" y="160" font-family="sans-serif" font-size="10" fill="rgba(255,255,255,.7)" font-weight="500">Sanjay — Head Chef</text>
+      <text x="30" y="172" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.35)">Service Gate · Face verified · Morning shift · Kitchen</text>
+      <rect x="290" y="154" width="66" height="14" rx="7" fill="rgba(15,110,86,.5)"/>
+      <text x="323" y="165" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#5DCAA5" font-weight="500">Cleared</text>
+
+      <rect x="16" y="188" width="348" height="36" rx="7" fill="rgba(255,255,255,.04)" stroke="rgba(217,119,6,.2)" stroke-width=".8"/>
+      <text x="30" y="204" font-family="sans-serif" font-size="10" fill="rgba(255,255,255,.7)" font-weight="500">KA 09 GU 7723 · Guest exit</text>
+      <text x="30" y="216" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.35)">Main Gate · Checkout · Duration: 5h 10m · Logged</text>
+      <rect x="290" y="198" width="66" height="14" rx="7" fill="rgba(217,119,6,.25)"/>
+      <text x="323" y="209" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#FCD34D" font-weight="500">Action</text>
+
+      <!-- Stats footer -->
+      <rect x="0" y="242" width="380" height="58" rx="0" fill="rgba(255,255,255,.03)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>
+      <rect x="0" y="242" width="380" height="4" fill="rgba(255,255,255,.03)"/>
+      <rect x="0" y="284" width="380" height="16" rx="14" fill="rgba(255,255,255,.03)"/>
+      <text x="57" y="262" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#60A5FA" font-weight="500"><3s</text>
+      <text x="57" y="276" text-anchor="middle" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.35)">Guest vehicle cleara</text>
+      <text x="152" y="262" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#60A5FA" font-weight="500">100%</text>
+      <text x="152" y="276" text-anchor="middle" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.35)">Staff shifts face-ve</text>
+      <text x="247" y="262" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#60A5FA" font-weight="500">0</text>
+      <text x="247" y="276" text-anchor="middle" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.35)">Proxy staff entries </text>
+      <text x="330" y="262" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#60A5FA" font-weight="500">Full</text>
+      <text x="330" y="276" text-anchor="middle" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.35)">Parking liability au</text>
+    </svg></div>
+    </div>
+  </div>
+</section>
+<section class="problem-section fade-in" aria-labelledby="prob-h">
+  <div class="container">
+    <div style="text-align:center;max-width:580px;margin:0 auto">
+      <span class="eyebrow">The problem</span>
+      <h2 class="sec-h" id="prob-h">Your guest's experience starts at the gate — long before reception.</h2>
+      <p class="sec-s" style="margin:12px auto 0;text-align:center">A guard waving down every car, asking for a booking reference, calling reception — that's not hospitality. It's friction at the worst possible moment.</p>
+    </div>
+    <div class="prob-grid">
+        <div class="prob-card">
+          <div class="prob-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+              <circle cx="11" cy="11" r="8" stroke="#D97706" stroke-width="1.4"/>
+              <path d="M11 7v4l3 3" stroke="#D97706" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3>Check-in guests delayed at the gate, not just at reception.</h3>
+          <p>A guest who pre-booked months ago shouldn't have to prove it at the entrance barrier. But without ANPR linking to the booking system, the guard is the only gatekeeper — and delays start there.</p>
+          <div class="prob-quote">"We had guests arriving for a wedding event waiting 8 minutes at the gate. The guard was calling the banquet coordinator for every car." — Front Office Manager, 5-star Bengaluru hotel</div>
+        </div>
+        <div class="prob-card">
+          <div class="prob-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+              <circle cx="11" cy="11" r="8" stroke="#D97706" stroke-width="1.4"/>
+              <path d="M11 7v4l3 3" stroke="#D97706" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3>Staff at every entry point — unmonitored, no face verification.</h3>
+          <p>Hotels have kitchen staff, housekeeping, maintenance and event crew entering via service gates. Without face verification, you have no way to know that the person who entered is the person who was supposed to.</p>
+          <div class="prob-quote">"We had a catering staff member use a colleague's ID card to enter our property for 2 weeks before anyone flagged it." — Security Director, Mumbai hotel</div>
+        </div>
+        <div class="prob-card">
+          <div class="prob-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+              <circle cx="11" cy="11" r="8" stroke="#D97706" stroke-width="1.4"/>
+              <path d="M11 7v4l3 3" stroke="#D97706" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3>No audit trail for liability — incidents with no record.</h3>
+          <p>A dispute in the parking lot. A guest complaint about someone following them from the entrance. A vendor vehicle in a restricted area. Without photo logs and timestamps, the hotel has no evidence and no response.</p>
+          <div class="prob-quote">"A guest complained about being approached in the parking lot. We had no camera coverage at the entrance and no entry log." — General Manager, Goa resort</div>
+        </div></div>
+  </div>
+</section>
+<section class="solution-section fade-in" aria-labelledby="sol-h">
+  <div class="container">
+    <span class="eyebrow">How Dwaar AI solves it</span>
+    <h2 class="sec-h" id="sol-h">One platform. Built for every challenge your gate faces.</h2>
+    <div class="sol-grid">
+      <div class="sol-cards">
+        <div class="sol-card">
+          <div class="sol-card-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M4 10l4 4 8-8" stroke="#185FA5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="sol-card-text">
+            <h4>ANPR links guest plates to bookings — seamless arrival.</h4>
+            <p>When a guest provides their vehicle plate at booking, Dwaar AI maps it to their reservation. The plate is recognised on arrival and the barrier opens before they stop — with a welcome notification to the front desk.</p>
+          </div>
+        </div>
+        <div class="sol-card">
+          <div class="sol-card-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M4 10l4 4 8-8" stroke="#185FA5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="sol-card-text">
+            <h4>All staff face-verified at service gates.</h4>
+            <p>Kitchen, housekeeping, maintenance, and event staff are face-registered. Shift entry is logged automatically. No ID cards to share, no proxy entry possible.</p>
+          </div>
+        </div>
+        <div class="sol-card">
+          <div class="sol-card-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M4 10l4 4 8-8" stroke="#185FA5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="sol-card-text">
+            <h4>Vendor and delivery access — controlled and logged.</h4>
+            <p>Vendors, linen services, and food suppliers are registered with time windows. They enter via the service gate during their approved window. Every delivery is logged.</p>
+          </div>
+        </div>
+        <div class="sol-card">
+          <div class="sol-card-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M4 10l4 4 8-8" stroke="#185FA5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="sol-card-text">
+            <h4>Full parking and valet audit trail.</h4>
+            <p>Every vehicle entry and exit is photographed and timestamped. Valet handover logs available. Liability incidents resolved with photographic evidence.</p>
+          </div>
+        </div></div>
+      <div role="img" aria-label="Solution overview for commercial">
+    <svg width="100%" viewBox="0 0 380 300" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect width="380" height="300" rx="14" fill="#0A1528"/>
+      <text x="20" y="32" font-family="sans-serif" font-size="11" fill="rgba(255,255,255,.4)" font-weight="500" letter-spacing=".04em">LIVE GATE ACTIVITY</text>
+      <circle cx="352" cy="24" r="5" fill="#60A5FA" opacity=".8"/>
+      <!-- Modality pills -->
+      <rect x="16" y="44" width="104" height="42" rx="8" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.08)" stroke-width=".8"/>
+      <text x="68" y="60" text-anchor="middle" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.4)">RFID</text>
+      <text x="68" y="76" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#60A5FA" font-weight="500">Active</text>
+      <rect x="128" y="44" width="124" height="42" rx="8" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.08)" stroke-width=".8"/>
+      <text x="190" y="60" text-anchor="middle" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.4)">ANPR</text>
+      <text x="190" y="76" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#60A5FA" font-weight="500">Active</text>
+      <rect x="260" y="44" width="104" height="42" rx="8" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.08)" stroke-width=".8"/>
+      <text x="312" y="60" text-anchor="middle" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.4)">Face AI</text>
+      <text x="312" y="76" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#60A5FA" font-weight="500">Active</text>
+      <!-- Entry rows -->
+      <rect x="16" y="100" width="348" height="36" rx="7" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.07)" stroke-width=".8"/>
+      <text x="30" y="116" font-family="sans-serif" font-size="10" fill="rgba(255,255,255,.7)" font-weight="500">KA 09 GU 7723 · Guest arrival</text>
+      <text x="30" y="128" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.35)">Main Gate · Booking: Sharma, Anita · Suite 204 · ANPR</text>
+      <rect x="290" y="110" width="66" height="14" rx="7" fill="rgba(15,110,86,.5)"/>
+      <text x="323" y="121" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#5DCAA5" font-weight="500">Cleared</text>
+
+      <rect x="16" y="144" width="348" height="36" rx="7" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.07)" stroke-width=".8"/>
+      <text x="30" y="160" font-family="sans-serif" font-size="10" fill="rgba(255,255,255,.7)" font-weight="500">Sanjay — Head Chef</text>
+      <text x="30" y="172" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.35)">Service Gate · Face verified · Morning shift · Kitchen</text>
+      <rect x="290" y="154" width="66" height="14" rx="7" fill="rgba(15,110,86,.5)"/>
+      <text x="323" y="165" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#5DCAA5" font-weight="500">Cleared</text>
+
+      <rect x="16" y="188" width="348" height="36" rx="7" fill="rgba(255,255,255,.04)" stroke="rgba(217,119,6,.2)" stroke-width=".8"/>
+      <text x="30" y="204" font-family="sans-serif" font-size="10" fill="rgba(255,255,255,.7)" font-weight="500">KA 09 GU 7723 · Guest exit</text>
+      <text x="30" y="216" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.35)">Main Gate · Checkout · Duration: 5h 10m · Logged</text>
+      <rect x="290" y="198" width="66" height="14" rx="7" fill="rgba(217,119,6,.25)"/>
+      <text x="323" y="209" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#FCD34D" font-weight="500">Action</text>
+
+      <!-- Stats footer -->
+      <rect x="0" y="242" width="380" height="58" rx="0" fill="rgba(255,255,255,.03)" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>
+      <rect x="0" y="242" width="380" height="4" fill="rgba(255,255,255,.03)"/>
+      <rect x="0" y="284" width="380" height="16" rx="14" fill="rgba(255,255,255,.03)"/>
+      <text x="57" y="262" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#60A5FA" font-weight="500"><3s</text>
+      <text x="57" y="276" text-anchor="middle" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.35)">Guest vehicle cleara</text>
+      <text x="152" y="262" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#60A5FA" font-weight="500">100%</text>
+      <text x="152" y="276" text-anchor="middle" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.35)">Staff shifts face-ve</text>
+      <text x="247" y="262" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#60A5FA" font-weight="500">0</text>
+      <text x="247" y="276" text-anchor="middle" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.35)">Proxy staff entries </text>
+      <text x="330" y="262" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#60A5FA" font-weight="500">Full</text>
+      <text x="330" y="276" text-anchor="middle" font-family="sans-serif" font-size="8" fill="rgba(255,255,255,.35)">Parking liability au</text>
+    </svg></div>
+    </div>
+  </div>
+</section>
+<section class="day-section fade-in" aria-labelledby="day-h">
+  <div class="container">
+    <div style="text-align:center;max-width:560px;margin:0 auto">
+      <span class="eyebrow">Guest arrival to departure — gate at every touchpoint</span>
+      <h2 class="sec-h" id="day-h">Dwaar AI handles every scenario — automatically.</h2>
+    </div>
+    <div class="day-timeline" role="list">
+      <div class="day-step" role="listitem">
+        <span class="day-time">Guest arrival</span>
+        <div class="day-icon" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" stroke="#185FA5" stroke-width="1.3"/>
+            <text x="12" y="16" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#185FA5" font-weight="500">1</text>
+          </svg>
+        </div>
+        <span class="day-label">Plate linked to booking</span>
+        <span class="day-detail">ANPR reads guest plate. Matched to reservation. Barrier opens. Front desk receives arrival notification. Zero stopping.</span>
+      </div>
+      <div class="day-step" role="listitem">
+        <span class="day-time">Staff entry</span>
+        <div class="day-icon" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" stroke="#185FA5" stroke-width="1.3"/>
+            <text x="12" y="16" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#185FA5" font-weight="500">2</text>
+          </svg>
+        </div>
+        <span class="day-label">All shifts face-verified</span>
+        <span class="day-detail">Kitchen, housekeeping and event staff face-verified at service gate. Every shift entry timestamped. No ID sharing possible.</span>
+      </div>
+      <div class="day-step" role="listitem">
+        <span class="day-time">Vendor delivery</span>
+        <div class="day-icon" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" stroke="#185FA5" stroke-width="1.3"/>
+            <text x="12" y="16" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#185FA5" font-weight="500">3</text>
+          </svg>
+        </div>
+        <span class="day-label">Service gate controlled</span>
+        <span class="day-detail">Vendor vehicle plate verified against approved supplier list and time window. Logged on entry and exit.</span>
+      </div>
+      <div class="day-step" role="listitem">
+        <span class="day-time">Guest departure</span>
+        <div class="day-icon" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" stroke="#185FA5" stroke-width="1.3"/>
+            <text x="12" y="16" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#185FA5" font-weight="500">4</text>
+          </svg>
+        </div>
+        <span class="day-label">Exit logged</span>
+        <span class="day-detail">Plate scanned on exit. Duration logged. Valet return timestamped. Full stay vehicle activity recorded.</span>
+      </div></div>
+  </div>
+</section>
+<section class="events-section fade-in" aria-labelledby="ev-h">
+  <div class="container">
+    <span class="eyebrow">Real event types handled</span>
+    <h2 class="sec-h" id="ev-h">Every gate scenario Dwaar AI handles at a commercial site.</h2>
+    <div class="events-graphic" role="region" aria-label="Gate event log">
+      <div class="eg-header">
+        <span class="eg-title">Gate event log — Commercial · Dwaar AI</span>
+        <span class="eg-live"><span class="eg-live-dot" aria-hidden="true"></span>Live</span>
+      </div>
+      
+      <div class="eg-row" role="row">
+        <span class="eg-time">14:05</span>
+        <div class="eg-icon" style="background:var(--accent-l);" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="5.5" stroke="#185FA5" stroke-width="1.1"/>
+            <path d="M4.5 7l2 2 3-3" stroke="#185FA5" stroke-width="1.1" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="eg-main">
+          <p class="eg-name">KA 09 GU 7723 · Guest arrival</p>
+          <p class="eg-detail">Main Gate · Booking: Sharma, Anita · Suite 204 · ANPR</p>
+        </div>
+        <span class="eg-method em-anpr">ANPR</span>
+        <span class="eg-status es-cleared">Cleared — FD notified</span>
+      </div>
+      <div class="eg-row" role="row">
+        <span class="eg-time">06:45</span>
+        <div class="eg-icon" style="background:var(--accent-l);" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="5.5" stroke="#185FA5" stroke-width="1.1"/>
+            <path d="M4.5 7l2 2 3-3" stroke="#185FA5" stroke-width="1.1" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="eg-main">
+          <p class="eg-name">Sanjay — Head Chef</p>
+          <p class="eg-detail">Service Gate · Face verified · Morning shift · Kitchen</p>
+        </div>
+        <span class="eg-method em-face">Face AI</span>
+        <span class="eg-status es-cleared">Cleared — shift logged</span>
+      </div>
+      <div class="eg-row" role="row">
+        <span class="eg-time">08:30</span>
+        <div class="eg-icon" style="background:var(--accent-l);" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="5.5" stroke="#185FA5" stroke-width="1.1"/>
+            <path d="M4.5 7l2 2 3-3" stroke="#185FA5" stroke-width="1.1" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="eg-main">
+          <p class="eg-name">Hindustan Linen · Supply van</p>
+          <p class="eg-detail">Service Gate · Approved vendor · Weekly window · ANPR</p>
+        </div>
+        <span class="eg-method em-anpr">ANPR</span>
+        <span class="eg-status es-cleared">Cleared — delivery logged</span>
+      </div>
+      <div class="eg-row" role="row">
+        <span class="eg-time">19:15</span>
+        <div class="eg-icon" style="background:var(--accent-l);" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="5.5" stroke="#185FA5" stroke-width="1.1"/>
+            <path d="M4.5 7l2 2 3-3" stroke="#185FA5" stroke-width="1.1" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="eg-main">
+          <p class="eg-name">KA 09 GU 7723 · Guest exit</p>
+          <p class="eg-detail">Main Gate · Checkout · Duration: 5h 10m · Logged</p>
+        </div>
+        <span class="eg-method em-anpr">ANPR</span>
+        <span class="eg-status es-cleared">Logged — departed</span>
+      </div>
+      <div class="eg-row" role="row">
+        <span class="eg-time">21:00</span>
+        <div class="eg-icon" style="background:var(--accent-l);" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="5.5" stroke="#185FA5" stroke-width="1.1"/>
+            <path d="M4.5 7l2 2 3-3" stroke="#185FA5" stroke-width="1.1" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="eg-main">
+          <p class="eg-name">MH 04 UN 5522 · Unknown vehicle</p>
+          <p class="eg-detail">Main Gate · No reservation match · Guard action</p>
+        </div>
+        <span class="eg-method em-anpr">ANPR</span>
+        <span class="eg-status es-pending">Guard action — logged</span>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="stats-strip" aria-labelledby="stats-h">
+  <div class="container">
+    <h2 class="sr-only" id="stats-h">Performance statistics</h2>
+    <div class="stats-grid" role="list">
+      <div class="stat-item" role="listitem">
+        <span class="stat-num"><3s</span>
+        <span class="stat-label">Guest vehicle clearance</span>
+      </div>
+      <div class="stat-item" role="listitem">
+        <span class="stat-num">100%</span>
+        <span class="stat-label">Staff shifts face-verified</span>
+      </div>
+      <div class="stat-item" role="listitem">
+        <span class="stat-num">0</span>
+        <span class="stat-label">Proxy staff entries possible</span>
+      </div>
+      <div class="stat-item" role="listitem">
+        <span class="stat-num">Full</span>
+        <span class="stat-label">Parking liability audit trail</span>
+      </div></div>
+  </div>
+</section>
+<section class="faq-section fade-in" aria-labelledby="faq-h">
+  <div class="container" style="max-width:740px">
+    <span class="eyebrow">Common questions</span>
+    <h2 class="sec-h" id="faq-h">Questions from commercial decision-makers.</h2>
+    <div class="faq-list" role="list">
+      <div class="faq-item" role="listitem">
+        <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">
+          How does Dwaar AI handle hotel guest vehicle entry?
+          <div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+        </button>
+        <div class="faq-a" role="region">
+          <p class="faq-a-inner">When a guest provides their vehicle plate number during booking, Dwaar AI registers it against their reservation. On arrival, the ANPR camera reads the plate, matches it to the booking, and opens the barrier — before the guest stops. The front desk receives a notification showing the guest's name, booking reference, and estimated arrival at reception. The entire sequence takes under 3 seconds.</p>
+        </div>
+      </div>
+      <div class="faq-item" role="listitem">
+        <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">
+          How does staff access work at a hotel service gate?
+          <div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+        </button>
+        <div class="faq-a" role="region">
+          <p class="faq-a-inner">All hotel staff — kitchen, housekeeping, maintenance, event crew — are registered with a face photo. At the service gate, the AI facial detection engine identifies each staff member and logs the shift entry with a timestamp. Proxy entry with a colleague's ID card is not possible. If an unregistered person attempts entry, the guard tablet shows an alert.</p>
+        </div>
+      </div>
+      <div class="faq-item" role="listitem">
+        <button class="faq-q" onclick="toggleFaq(this)" aria-expanded="false">
+          How does Dwaar AI support valet and parking operations?
+          <div class="faq-chev" aria-hidden="true"><svg viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+        </button>
+        <div class="faq-a" role="region">
+          <p class="faq-a-inner">Every vehicle entry and exit is photographed and timestamped by ANPR. Valet teams can log vehicle handover times on the guard tablet. The admin portal shows full vehicle movement history for any date. In the event of a parking dispute or liability claim, the hotel can pull photographic evidence of the vehicle's condition on arrival and the handover sequence.</p>
+        </div>
+      </div></div>
+  </div>
+</section>
+<section class="related-section fade-in" aria-labelledby="rel-h">
+  <div class="container">
+    <span class="eyebrow">Related solutions</span>
+    <h2 class="sec-h" id="rel-h" style="font-size:22px">Dwaar AI works beyond this one site.</h2>
+    <div class="related-grid" role="list">
+      <div class="rel-card" role="listitem" onclick="window.location='/solutions/corporate-offices'" tabindex="0">
+        <span class="rel-tag" style="background:#E6F1FB;color:#0C447C">Commercial</span>
+        <p class="rel-title">Corporate offices</p>
+        <p class="rel-sub">Employee RFID, visitor management, audit logs</p>
+      </div>
+      <div class="rel-card" role="listitem" onclick="window.location='/solutions/hospitals'" tabindex="0">
+        <span class="rel-tag" style="background:#E6F1FB;color:#0C447C">Commercial</span>
+        <p class="rel-title">Hospitals</p>
+        <p class="rel-sub">Ambulance priority, staff face ID, NABH compliance</p>
+      </div>
+      <div class="rel-card" role="listitem" onclick="window.location='/solutions/stadiums'" tabindex="0">
+        <span class="rel-tag" style="background:#EEEDFE;color:#3C3489">Institutions</span>
+        <p class="rel-title">Stadiums & venues</p>
+        <p class="rel-sub">Event entry, VIP lanes, multi-gate crowd management</p>
+      </div>
+      <div class="rel-card" role="listitem" onclick="window.location='/solutions'" tabindex="0">
+        <span class="rel-tag" style="background:#F2F2EE;color:#5C5C58">All</span>
+        <p class="rel-title">All 17 solutions</p>
+        <p class="rel-sub">See every industry Dwaar AI serves →</p>
+      </div></div>
+  </div>
+</section>
+<section class="cta-section" aria-labelledby="cta-h">
+  <div class="container">
+    <span class="eyebrow" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.6)">Ready to upgrade your gate?</span>
+    <h2 id="cta-h">Your hotel's gate should be as welcoming<br><em>as everything inside.</em></h2>
+    <p>Book a demo. We'll show you guest arrival flow, staff access, and vendor control for a property your size.</p>
+    <div class="cta-btns">
+      <button class="btn-cta" onclick="window.location='/demo'">Book a free demo</button>
+      <button class="btn-cta-g" onclick="window.location='/how-it-works'">See the technology first</button>
+    </div>
+  </div>
+</section>
+</main>
+<footer role="contentinfo">
+  <div class="container">
+    <div class="footer-top">
+      <div><p class="f-brand-n">Dwaar AI</p><p class="f-brand-t">Open the right doors.</p><p class="f-brand-d">AI-powered gate management for gated societies, corporates, warehouses and institutions across India.</p></div>
+      <div><p class="f-col-h">Platform</p><ul class="f-links"><li><a href="/how-it-works">How it works</a></li><li><a href="/how-it-works#technology">Technology stack</a></li><li><a href="/how-it-works#products">Guard App</a></li><li><a href="/how-it-works#products">Admin Portal</a></li><li><a href="/partners">Hardware partners</a></li></ul></div>
+      <div><p class="f-col-h">Solutions</p><ul class="f-links"><li><a href="/solutions/gated-societies">Gated societies</a></li><li><a href="/solutions/corporate-offices">Corporate offices</a></li><li><a href="/solutions/warehouses">Warehouses</a></li><li><a href="/solutions/hospitals">Hospitals</a></li><li><a href="/solutions">All 17 sectors →</a></li></ul></div>
+      <div><p class="f-col-h">Company</p><ul class="f-links"><li><a href="/about">Our story</a></li><li><a href="/resources/blog">Blog</a></li><li><a href="/resources/case-studies">Case studies</a></li><li><a href="/contact">Contact</a></li><li><a href="/demo">Book a demo</a></li></ul></div>
+    </div>
+    <div class="f-bottom">
+      <p class="f-copy">© 2025 Dwaar AI. All rights reserved. · <a href="/privacy" style="color:rgba(255,255,255,.2)">Privacy</a> · <a href="/terms" style="color:rgba(255,255,255,.2)">Terms</a></p>
+      <p class="f-tag-sm">Open the right doors.</p>
+    </div>
+  </div>
+</footer>
+<script>
+function toggleFaq(btn){
+  const item=btn.closest('.faq-item');
+  const isOpen=item.classList.contains('open');
+  document.querySelectorAll('.faq-item.open').forEach(i=>{i.classList.remove('open');i.querySelector('.faq-q').setAttribute('aria-expanded','false')});
+  if(!isOpen){item.classList.add('open');btn.setAttribute('aria-expanded','true')}
+}
+const io=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('vis');io.unobserve(e.target)}})},{threshold:.08});
+document.querySelectorAll('.fade-in').forEach(el=>io.observe(el));
+</script>
+</body>
+</html>
