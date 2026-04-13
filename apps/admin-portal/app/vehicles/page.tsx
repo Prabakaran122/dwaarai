@@ -62,13 +62,13 @@ export default function VehiclesPage() {
 
   const columns = [
     { key: 'plate', label: 'Plate', sortable: true, render: (row: Vehicle) => (
-      <span className="font-mono font-medium text-slate-100">{row.plate}</span>
+      <span className="font-mono font-medium text-gray-900">{row.plate}</span>
     )},
     { key: 'owner_name', label: 'Owner', sortable: true },
     { key: 'unit_number', label: 'Unit', sortable: true },
     { key: 'type', label: 'Type', sortable: true },
     { key: 'rfid_tag', label: 'RFID', render: (row: Vehicle) => (
-      <span className="font-mono text-xs text-slate-500">{row.rfid_tag || '-'}</span>
+      <span className="font-mono text-xs text-gray-400">{row.rfid_tag || '-'}</span>
     )},
     { key: 'status', label: 'Status', render: (row: Vehicle) => (
       <StatusBadge status={row.status} />
@@ -78,11 +78,11 @@ export default function VehiclesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-100">Vehicles</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Vehicles</h1>
         <div className="flex gap-2">
           <button
             onClick={() => setShowImport(!showImport)}
-            className="px-4 py-2 text-sm font-medium text-glow-blue glass-panel border border-surface-border rounded-xl transition-all duration-300 hover:bg-surface-hover"
+            className="px-4 py-2 text-sm font-medium text-teal-600 glass-panel border border-gray-200 rounded-xl transition-all duration-300 hover:bg-gray-50"
           >
             Bulk Import CSV
           </button>
@@ -95,13 +95,13 @@ export default function VehiclesPage() {
       {/* CSV Import Panel */}
       {showImport && (
         <div className="glass-panel p-6">
-          <h3 className="text-sm font-semibold text-slate-300 mb-3">Import Vehicles from CSV</h3>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Import Vehicles from CSV</h3>
           <div className="flex items-center gap-4">
             <input
               type="file"
               accept=".csv"
               onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-              className="block text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-surface file:text-glow-blue file:border file:border-surface-border hover:file:bg-surface-hover transition-all duration-300"
+              className="block text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-gray-50 file:text-teal-600 file:border file:border-gray-200 hover:file:bg-gray-50 transition-all duration-300"
             />
             <button
               onClick={handleImport}
@@ -112,12 +112,12 @@ export default function VehiclesPage() {
             </button>
             <button
               onClick={() => { setShowImport(false); setImportFile(null); }}
-              className="px-4 py-2 text-sm text-slate-500 hover:text-slate-300 transition-all duration-300"
+              className="px-4 py-2 text-sm text-gray-400 hover:text-gray-700 transition-all duration-300"
             >
               Cancel
             </button>
           </div>
-          <p className="text-xs text-slate-500 mt-2">
+          <p className="text-xs text-gray-400 mt-2">
             CSV format: plate, owner_name, unit_number, type, rfid_tag
           </p>
         </div>
@@ -127,7 +127,7 @@ export default function VehiclesPage() {
       <div className="glass-panel p-4">
         <div className="relative w-full md:w-96">
           <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none"
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -147,7 +147,7 @@ export default function VehiclesPage() {
       {/* Table */}
       <div className="glass-panel">
         {loading ? (
-          <div className="p-8 text-center text-slate-500">Loading vehicles...</div>
+          <div className="p-8 text-center text-gray-400">Loading vehicles...</div>
         ) : (
           <DataTable columns={columns} data={vehicles} keyField="id" />
         )}

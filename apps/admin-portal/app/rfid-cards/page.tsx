@@ -158,8 +158,8 @@ export default function RFIDCardsPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-100">RFID Cards</h1>
-        <div className="text-center text-slate-500 py-12">Loading...</div>
+        <h1 className="text-2xl font-bold text-gray-900">RFID Cards</h1>
+        <div className="text-center text-gray-400 py-12">Loading...</div>
       </div>
     );
   }
@@ -167,7 +167,7 @@ export default function RFIDCardsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-100">RFID Cards</h1>
+        <h1 className="text-2xl font-bold text-gray-900">RFID Cards</h1>
         <div className="flex items-center gap-3">
           {/* Filter tabs */}
           <div className="flex glass-panel rounded-xl overflow-hidden">
@@ -176,7 +176,7 @@ export default function RFIDCardsPage() {
                 key={f}
                 onClick={() => { setLoading(true); setFilter(f); }}
                 className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all ${
-                  filter === f ? 'bg-glow-primary text-white' : 'text-slate-500 hover:text-slate-300'
+                  filter === f ? 'bg-glow-primary text-white' : 'text-gray-400 hover:text-gray-700'
                 }`}
               >
                 {f}
@@ -185,7 +185,7 @@ export default function RFIDCardsPage() {
           </div>
           <button
             onClick={openCreateForm}
-            className="px-4 py-2 text-sm font-bold bg-glow-primary text-white rounded-xl hover:shadow-lg hover:shadow-glow-blue/20 transition-all duration-300"
+            className="px-4 py-2 text-sm font-bold bg-glow-primary text-white rounded-xl hover:shadow-lg hover:shadow-teal-600/10 transition-all duration-300"
           >
             + Add Card
           </button>
@@ -193,7 +193,7 @@ export default function RFIDCardsPage() {
       </div>
 
       {cards.length === 0 ? (
-        <div className="glass-panel p-12 text-center text-slate-500">
+        <div className="glass-panel p-12 text-center text-gray-400">
           No {filter === 'all' ? '' : filter} RFID cards found.
         </div>
       ) : (
@@ -201,42 +201,42 @@ export default function RFIDCardsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/5">
-                <th className="text-left text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold px-4 py-3">Card #</th>
-                <th className="text-left text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold px-4 py-3">UID Hash</th>
-                <th className="text-left text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold px-4 py-3">Type</th>
-                <th className="text-left text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold px-4 py-3">Community</th>
-                <th className="text-left text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold px-4 py-3">Unit</th>
-                <th className="text-left text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold px-4 py-3">Status</th>
-                <th className="text-left text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold px-4 py-3">Expires</th>
-                <th className="text-right text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold px-4 py-3">Actions</th>
+                <th className="text-left text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold px-4 py-3">Card #</th>
+                <th className="text-left text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold px-4 py-3">UID Hash</th>
+                <th className="text-left text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold px-4 py-3">Type</th>
+                <th className="text-left text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold px-4 py-3">Community</th>
+                <th className="text-left text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold px-4 py-3">Unit</th>
+                <th className="text-left text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold px-4 py-3">Status</th>
+                <th className="text-left text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold px-4 py-3">Expires</th>
+                <th className="text-right text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
               {cards.map((card) => (
-                <tr key={card.id} className="border-b border-white/5 hover:bg-surface-hover transition-colors">
-                  <td className="px-4 py-3 text-slate-200 font-medium">{card.card_number || '—'}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{card.uid_hash.slice(0, 16)}...</td>
+                <tr key={card.id} className="border-b border-white/5 hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-3 text-gray-800 font-medium">{card.card_number || '—'}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-gray-400">{card.uid_hash.slice(0, 16)}...</td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-md text-xs font-bold uppercase ${typeColors[card.card_type] || 'text-slate-400'}`}>
+                    <span className={`px-2 py-0.5 rounded-md text-xs font-bold uppercase ${typeColors[card.card_type] || 'text-gray-500'}`}>
                       {card.card_type}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-400">{card.community_name || '—'}</td>
-                  <td className="px-4 py-3 text-slate-400">{card.unit_number || '—'}</td>
+                  <td className="px-4 py-3 text-gray-500">{card.community_name || '—'}</td>
+                  <td className="px-4 py-3 text-gray-500">{card.unit_number || '—'}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex items-center gap-1.5 text-xs font-bold ${card.is_active ? 'text-emerald-400' : 'text-slate-500'}`}>
+                    <span className={`inline-flex items-center gap-1.5 text-xs font-bold ${card.is_active ? 'text-emerald-400' : 'text-gray-400'}`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${card.is_active ? 'bg-emerald-400' : 'bg-slate-500'}`} />
                       {card.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-500">
+                  <td className="px-4 py-3 text-xs text-gray-400">
                     {card.expires_at ? new Date(card.expires_at).toLocaleDateString() : 'Never'}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <button
                         onClick={() => openEditForm(card)}
-                        className="text-xs text-glow-blue hover:text-white transition-colors"
+                        className="text-xs text-teal-600 hover:text-white transition-colors"
                       >
                         Edit
                       </button>
@@ -268,14 +268,14 @@ export default function RFIDCardsPage() {
       {showForm && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center">
           <div className="glass-panel gradient-border p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold text-slate-100 mb-4">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">
               {editCard ? 'Edit RFID Card' : 'Register RFID Card'}
             </h2>
             <div className="space-y-3">
               {!editCard && (
                 <>
                   <div>
-                    <label className="block text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold mb-1.5">Community *</label>
+                    <label className="block text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold mb-1.5">Community *</label>
                     <select
                       className="input-glow w-full px-4 py-3 text-sm bg-transparent"
                       value={formCommunity}
@@ -287,7 +287,7 @@ export default function RFIDCardsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold mb-1.5">UID Hash (64 hex chars) *</label>
+                    <label className="block text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold mb-1.5">UID Hash (64 hex chars) *</label>
                     <input
                       className="input-glow w-full px-4 py-3 text-sm font-mono"
                       placeholder="SHA-256 hash of card UID"
@@ -295,12 +295,12 @@ export default function RFIDCardsPage() {
                       onChange={(e) => setFormUidHash(e.target.value)}
                       maxLength={64}
                     />
-                    <p className="text-[10px] text-slate-600 mt-1">{formUidHash.length}/64 characters</p>
+                    <p className="text-[10px] text-gray-400 mt-1">{formUidHash.length}/64 characters</p>
                   </div>
                 </>
               )}
               <div>
-                <label className="block text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold mb-1.5">Card Number</label>
+                <label className="block text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold mb-1.5">Card Number</label>
                 <input
                   className="input-glow w-full px-4 py-3 text-sm"
                   placeholder="e.g. CARD-001"
@@ -309,7 +309,7 @@ export default function RFIDCardsPage() {
                 />
               </div>
               <div>
-                <label className="block text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold mb-1.5">Card Type</label>
+                <label className="block text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold mb-1.5">Card Type</label>
                 <select
                   className="input-glow w-full px-4 py-3 text-sm bg-transparent"
                   value={formType}
@@ -322,7 +322,7 @@ export default function RFIDCardsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold mb-1.5">Assign to Unit</label>
+                <label className="block text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold mb-1.5">Assign to Unit</label>
                 <select
                   className="input-glow w-full px-4 py-3 text-sm bg-transparent"
                   value={formUnit}
@@ -335,7 +335,7 @@ export default function RFIDCardsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold mb-1.5">Expires At</label>
+                <label className="block text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold mb-1.5">Expires At</label>
                 <input
                   type="datetime-local"
                   className="input-glow w-full px-4 py-3 text-sm"
@@ -345,11 +345,11 @@ export default function RFIDCardsPage() {
               </div>
             </div>
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 text-sm text-slate-400 glass-panel hover:bg-surface-hover rounded-xl transition-all">Cancel</button>
+              <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 text-sm text-gray-500 glass-panel hover:bg-gray-50 rounded-xl transition-all">Cancel</button>
               <button
                 onClick={handleSubmit}
                 disabled={!editCard && (!formUidHash.trim() || formUidHash.trim().length !== 64)}
-                className="flex-1 py-2.5 text-sm font-bold bg-glow-primary text-white rounded-xl disabled:opacity-50 transition-all hover:shadow-lg hover:shadow-glow-blue/20"
+                className="flex-1 py-2.5 text-sm font-bold bg-glow-primary text-white rounded-xl disabled:opacity-50 transition-all hover:shadow-lg hover:shadow-teal-600/10"
               >
                 {editCard ? 'Update' : 'Register'}
               </button>

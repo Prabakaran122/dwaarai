@@ -115,14 +115,14 @@ export default function EventsPage() {
     {
       key: 'timestamp', label: 'Time', sortable: true,
       render: (row: EventEntry) => (
-        <span className="text-xs text-slate-300">{new Date(row.timestamp).toLocaleString()}</span>
+        <span className="text-xs text-gray-700">{new Date(row.timestamp).toLocaleString()}</span>
       ),
     },
     { key: 'gate_name', label: 'Gate', sortable: true },
     { key: 'method', label: 'Method', sortable: true },
     {
       key: 'plate', label: 'Plate',
-      render: (row: EventEntry) => <span className="font-mono text-slate-100">{row.plate}</span>,
+      render: (row: EventEntry) => <span className="font-mono text-gray-900">{row.plate}</span>,
     },
     {
       key: 'decision', label: 'Decision',
@@ -134,7 +134,7 @@ export default function EventsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-slate-100">Events</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Events</h1>
 
       {/* Filters */}
       <div className="glass-panel p-4">
@@ -151,30 +151,30 @@ export default function EventsPage() {
             onChange={(e) => updateFilter('gate', e.target.value)}
             className="input-glow px-3 py-2 text-sm bg-transparent w-full"
           >
-            <option value="" className="bg-navy-800">All Gates</option>
-            <option value="main-entry" className="bg-navy-800">Main Entry</option>
-            <option value="main-exit" className="bg-navy-800">Main Exit</option>
-            <option value="visitor-entry" className="bg-navy-800">Visitor Entry</option>
+            <option value="" className="bg-white">All Gates</option>
+            <option value="main-entry" className="bg-white">Main Entry</option>
+            <option value="main-exit" className="bg-white">Main Exit</option>
+            <option value="visitor-entry" className="bg-white">Visitor Entry</option>
           </select>
           <select
             value={filters.method}
             onChange={(e) => updateFilter('method', e.target.value)}
             className="input-glow px-3 py-2 text-sm bg-transparent w-full"
           >
-            <option value="" className="bg-navy-800">All Methods</option>
-            <option value="anpr" className="bg-navy-800">ANPR</option>
-            <option value="rfid" className="bg-navy-800">RFID</option>
-            <option value="manual" className="bg-navy-800">Manual</option>
-            <option value="visitor_pass" className="bg-navy-800">Visitor Pass</option>
+            <option value="" className="bg-white">All Methods</option>
+            <option value="anpr" className="bg-white">ANPR</option>
+            <option value="rfid" className="bg-white">RFID</option>
+            <option value="manual" className="bg-white">Manual</option>
+            <option value="visitor_pass" className="bg-white">Visitor Pass</option>
           </select>
           <select
             value={filters.decision}
             onChange={(e) => updateFilter('decision', e.target.value)}
             className="input-glow px-3 py-2 text-sm bg-transparent w-full"
           >
-            <option value="" className="bg-navy-800">All Decisions</option>
-            <option value="allowed" className="bg-navy-800">Allowed</option>
-            <option value="denied" className="bg-navy-800">Denied</option>
+            <option value="" className="bg-white">All Decisions</option>
+            <option value="allowed" className="bg-white">Allowed</option>
+            <option value="denied" className="bg-white">Denied</option>
           </select>
           <input
             type="date"
@@ -194,16 +194,16 @@ export default function EventsPage() {
       {/* Events Table */}
       <div className="glass-panel">
         {loading && events.length === 0 ? (
-          <div className="p-8 text-center text-slate-500">Loading events...</div>
+          <div className="p-8 text-center text-gray-400">Loading events...</div>
         ) : (
           <>
             <DataTable columns={columns} data={events} keyField="id" />
             {hasMore && (
-              <div className="p-4 text-center border-t border-surface-border">
+              <div className="p-4 text-center border-t border-gray-200">
                 <button
                   onClick={() => fetchEvents(true)}
                   disabled={loading}
-                  className="px-6 py-2 text-sm font-medium text-glow-blue glass-panel hover:bg-surface-hover rounded-xl disabled:opacity-50 transition-all duration-300"
+                  className="px-6 py-2 text-sm font-medium text-teal-600 glass-panel hover:bg-gray-50 rounded-xl disabled:opacity-50 transition-all duration-300"
                 >
                   {loading ? 'Loading...' : 'Load More'}
                 </button>

@@ -63,8 +63,8 @@ export default function CommunitiesPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-100">Communities</h1>
-        <div className="text-center text-slate-500 py-12">Loading...</div>
+        <h1 className="text-2xl font-bold text-gray-900">Communities</h1>
+        <div className="text-center text-gray-400 py-12">Loading...</div>
       </div>
     );
   }
@@ -72,17 +72,17 @@ export default function CommunitiesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-100">Communities</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Communities</h1>
         <button
           onClick={() => setShowForm(true)}
-          className="px-4 py-2 text-sm font-bold bg-glow-primary text-white rounded-xl hover:shadow-lg hover:shadow-glow-blue/20 transition-all duration-300"
+          className="px-4 py-2 text-sm font-bold bg-glow-primary text-white rounded-xl hover:shadow-lg hover:shadow-teal-600/10 transition-all duration-300"
         >
           + Add Community
         </button>
       </div>
 
       {communities.length === 0 ? (
-        <div className="glass-panel p-12 text-center text-slate-500">
+        <div className="glass-panel p-12 text-center text-gray-400">
           No communities yet. Create your first one.
         </div>
       ) : (
@@ -93,24 +93,24 @@ export default function CommunitiesPage() {
               onClick={() => handleSelect(c)}
               className="glass-panel glass-panel-hover p-6 text-left transition-all duration-300"
             >
-              <h3 className="text-lg font-bold text-slate-100 mb-1">{c.name}</h3>
-              {c.address && <p className="text-xs text-slate-500 mb-4">{c.address}</p>}
+              <h3 className="text-lg font-bold text-gray-900 mb-1">{c.name}</h3>
+              {c.address && <p className="text-xs text-gray-400 mb-4">{c.address}</p>}
               <div className="grid grid-cols-2 gap-3 mt-4">
                 <div>
                   <div className="text-xl font-bold glow-text">{c.gate_count}</div>
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">Gates</div>
+                  <div className="text-[10px] text-gray-400 uppercase tracking-wider">Gates</div>
                 </div>
                 <div>
                   <div className="text-xl font-bold glow-text">{c.unit_count}</div>
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">Units</div>
+                  <div className="text-[10px] text-gray-400 uppercase tracking-wider">Units</div>
                 </div>
                 <div>
                   <div className="text-xl font-bold glow-text">{c.resident_count}</div>
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">Residents</div>
+                  <div className="text-[10px] text-gray-400 uppercase tracking-wider">Residents</div>
                 </div>
                 <div>
                   <div className="text-xl font-bold glow-text">{c.vehicle_count}</div>
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">Vehicles</div>
+                  <div className="text-[10px] text-gray-400 uppercase tracking-wider">Vehicles</div>
                 </div>
               </div>
             </button>
@@ -122,7 +122,7 @@ export default function CommunitiesPage() {
       {showForm && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center">
           <div className="glass-panel gradient-border p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold text-slate-100 mb-4">New Community</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-4">New Community</h2>
             <div className="space-y-3">
               <input className="input-glow w-full px-4 py-3 text-sm" placeholder="Community name *" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
               <input className="input-glow w-full px-4 py-3 text-sm" placeholder="Address" value={address} onChange={(e) => setAddress(e.target.value)} />
@@ -130,8 +130,8 @@ export default function CommunitiesPage() {
               <input className="input-glow w-full px-4 py-3 text-sm" placeholder="Contact phone" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
             </div>
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 text-sm text-slate-400 glass-panel hover:bg-surface-hover rounded-xl transition-all">Cancel</button>
-              <button onClick={handleCreate} disabled={!name.trim()} className="flex-1 py-2.5 text-sm font-bold bg-glow-primary text-white rounded-xl disabled:opacity-50 transition-all hover:shadow-lg hover:shadow-glow-blue/20">Create</button>
+              <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 text-sm text-gray-500 glass-panel hover:bg-gray-50 rounded-xl transition-all">Cancel</button>
+              <button onClick={handleCreate} disabled={!name.trim()} className="flex-1 py-2.5 text-sm font-bold bg-glow-primary text-white rounded-xl disabled:opacity-50 transition-all hover:shadow-lg hover:shadow-teal-600/10">Create</button>
             </div>
           </div>
         </div>

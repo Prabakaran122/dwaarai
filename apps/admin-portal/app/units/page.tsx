@@ -104,7 +104,7 @@ export default function UnitsPage() {
       render: (row: Unit) => (
         <button
           onClick={() => openEditModal(row)}
-          className="text-sm text-glow-blue hover:text-glow-purple font-medium transition-all duration-300"
+          className="text-sm text-teal-600 hover:text-teal-600 font-medium transition-all duration-300"
         >
           Edit
         </button>
@@ -115,7 +115,7 @@ export default function UnitsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-100">Units</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Units</h1>
         <button
           onClick={openAddModal}
           className="px-4 py-2 text-sm font-medium text-white bg-glow-primary rounded-xl transition-all duration-300 hover:shadow-[0_0_20px_rgba(99,102,241,0.3)]"
@@ -126,7 +126,7 @@ export default function UnitsPage() {
 
       <div className="glass-panel">
         {loading ? (
-          <div className="p-8 text-center text-slate-500">Loading units...</div>
+          <div className="p-8 text-center text-gray-400">Loading units...</div>
         ) : (
           <DataTable columns={columns} data={units} keyField="id" />
         )}
@@ -136,12 +136,12 @@ export default function UnitsPage() {
       {showModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="glass-panel gradient-border w-full max-w-md p-6 shadow-2xl">
-            <h2 className="text-lg font-semibold text-slate-100 mb-4">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">
               {editingId ? 'Edit Unit' : 'Add Unit'}
             </h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Unit Number</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1">Unit Number</label>
                 <input
                   type="text"
                   value={form.unit_number}
@@ -152,7 +152,7 @@ export default function UnitsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-1">Block</label>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Block</label>
                   <input
                     type="text"
                     value={form.block}
@@ -162,7 +162,7 @@ export default function UnitsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-1">Floor</label>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Floor</label>
                   <input
                     type="text"
                     value={form.floor}
@@ -173,7 +173,7 @@ export default function UnitsPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Owner Name</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1">Owner Name</label>
                 <input
                   type="text"
                   value={form.owner_name}
@@ -183,21 +183,21 @@ export default function UnitsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Status</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1">Status</label>
                 <select
                   value={form.status}
                   onChange={(e) => setForm({ ...form, status: e.target.value })}
                   className="input-glow w-full px-3 py-2 text-sm bg-transparent"
                 >
-                  <option value="active" className="bg-navy-800">Active</option>
-                  <option value="inactive" className="bg-navy-800">Inactive</option>
+                  <option value="active" className="bg-white">Active</option>
+                  <option value="inactive" className="bg-white">Inactive</option>
                 </select>
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => setShowModal(false)}
-                className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-all duration-300"
+                className="px-4 py-2 text-sm text-gray-500 hover:text-gray-800 transition-all duration-300"
               >
                 Cancel
               </button>

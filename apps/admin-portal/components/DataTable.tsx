@@ -41,19 +41,19 @@ export default function DataTable({ columns, data, keyField }: DataTableProps) {
     <div className="overflow-x-auto">
       <table className="w-full">
         <thead>
-          <tr className="border-b border-surface-border">
+          <tr className="border-b border-gray-200">
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500 ${
-                  col.sortable ? 'cursor-pointer hover:text-glow-blue transition-colors' : ''
+                className={`px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.15em] text-gray-400 ${
+                  col.sortable ? 'cursor-pointer hover:text-teal-600 transition-colors' : ''
                 }`}
                 onClick={() => col.sortable && handleSort(col.key)}
               >
                 <span className="flex items-center gap-1.5">
                   {col.label}
                   {col.sortable && sortKey === col.key && (
-                    <span className="text-glow-blue">{sortDir === 'asc' ? '↑' : '↓'}</span>
+                    <span className="text-teal-600">{sortDir === 'asc' ? '↑' : '↓'}</span>
                   )}
                 </span>
               </th>
@@ -63,7 +63,7 @@ export default function DataTable({ columns, data, keyField }: DataTableProps) {
         <tbody>
           {sorted.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="px-4 py-12 text-center text-slate-600 text-sm">
+              <td colSpan={columns.length} className="px-4 py-12 text-center text-gray-400 text-sm">
                 No data available
               </td>
             </tr>
@@ -71,10 +71,10 @@ export default function DataTable({ columns, data, keyField }: DataTableProps) {
             sorted.map((row, i) => (
               <tr
                 key={row[keyField] || i}
-                className="border-b border-surface-border/50 transition-colors hover:bg-surface-hover group"
+                className="border-b border-gray-100 transition-colors hover:bg-gray-50 group"
               >
                 {columns.map((col) => (
-                  <td key={col.key} className="px-4 py-3 text-sm text-slate-300">
+                  <td key={col.key} className="px-4 py-3 text-sm text-gray-700">
                     {col.render ? col.render(row) : row[col.key]}
                   </td>
                 ))}

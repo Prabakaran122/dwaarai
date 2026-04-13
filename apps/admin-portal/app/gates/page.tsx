@@ -104,8 +104,8 @@ export default function GatesPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-100">Gates</h1>
-        <div className="text-center text-slate-500 py-12">Loading gates...</div>
+        <h1 className="text-2xl font-bold text-gray-900">Gates</h1>
+        <div className="text-center text-gray-400 py-12">Loading gates...</div>
       </div>
     );
   }
@@ -113,17 +113,17 @@ export default function GatesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-100">Gates</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Gates</h1>
         <button
           onClick={fetchGates}
-          className="px-4 py-2 text-sm font-medium text-slate-300 glass-panel hover:bg-surface-hover border border-surface-border rounded-xl transition-all duration-300"
+          className="px-4 py-2 text-sm font-medium text-gray-700 glass-panel hover:bg-gray-50 border border-gray-200 rounded-xl transition-all duration-300"
         >
           Refresh
         </button>
       </div>
 
       {gates.length === 0 ? (
-        <div className="glass-panel p-12 text-center text-slate-500">
+        <div className="glass-panel p-12 text-center text-gray-400">
           No gates configured
         </div>
       ) : (
@@ -138,13 +138,13 @@ export default function GatesPage() {
 
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-100">{gate.name}</h3>
-                  <p className="text-sm text-slate-500 capitalize">{gate.direction}</p>
+                  <h3 className="text-lg font-semibold text-gray-900">{gate.name}</h3>
+                  <p className="text-sm text-gray-400 capitalize">{gate.direction}</p>
                 </div>
                 <StatusBadge status={gate.status} variant="dot" />
               </div>
 
-              <div className="text-xs text-slate-500 mb-4">
+              <div className="text-xs text-gray-400 mb-4">
                 Last seen: {gate.last_seen ? new Date(gate.last_seen).toLocaleString() : 'Never'}
               </div>
 

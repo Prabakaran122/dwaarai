@@ -28,7 +28,7 @@ export async function apiFetch<T = unknown>(path: string, options: RequestInit =
     if (typeof window !== 'undefined') {
       localStorage.removeItem('cg_admin_token');
       localStorage.removeItem('cg_admin_user');
-      window.location.href = '/login';
+      window.location.href = '/admin/login';
     }
     throw new Error('Unauthorized');
   }
