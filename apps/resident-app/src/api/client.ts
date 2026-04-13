@@ -2,7 +2,7 @@ import axios from 'axios';
 import { z } from 'zod';
 
 const API_BASE =
-  process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api/v1';
+  process.env.EXPO_PUBLIC_API_URL || 'https://dwaarai.in/api/v1';
 
 const api = axios.create({ baseURL: API_BASE, timeout: 10000 });
 
