@@ -8,6 +8,7 @@ import { authenticateJWT } from '../middleware/auth.js';
 const router = Router();
 
 const superOnly = authenticateJWT(['super_admin']);
+const adminOnly = authenticateJWT(['admin']);
 
 // -- Zod schemas --------------------------------------------------------------
 
@@ -314,6 +315,222 @@ router.delete('/admin/rfid-cards/:id', superOnly, async (req, res) => {
     return success(res, { deactivated: card.id });
   } catch (err) {
     console.error('DELETE /admin/rfid-cards/:id error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- GET /admin/guards --------------------------------------------------------
+
+router.get('/admin/guards', adminOnly, async (req, res) => {
+  try {
+    const communityId = req.user.community_id;
+    let sql = `
+      SELECT r.id, r.name, r.mobile, r.community_id, r.is_active, r.created_at,
+             r.password_hash IS NOT NULL AS has_password,
+             c.name AS community_name,
+             g.name AS gate_name
+      FROM residents r
+      LEFT JOIN communities c ON r.community_id = c.id
+      LEFT JOIN gates g ON g.community_id = r.community_id AND g.is_active = true
+      WHERE r.type = 'guard'
+    `;
+    const values = [];
+    if (communityId) {
+      values.push(communityId);
+      sql += ` AND r.community_id = $${values.length}`;
+    }
+    sql += ' ORDER BY r.name';
+    const guards = await queryRows(sql, values);
+    return success(res, { guards });
+  } catch (err) {
+    console.error('GET /admin/guards error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- POST /admin/guards -------------------------------------------------------
+
+const createGuardSchema = z.object({
+  name: z.string().min(1).max(200),
+  mobile: z.string().min(10).max(15),
+  password: z.string().min(6).max(200),
+  community_id: z.string().uuid(),
+});
+
+router.post('/admin/guards', adminOnly, async (req, res) => {
+  try {
+    const parsed = createGuardSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return error(res, 'Validation error', 400, parsed.error.issues);
+    }
+    const { name, mobile, password, community_id } = parsed.data;
+
+    // Verify admin has access to this community
+    if (req.user.role !== 'super_admin' && req.user.community_id !== community_id) {
+      return error(res, 'Insufficient permissions', 403);
+    }
+
+    // Check mobile uniqueness within community
+    const existing = await queryOne(
+      "SELECT id FROM residents WHERE community_id = $1 AND mobile = $2 AND type = 'guard' AND is_active = true",
+      [community_id, mobile]
+    );
+    if (existing) return error(res, 'A guard with this mobile number already exists', 409);
+
+    // Need a unit for the guard — find or create a "Guards" unit
+    let guardUnit = await queryOne(
+      "SELECT id FROM units WHERE community_id = $1 AND unit_number = 'GUARD-POST'",
+      [community_id]
+    );
+    if (!guardUnit) {
+      guardUnit = await queryOne(
+        "INSERT INTO units (community_id, unit_number, floor, status) VALUES ($1, 'GUARD-POST', 'G', 'occupied') RETURNING id",
+        [community_id]
+      );
+    }
+
+    const password_hash = await bcrypt.hash(password, 12);
+    const guard = await queryOne(
+      `INSERT INTO residents (community_id, unit_id, name, mobile, type, is_primary, password_hash)
+       VALUES ($1, $2, $3, $4, 'guard', false, $5)
+       RETURNING id, community_id, name, mobile, type, is_active, created_at`,
+      [community_id, guardUnit.id, name, mobile, password_hash]
+    );
+
+    return success(res, { guard }, 201);
+  } catch (err) {
+    console.error('POST /admin/guards error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- DELETE /admin/guards/:id (deactivate) ------------------------------------
+
+router.delete('/admin/guards/:id', adminOnly, async (req, res) => {
+  try {
+    const guard = await queryOne(
+      "SELECT id, community_id FROM residents WHERE id = $1 AND type = 'guard'",
+      [req.params.id]
+    );
+    if (!guard) return error(res, 'Guard not found', 404);
+
+    if (req.user.role !== 'super_admin' && req.user.community_id !== guard.community_id) {
+      return error(res, 'Insufficient permissions', 403);
+    }
+
+    await query("UPDATE residents SET is_active = false WHERE id = $1", [req.params.id]);
+    return success(res, { deactivated: req.params.id });
+  } catch (err) {
+    console.error('DELETE /admin/guards/:id error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- POST /admin/change-password -----------------------------------------------
+
+const changePasswordSchema = z.object({
+  current_password: z.string().min(1),
+  new_password: z.string().min(8).max(200),
+});
+
+router.post('/admin/change-password', adminOnly, async (req, res) => {
+  try {
+    const parsed = changePasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return error(res, 'Validation error', 400, parsed.error.issues);
+    }
+    const { current_password, new_password } = parsed.data;
+
+    const admin = await queryOne(
+      'SELECT id, password_hash FROM admins WHERE id = $1 AND is_active = true',
+      [req.user.sub]
+    );
+    if (!admin) return error(res, 'Admin not found', 404);
+
+    const valid = await bcrypt.compare(current_password, admin.password_hash);
+    if (!valid) return error(res, 'Current password is incorrect', 401);
+
+    const newHash = await bcrypt.hash(new_password, 12);
+    await query('UPDATE admins SET password_hash = $1 WHERE id = $2', [newHash, admin.id]);
+
+    return success(res, { message: 'Password changed successfully' });
+  } catch (err) {
+    console.error('POST /admin/change-password error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- POST /admin/set-guard-password --------------------------------------------
+
+const setGuardPasswordSchema = z.object({
+  guard_id: z.string().uuid(),
+  password: z.string().min(6).max(200),
+});
+
+router.post('/admin/set-guard-password', adminOnly, async (req, res) => {
+  try {
+    const parsed = setGuardPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return error(res, 'Validation error', 400, parsed.error.issues);
+    }
+    const { guard_id, password } = parsed.data;
+
+    const guard = await queryOne(
+      "SELECT id, name, community_id FROM residents WHERE id = $1 AND type = 'guard' AND is_active = true",
+      [guard_id]
+    );
+    if (!guard) return error(res, 'Guard not found', 404);
+
+    // Verify admin has access to this community
+    if (req.user.role !== 'super_admin' && req.user.community_id !== guard.community_id) {
+      return error(res, 'Insufficient permissions', 403);
+    }
+
+    const hash = await bcrypt.hash(password, 12);
+    await query('UPDATE residents SET password_hash = $1 WHERE id = $2', [hash, guard_id]);
+
+    return success(res, { message: `Password set for guard: ${guard.name}` });
+  } catch (err) {
+    console.error('POST /admin/set-guard-password error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- GET /admin/dashboard/stats -----------------------------------------------
+
+router.get('/admin/dashboard/stats', authenticateJWT(['admin']), async (req, res) => {
+  try {
+    const communityId = req.user.community_id;
+    if (!communityId) {
+      return success(res, { totalVehicles: 0, gatesOnline: 0, todayEntries: 0, activePasses: 0 });
+    }
+    const vehicles = await queryOne(
+      'SELECT count(*) as count FROM vehicles WHERE community_id = $1 AND is_active = true',
+      [communityId]
+    );
+    const gates = await queryOne(
+      'SELECT count(*) as count FROM gates WHERE community_id = $1 AND is_active = true',
+      [communityId]
+    );
+    const today = new Date().toISOString().slice(0, 10);
+    const entries = await queryOne(
+      `SELECT count(*) as count FROM gate_events
+       WHERE community_id = $1 AND event_ts >= $2`,
+      [communityId, today]
+    );
+    const passes = await queryOne(
+      `SELECT count(*) as count FROM visitor_passes
+       WHERE community_id = $1 AND status = 'active' AND valid_until > NOW()`,
+      [communityId]
+    );
+    return success(res, {
+      totalVehicles: parseInt(vehicles?.count || '0'),
+      gatesOnline: parseInt(gates?.count || '0'),
+      todayEntries: parseInt(entries?.count || '0'),
+      activePasses: parseInt(passes?.count || '0'),
+    });
+  } catch (err) {
+    console.error('GET /admin/dashboard/stats error:', err);
     return error(res, 'Internal server error', 500);
   }
 });

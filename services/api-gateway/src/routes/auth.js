@@ -11,8 +11,11 @@ import { isConfigured as msg91Configured, sendOTP as msg91Send, verifyOTP as msg
 const router = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'test' ? 'test-only-secret' : '');
+if (!JWT_SECRET && process.env.NODE_ENV !== 'test') {
+  throw new Error('JWT_SECRET environment variable is required');
+}
 const TOKEN_EXPIRY = '1h';
-const REFRESH_EXPIRY = '30d';
+const REFRESH_EXPIRY = '7d';
 
 function signRefreshToken(userId) {
   return jwt.sign({ sub: userId, type: 'refresh' }, JWT_SECRET, { expiresIn: REFRESH_EXPIRY });
@@ -78,15 +81,10 @@ router.post('/auth/guard-login', loginLimiter, async (req, res) => {
 
     const { username, password } = parsed.data;
 
-    // In production, guards should use Cognito authentication
-    if (process.env.NODE_ENV === 'production') {
-      return error(res, 'Use Cognito authentication in production', 400);
-    }
-
-    // Dev/MVP mode: look up a resident with type='guard' matching by name or mobile
-    // First try by name (case-insensitive), then by mobile
+    // Look up guard by username (name) or mobile, must have password_hash
     let guard = await queryOne(
       `SELECT r.id, r.community_id, r.unit_id, r.name, r.mobile, r.type,
+              r.password_hash,
               g.id AS gate_id
        FROM residents r
        LEFT JOIN gates g ON g.community_id = r.community_id AND g.is_active = true
@@ -97,34 +95,20 @@ router.post('/auth/guard-login', loginLimiter, async (req, res) => {
       [username]
     );
 
-    // Fallback: hardcoded dev guard if no guard found in DB
     if (!guard) {
-      if (username === 'guard1' && password === 'guard123') {
-        const token = signToken({
-          sub: '00000000-0000-0000-0000-000000000000',
-          role: 'guard',
-          community_id: '00000000-0000-0000-0000-000000000001',
-          gate_id: '00000000-0000-0000-0000-000000100001',
-          name: 'Dev Guard',
-        });
-
-        const refreshToken = signRefreshToken('00000000-0000-0000-0000-000000000000');
-        return success(res, {
-          token,
-          refreshToken,
-          user: {
-            name: 'Dev Guard',
-            role: 'guard',
-            gateId: '00000000-0000-0000-0000-000000100001',
-          },
-        });
-      }
-
       return error(res, 'Invalid credentials', 401);
     }
 
-    // In dev mode, accept any password for DB guards
-    // (no password column exists in residents table)
+    // Verify password — guards must have a password set
+    if (!guard.password_hash) {
+      return error(res, 'Guard account not configured. Contact admin to set a password.', 403);
+    }
+
+    const passwordValid = await bcrypt.compare(password, guard.password_hash);
+    if (!passwordValid) {
+      return error(res, 'Invalid credentials', 401);
+    }
+
     const token = signToken({
       sub: guard.id,
       role: 'guard',
@@ -430,6 +414,13 @@ router.post('/auth/refresh', async (req, res) => {
       return error(res, 'Invalid token type', 401);
     }
 
+    // Check if token is blacklisted (logged out)
+    const redis = getRedisClient();
+    const blacklisted = await redis.get(`bl:${refreshToken}`);
+    if (blacklisted) {
+      return error(res, 'Token has been revoked', 401);
+    }
+
     // Look up user by ID to get current data
     const resident = await queryOne(
       `SELECT r.id, r.community_id, r.unit_id, r.name, r.mobile, r.type,
@@ -521,6 +512,31 @@ router.post('/auth/admin-login', loginLimiter, async (req, res) => {
     });
   } catch (err) {
     console.error('POST /auth/admin-login error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- POST /auth/logout --------------------------------------------------------
+
+router.post('/auth/logout', async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (refreshToken) {
+      // Blacklist the refresh token in Redis for its remaining TTL
+      try {
+        const decoded = jwt.verify(refreshToken, JWT_SECRET);
+        const ttl = decoded.exp - Math.floor(Date.now() / 1000);
+        if (ttl > 0) {
+          const redis = getRedisClient();
+          await redis.set(`bl:${refreshToken}`, '1', 'EX', ttl);
+        }
+      } catch {
+        // Token already expired or invalid — no need to blacklist
+      }
+    }
+    return success(res, { message: 'Logged out' });
+  } catch (err) {
+    console.error('POST /auth/logout error:', err);
     return error(res, 'Internal server error', 500);
   }
 });
