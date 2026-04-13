@@ -7,9 +7,8 @@
     "platforms": ["android", "ios", "web"],
     "android": {
       "package": "com.communitygate.resident",
-      "googleServicesFile": "./google-services.json"
+      "package": "com.communitygate.resident"
     },
-    "ios": { "bundleIdentifier": "com.communitygate.resident" },
-    "plugins": ["expo-notifications"]
+    "ios": { "bundleIdentifier": "com.communitygate.resident" }
   }
 }
