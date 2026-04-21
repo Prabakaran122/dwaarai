@@ -60,6 +60,31 @@ export async function sendVisitorAlert(token, visitorName, gateId) {
   return result;
 }
 
+export async function sendApprovalRequest(token, approvalId, visitorName, gateName, unitNumber) {
+  if (!token || !token.startsWith('ExponentPushToken[')) {
+    console.log(`[Push-DEV] Approval request: "${visitorName}" → token:${token?.slice(0, 30)}...`);
+    return null;
+  }
+
+  const result = await sendExpoPush([{
+    to: token,
+    title: 'Visitor at Gate',
+    body: `${visitorName} at ${gateName} — requesting entry to Unit ${unitNumber}`,
+    data: {
+      type: 'approval_request',
+      approval_id: approvalId,
+      visitor_name: visitorName,
+      gate_name: gateName,
+      unit_number: unitNumber,
+    },
+    sound: 'default',
+    priority: 'high',
+    channelId: 'communitygate',
+    categoryId: 'approval_request',
+  }]);
+  return result;
+}
+
 export async function sendToMultiple(tokens, title, body, data = {}) {
   const validTokens = tokens.filter((t) => t && t.startsWith('ExponentPushToken['));
   if (validTokens.length === 0) {
