@@ -12,6 +12,7 @@ import VehiclesScreen from '../src/screens/VehiclesScreen';
 import VisitorsScreen from '../src/screens/VisitorsScreen';
 import ActivityScreen from '../src/screens/ActivityScreen';
 import ProfileScreen from '../src/screens/ProfileScreen';
+import ApprovalScreen from '../src/screens/ApprovalScreen';
 import { registerForPushNotifications, setupNotificationListeners } from '../src/lib/notifications';
 
 type TabKey = 'home' | 'visitors' | 'vehicles' | 'activity' | 'profile';
@@ -56,6 +57,7 @@ function TabBar({ active, onSelect }: { active: TabKey; onSelect: (key: TabKey) 
 
 function ResidentApp() {
   const [tab, setTab] = useState<TabKey>('home');
+  const [approvalOverlay, setApprovalOverlay] = useState<{ id: string; data: any } | null>(null);
 
   const handleNavigate = (target: string) => {
     if (tabs.some((t) => t.key === target)) {
@@ -65,7 +67,9 @@ function ResidentApp() {
 
   useEffect(() => {
     registerForPushNotifications();
-    const cleanup = setupNotificationListeners();
+    const cleanup = setupNotificationListeners((approvalId, data) => {
+      setApprovalOverlay({ id: approvalId, data });
+    });
     return cleanup;
   }, []);
 
@@ -82,6 +86,14 @@ function ResidentApp() {
 
       {/* Tab Bar */}
       <TabBar active={tab} onSelect={setTab} />
+
+      {approvalOverlay && (
+        <ApprovalScreen
+          approvalId={approvalOverlay.id}
+          data={approvalOverlay.data}
+          onDismiss={() => setApprovalOverlay(null)}
+        />
+      )}
     </View>
   );
 }
