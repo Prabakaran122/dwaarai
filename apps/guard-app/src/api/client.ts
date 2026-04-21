@@ -67,6 +67,16 @@ export const notifyResident = (data: {
   gate_id: string;
 }) => api.post('/notifications/visitor-alert', data);
 
+// Approvals
+export const createApproval = (data: {
+  unit_number: string;
+  visitor_name: string;
+  vehicle_plate?: string;
+  gate_id: string;
+}) => api.post('/approvals', data);
+
+export const getApproval = (id: string) => api.get(`/approvals/${id}`);
+
 // 401 interceptor — auto-refresh token on expiry
 let isRefreshing = false;
 let refreshSubscribers: ((token: string) => void)[] = [];
