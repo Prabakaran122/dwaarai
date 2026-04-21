@@ -10,7 +10,9 @@ import IconBadge from './IconBadge';
 import AnimatedEntry from './AnimatedEntry';
 import { useQueueStore, selectPendingEntries, type QueueEntry } from '../store/queueStore';
 import { useAuthStore } from '../store/authStore';
-import { sendGateCommand, registerVehicleAtGate, notifyResident } from '../api/client';
+import { sendGateCommand, registerVehicleAtGate, createApproval } from '../api/client';
+import { useApprovalStore } from '../store/approvalStore';
+import ApprovalWaiting from './ApprovalWaiting';
 
 const methodIcons: Record<string, { icon: string; color: string; gradient: readonly [string, string] }> = {
   anpr: { icon: 'camera', color: '#3b82f6', gradient: ['rgba(99,102,241,0.3)', 'rgba(139,92,246,0.1)'] },
@@ -31,6 +33,9 @@ export default function ActionZone() {
   const [notifyName, setNotifyName] = useState('');
   const [notifyUnit, setNotifyUnit] = useState('');
   const [notifyLoading, setNotifyLoading] = useState(false);
+  const addApproval = useApprovalStore((s) => s.addApproval);
+  const approvals = useApprovalStore((s) => s.approvals);
+  const [showApproval, setShowApproval] = useState(false);
 
   const pending = selectPendingEntries(entries);
   const current = pending[0] || null;
@@ -82,21 +87,34 @@ export default function ActionZone() {
     }
   };
 
-  const handleNotifyResident = async () => {
+  const handleRequestApproval = async () => {
     if (!notifyName.trim() || !notifyUnit.trim() || !gateId) return;
     setNotifyLoading(true);
     try {
-      await notifyResident({
+      const res = await createApproval({
         visitor_name: notifyName.trim(),
         unit_number: notifyUnit.trim(),
+        vehicle_plate: current?.plate !== 'Unknown' ? current?.plate : undefined,
         gate_id: gateId,
       });
-      Alert.alert('Sent', 'Resident has been notified');
+      const data = res.data.data;
+      addApproval({
+        id: data.id,
+        visitor_name: notifyName.trim(),
+        unit_number: notifyUnit.trim(),
+        gate_name: 'Gate',
+        vehicle_plate: current?.plate !== 'Unknown' ? current?.plate || null : null,
+        expires_at: data.expires_at,
+        status: 'pending',
+        responded_by_name: null,
+        residents_notified: data.residents_notified,
+      });
+      setShowApproval(true);
       setShowNotify(false);
       setNotifyName('');
       setNotifyUnit('');
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.error?.message || 'Failed to notify resident');
+      Alert.alert('Error', err?.response?.data?.error?.message || 'Failed to request approval');
     } finally {
       setNotifyLoading(false);
     }
@@ -167,13 +185,13 @@ export default function ActionZone() {
 
           {/* Notify Resident */}
           {!showRegister && !showNotify && (
-            <GradientButton title="Notify Resident" icon="bell-ring" variant="primary" onPress={() => setShowNotify(true)} />
+            <GradientButton title="Request Approval" icon="bell-ring" variant="primary" onPress={() => setShowNotify(true)} />
           )}
 
           {showNotify && (
             <AnimatedEntry direction="fade" duration={200}>
               <View style={styles.registerForm}>
-                <Text style={styles.registerLabel}>NOTIFY RESIDENT</Text>
+                <Text style={styles.registerLabel}>REQUEST APPROVAL</Text>
                 <TextInput
                   style={styles.registerInput}
                   placeholder="Visitor name"
@@ -193,11 +211,15 @@ export default function ActionZone() {
                     <GradientButton title="Cancel" variant="danger" onPress={() => { setShowNotify(false); setNotifyName(''); setNotifyUnit(''); }} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <GradientButton title="Send" icon="bell-ring" variant="success" onPress={handleNotifyResident} loading={notifyLoading} disabled={!notifyName.trim() || !notifyUnit.trim()} />
+                    <GradientButton title="Send" icon="bell-ring" variant="success" onPress={handleRequestApproval} loading={notifyLoading} disabled={!notifyName.trim() || !notifyUnit.trim()} />
                   </View>
                 </View>
               </View>
             </AnimatedEntry>
+          )}
+
+          {showApproval && approvals.length > 0 && (
+            <ApprovalWaiting onDismiss={() => setShowApproval(false)} gateId={gateId} />
           )}
 
           {showRegister && (

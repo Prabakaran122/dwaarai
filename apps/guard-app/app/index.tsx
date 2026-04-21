@@ -3,6 +3,7 @@ import { ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore } from '../src/store/authStore';
 import { useQueueStore, type QueueEntry } from '../src/store/queueStore';
+import { useApprovalStore } from '../src/store/approvalStore';
 import { getSocket } from '../src/api/socket';
 import { colors } from '../src/theme/colors';
 import LoginScreen from '../src/screens/LoginScreen';
@@ -10,6 +11,7 @@ import WorkstationScreen from '../src/screens/WorkstationScreen';
 
 function AuthenticatedApp() {
   const addEntry = useQueueStore((s) => s.addEntry);
+  const updateApproval = useApprovalStore((s) => s.updateApproval);
 
   useEffect(() => {
     const socket = getSocket();
@@ -69,12 +71,24 @@ function AuthenticatedApp() {
         alertType: 'fastag_mismatch',
       });
     });
+    socket.on('approval:response', (data: {
+      approval_id: string;
+      status: string;
+      responded_by_name: string | null;
+      gate_opened?: boolean;
+    }) => {
+      updateApproval(data.approval_id, {
+        status: data.status as any,
+        responded_by_name: data.responded_by_name,
+      });
+    });
     return () => {
       socket.off('gate:event', handleEvent);
       socket.off('fastag:paired');
       socket.off('fastag:mismatch');
+      socket.off('approval:response');
     };
-  }, [addEntry]);
+  }, [addEntry, updateApproval]);
 
   return <WorkstationScreen />;
 }
