@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
-import { registerFCMToken, sendGateCommand } from '../api/client';
+import { registerFCMToken, sendGateCommand, respondToApproval } from '../api/client';
 
 // Configure how notifications appear when app is in foreground
 Notifications.setNotificationHandler({
@@ -41,6 +41,21 @@ export async function registerForPushNotifications(): Promise<string | null> {
     });
   }
 
+  // Register actionable notification categories
+  await Notifications.setNotificationCategoryAsync('approval_request', [
+    {
+      identifier: 'approve',
+      buttonTitle: 'Approve',
+      options: { opensAppToForeground: false },
+    },
+    {
+      identifier: 'deny',
+      buttonTitle: 'Deny',
+      isDestructive: true,
+      options: { opensAppToForeground: false },
+    },
+  ]);
+
   const tokenData = await Notifications.getExpoPushTokenAsync({
     projectId: 'communitygate-resident',
   });
@@ -57,13 +72,29 @@ export async function registerForPushNotifications(): Promise<string | null> {
   return token;
 }
 
-export function setupNotificationListeners() {
-  // Handle notification actions (approve/deny buttons)
+export function setupNotificationListeners(onApprovalReceived?: (approvalId: string, data: any) => void) {
+  // Handle notification actions (approve/deny buttons from banner)
   const responseSubscription = Notifications.addNotificationResponseReceivedListener(
     async (response) => {
       const data = response.notification.request.content.data;
       const actionId = response.actionIdentifier;
 
+      if (data?.type === 'approval_request' && data?.approval_id) {
+        if (actionId === 'approve' || actionId === 'deny') {
+          // Quick action from notification banner
+          try {
+            await respondToApproval(data.approval_id as string, actionId);
+          } catch (err) {
+            console.error(`[Notifications] ${actionId} action failed:`, err);
+          }
+        } else {
+          // Tapped notification body — navigate to approval screen
+          onApprovalReceived?.(data.approval_id as string, data);
+        }
+        return;
+      }
+
+      // Legacy visitor_alert handling
       if (data?.type === 'visitor_alert' && data?.gate_id) {
         if (actionId === 'approve') {
           try {
@@ -82,7 +113,18 @@ export function setupNotificationListeners() {
     }
   );
 
+  // Handle foreground notifications — show approval screen
+  const foregroundSubscription = Notifications.addNotificationReceivedListener(
+    (notification) => {
+      const data = notification.request.content.data;
+      if (data?.type === 'approval_request' && data?.approval_id) {
+        onApprovalReceived?.(data.approval_id as string, data);
+      }
+    }
+  );
+
   return () => {
     responseSubscription.remove();
+    foregroundSubscription.remove();
   };
 }

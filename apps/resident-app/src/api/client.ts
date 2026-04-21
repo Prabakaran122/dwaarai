@@ -88,6 +88,10 @@ export const unregisterFCMToken = () =>
 export const sendGateCommand = (gateId: string, action: string) =>
   api.post(`/gates/${gateId}/command`, { action });
 
+// Approvals
+export const respondToApproval = (id: string, action: 'approve' | 'deny') =>
+  api.post(`/approvals/${id}/respond`, { action });
+
 // 401 interceptor — auto-refresh token on expiry
 let isRefreshing = false;
 let refreshSubscribers: ((token: string) => void)[] = [];
