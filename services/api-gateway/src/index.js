@@ -12,6 +12,7 @@ import eventRoutes from './routes/events.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import notificationRoutes from './routes/notifications.js';
+import approvalRoutes from './routes/approvals.js';
 import { initWebSocket } from './websocket.js';
 
 const app = express();
@@ -42,6 +43,7 @@ app.use('/api/v1', gateRoutes);
 app.use('/api/v1', eventRoutes);
 app.use('/api/v1', adminRoutes);
 app.use('/api/v1', notificationRoutes);
+app.use('/api/v1', approvalRoutes);
 
 // Error handler
 app.use(errorHandler);
