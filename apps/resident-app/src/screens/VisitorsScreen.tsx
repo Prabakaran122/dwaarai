@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, FlatList, TextInput, StyleSheet, Modal, TouchableOpacity, Switch } from 'react-native';
+import { View, Text, ScrollView, TextInput, StyleSheet, Modal, TouchableOpacity, Switch } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
@@ -8,7 +8,9 @@ import GlowCard from '../components/GlowCard';
 import GradientButton from '../components/GradientButton';
 import AnimatedEntry from '../components/AnimatedEntry';
 import VisitorPassCard, { PassData } from '../components/VisitorPassCard';
+import RecurringPassCard, { RecurringPassData } from '../components/RecurringPassCard';
 import * as api from '../api/client';
+import * as recurringApi from '../api/client';
 import { useAuthStore } from '../store/authStore';
 
 const DURATION_OPTIONS = [
@@ -27,6 +29,14 @@ export default function VisitorsScreen() {
   const [vehicle, setVehicle] = useState('');
   const [byCab, setByCab] = useState(false);
   const [selectedDuration, setSelectedDuration] = useState(0);
+  const [recurringPasses, setRecurringPasses] = useState<RecurringPassData[]>([]);
+  const [showRecurringForm, setShowRecurringForm] = useState(false);
+  const [rName, setRName] = useState('');
+  const [rRole, setRRole] = useState('maid');
+  const [rScheduleType, setRScheduleType] = useState('daily');
+  const [rDays, setRDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [rTimeFrom, setRTimeFrom] = useState('06:00');
+  const [rTimeUntil, setRTimeUntil] = useState('09:00');
 
   const fetchPasses = useCallback(async () => {
     setLoading(true);
@@ -69,6 +79,52 @@ export default function VisitorsScreen() {
     fetchPasses();
   };
 
+  const fetchRecurring = useCallback(async () => {
+    try {
+      const res = await recurringApi.getRecurringPasses();
+      const data = res.data.data;
+      setRecurringPasses(Array.isArray(data) ? data : []);
+    } catch {}
+  }, []);
+
+  useEffect(() => { fetchRecurring(); }, [fetchRecurring]);
+
+  const handleCreateRecurring = async () => {
+    if (!rName.trim()) return;
+    try {
+      await recurringApi.createRecurringPass({
+        visitor_name: rName.trim(),
+        visitor_role: rRole,
+        schedule_type: rScheduleType,
+        schedule_days: rScheduleType === 'daily' ? undefined : rDays,
+        time_from: rTimeFrom,
+        time_until: rTimeUntil,
+      });
+      setRName('');
+      setShowRecurringForm(false);
+      fetchRecurring();
+    } catch {}
+  };
+
+  const handlePause = async (id: string) => {
+    await recurringApi.updateRecurringPass(id, { status: 'paused' });
+    fetchRecurring();
+  };
+
+  const handleResume = async (id: string) => {
+    await recurringApi.updateRecurringPass(id, { status: 'active' });
+    fetchRecurring();
+  };
+
+  const handleCancelRecurring = async (id: string) => {
+    await recurringApi.cancelRecurringPass(id);
+    fetchRecurring();
+  };
+
+  const toggleDay = (day: number) => {
+    setRDays((prev) => prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort());
+  };
+
   const activePasses = passes.filter((p) => p.status === 'active');
   const otherPasses = passes.filter((p) => p.status !== 'active');
 
@@ -82,31 +138,50 @@ export default function VisitorsScreen() {
         </LinearGradient>
       </TouchableOpacity>
 
-      <FlatList
-        data={[...activePasses, ...otherPasses]}
-        keyExtractor={(p) => p.id}
-        refreshing={loading}
-        onRefresh={fetchPasses}
-        contentContainerStyle={styles.list}
-        renderItem={({ item, index }) => (
-          <AnimatedEntry direction="left" delay={index * 80}>
-            <VisitorPassCard
-              pass={item}
-              residentName={user?.name || 'Resident'}
-              unitNumber={user?.unitNumber ? `Unit ${user.unitNumber}` : ''}
-              communityName={user?.communityName}
-              onRevoke={handleRevoke}
-            />
-          </AnimatedEntry>
-        )}
-        ListEmptyComponent={
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.list}>
+        {/* Recurring Visitors Section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Recurring Visitors ({recurringPasses.length})</Text>
+        </View>
+
+        {recurringPasses.map((pass) => (
+          <RecurringPassCard
+            key={pass.id}
+            pass={pass}
+            onPause={handlePause}
+            onResume={handleResume}
+            onCancel={handleCancelRecurring}
+          />
+        ))}
+
+        <TouchableOpacity onPress={() => setShowRecurringForm(true)} style={styles.addButton}>
+          <MaterialCommunityIcons name="plus-circle" size={20} color={colors.info} />
+          <Text style={styles.addButtonText}>Add Recurring Visitor</Text>
+        </TouchableOpacity>
+
+        {/* Visitor Passes Section */}
+        <View style={[styles.sectionHeader, { marginTop: spacing.xl }]}>
+          <Text style={styles.sectionTitle}>Visitor Passes ({passes.length})</Text>
+        </View>
+
+        {passes.length === 0 ? (
           <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="account-group" size={48} color={colors.textMuted} />
             <Text style={styles.emptyText}>No visitor passes</Text>
-            <Text style={styles.emptySubtext}>Tap above to share a pass</Text>
           </View>
-        }
-      />
+        ) : (
+          [...activePasses, ...otherPasses].map((item, index) => (
+            <AnimatedEntry key={item.id} direction="left" delay={index * 80}>
+              <VisitorPassCard
+                pass={item}
+                residentName={user?.name || 'Resident'}
+                unitNumber={user?.unitNumber ? `Unit ${user.unitNumber}` : ''}
+                communityName={user?.communityName}
+                onRevoke={handleRevoke}
+              />
+            </AnimatedEntry>
+          ))
+        )}
+      </ScrollView>
 
       {/* Create Pass Modal */}
       <Modal visible={showForm} animationType="slide" transparent>
@@ -167,6 +242,105 @@ export default function VisitorsScreen() {
           </GlowCard>
         </View>
       </Modal>
+
+      {/* Recurring Visitor Form Modal */}
+      <Modal visible={showRecurringForm} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <GlowCard style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Add Recurring Visitor</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Visitor name"
+              placeholderTextColor={colors.textMuted}
+              value={rName}
+              onChangeText={setRName}
+            />
+
+            <Text style={styles.durationLabel}>ROLE</Text>
+            <View style={styles.durationChips}>
+              {['maid', 'cook', 'driver', 'tutor', 'newspaper', 'other'].map((role) => (
+                <TouchableOpacity key={role} onPress={() => setRRole(role)}>
+                  {rRole === role ? (
+                    <LinearGradient colors={colors.gradientAccent as [string, string]} style={styles.durationChip}>
+                      <Text style={styles.durationChipTextActive}>{role}</Text>
+                    </LinearGradient>
+                  ) : (
+                    <View style={styles.durationChipInactive}>
+                      <Text style={styles.durationChipText}>{role}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.durationLabel}>SCHEDULE</Text>
+            <View style={styles.durationChips}>
+              {['daily', 'weekday', 'weekly', 'custom'].map((type) => (
+                <TouchableOpacity key={type} onPress={() => setRScheduleType(type)}>
+                  {rScheduleType === type ? (
+                    <LinearGradient colors={colors.gradientAccent as [string, string]} style={styles.durationChip}>
+                      <Text style={styles.durationChipTextActive}>{type}</Text>
+                    </LinearGradient>
+                  ) : (
+                    <View style={styles.durationChipInactive}>
+                      <Text style={styles.durationChipText}>{type}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {(rScheduleType === 'weekly' || rScheduleType === 'custom') && (
+              <>
+                <Text style={styles.durationLabel}>DAYS</Text>
+                <View style={styles.durationChips}>
+                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => (
+                    <TouchableOpacity key={i} onPress={() => toggleDay(i)}>
+                      {rDays.includes(i) ? (
+                        <LinearGradient colors={colors.gradientPrimary as [string, string]} style={styles.dayChip}>
+                          <Text style={styles.durationChipTextActive}>{label}</Text>
+                        </LinearGradient>
+                      ) : (
+                        <View style={styles.dayChipInactive}>
+                          <Text style={styles.durationChipText}>{label}</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+
+            <Text style={styles.durationLabel}>TIME WINDOW</Text>
+            <View style={styles.timeRow}>
+              <TextInput
+                style={[styles.input, styles.timeInput]}
+                value={rTimeFrom}
+                onChangeText={setRTimeFrom}
+                placeholder="06:00"
+                placeholderTextColor={colors.textMuted}
+              />
+              <Text style={styles.timeSep}>to</Text>
+              <TextInput
+                style={[styles.input, styles.timeInput]}
+                value={rTimeUntil}
+                onChangeText={setRTimeUntil}
+                placeholder="09:00"
+                placeholderTextColor={colors.textMuted}
+              />
+            </View>
+
+            <View style={styles.modalButtons}>
+              <View style={{ flex: 1 }}>
+                <GradientButton title="Cancel" variant="danger" onPress={() => setShowRecurringForm(false)} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <GradientButton title="Save" variant="success" icon="check" onPress={handleCreateRecurring} disabled={!rName.trim()} />
+              </View>
+            </View>
+          </GlowCard>
+        </View>
+      </Modal>
     </LinearGradient>
   );
 }
@@ -202,4 +376,13 @@ const styles = StyleSheet.create({
   durationChipText: { color: colors.textMuted, fontSize: 14, fontWeight: '500' },
   durationChipTextActive: { color: colors.white, fontSize: 14, fontWeight: '600' },
   modalButtons: { flexDirection: 'row', gap: spacing.md },
+  sectionHeader: { marginBottom: spacing.sm },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  addButton: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md },
+  addButtonText: { fontSize: 14, color: colors.info, fontWeight: '600' },
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  timeInput: { flex: 1, textAlign: 'center', marginBottom: 0 },
+  timeSep: { color: colors.textMuted, fontSize: 14 },
+  dayChip: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  dayChipInactive: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.surfaceBorder, backgroundColor: colors.surface },
 });
