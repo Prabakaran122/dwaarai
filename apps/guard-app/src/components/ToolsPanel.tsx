@@ -6,6 +6,7 @@ import { spacing } from '../theme/spacing';
 import GlowCard from './GlowCard';
 import GradientButton from './GradientButton';
 import OTPInput from './OTPInput';
+import ExpectedVisitors from './ExpectedVisitors';
 import ShiftStats from './ShiftStats';
 import IncidentForm from './IncidentForm';
 import { useAuthStore } from '../store/authStore';
@@ -68,6 +69,7 @@ export default function ToolsPanel() {
       </GlowCard>
 
       <OTPInput />
+      <ExpectedVisitors />
       <ShiftStats />
       <IncidentForm />
     </ScrollView>

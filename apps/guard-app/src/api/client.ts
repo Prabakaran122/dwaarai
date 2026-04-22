@@ -77,6 +77,19 @@ export const createApproval = (data: {
 
 export const getApproval = (id: string) => api.get(`/approvals/${id}`);
 
+// Expected visits (recurring visitors)
+export const getExpectedVisits = (date?: string) =>
+  api.get('/expected-visits', { params: date ? { date } : undefined });
+
+export const markVisitArrived = (id: string, photo?: FormData) => {
+  if (photo) {
+    return api.post(`/expected-visits/${id}/arrived`, photo, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  }
+  return api.post(`/expected-visits/${id}/arrived`);
+};
+
 // 401 interceptor — auto-refresh token on expiry
 let isRefreshing = false;
 let refreshSubscribers: ((token: string) => void)[] = [];
