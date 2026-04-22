@@ -13,6 +13,9 @@ import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import notificationRoutes from './routes/notifications.js';
 import approvalRoutes from './routes/approvals.js';
+import recurringPassRoutes from './routes/recurring-passes.js';
+import expectedVisitRoutes from './routes/expected-visits.js';
+import { startVisitCron } from './cron/generate-visits.js';
 import { initWebSocket } from './websocket.js';
 
 const app = express();
@@ -44,6 +47,12 @@ app.use('/api/v1', eventRoutes);
 app.use('/api/v1', adminRoutes);
 app.use('/api/v1', notificationRoutes);
 app.use('/api/v1', approvalRoutes);
+app.use('/api/v1', recurringPassRoutes);
+app.use('/api/v1', expectedVisitRoutes);
+
+// Serve uploaded visit photos
+const UPLOAD_BASE = process.env.UPLOAD_DIR || '/opt/communitygate/uploads';
+app.use('/uploads', express.static(UPLOAD_BASE));
 
 // Error handler
 app.use(errorHandler);
@@ -52,6 +61,7 @@ if (process.env.NODE_ENV !== 'test') {
   const server = createServer(app);
   initWebSocket(server, CORS_ORIGINS);
   server.listen(PORT, () => console.log(`API Gateway listening on port ${PORT}`));
+    startVisitCron();
 }
 
 export default app;
