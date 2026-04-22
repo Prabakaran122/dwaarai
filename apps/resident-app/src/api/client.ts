@@ -92,6 +92,24 @@ export const sendGateCommand = (gateId: string, action: string) =>
 export const respondToApproval = (id: string, action: 'approve' | 'deny') =>
   api.post(`/approvals/${id}/respond`, { action });
 
+// Recurring passes
+export const getRecurringPasses = () => api.get('/recurring-passes');
+
+export const createRecurringPass = (data: {
+  visitor_name: string;
+  visitor_role?: string;
+  schedule_type: string;
+  schedule_days?: number[];
+  time_from: string;
+  time_until: string;
+}) => api.post('/recurring-passes', data);
+
+export const updateRecurringPass = (id: string, data: Record<string, any>) =>
+  api.put(`/recurring-passes/${id}`, data);
+
+export const cancelRecurringPass = (id: string) =>
+  api.delete(`/recurring-passes/${id}`);
+
 // 401 interceptor — auto-refresh token on expiry
 let isRefreshing = false;
 let refreshSubscribers: ((token: string) => void)[] = [];
