@@ -83,10 +83,10 @@ router.get('/recurring-passes', authenticateJWT(['resident']), async (req, res) 
               ev.photo_url AS today_photo_url
        FROM recurring_passes rp
        LEFT JOIN expected_visits ev
-         ON ev.recurring_pass_id = rp.id AND ev.visit_date = $3
+         ON ev.recurring_pass_id = rp.id AND ev.visit_date = $2
        WHERE rp.unit_id = $1 AND rp.status != 'cancelled'
        ORDER BY rp.created_at DESC`,
-      [user.unit_id, user.community_id, today]
+      [user.unit_id, today]
     );
 
     return success(res, passes);
