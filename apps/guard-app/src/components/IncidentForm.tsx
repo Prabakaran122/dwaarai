@@ -8,18 +8,20 @@ import GlowCard from './GlowCard';
 import GradientButton from './GradientButton';
 import { createIncident } from '../api/client';
 import { useAuthStore } from '../store/authStore';
+import { useT } from '../store/langStore';
 
 const INCIDENT_TYPES = [
-  { key: 'unauthorized_entry', label: 'Unauthorized', icon: 'account-alert' },
-  { key: 'tailgating', label: 'Tailgating', icon: 'car-multiple' },
-  { key: 'suspicious_person', label: 'Suspicious', icon: 'eye' },
-  { key: 'vehicle_damage', label: 'Damage', icon: 'car-wrench' },
-  { key: 'equipment_malfunction', label: 'Equipment', icon: 'cog-off' },
-  { key: 'other', label: 'Other', icon: 'dots-horizontal' },
+  { key: 'unauthorized_entry', labelKey: 'incUnauthorized', icon: 'account-alert' },
+  { key: 'tailgating', labelKey: 'incTailgating', icon: 'car-multiple' },
+  { key: 'suspicious_person', labelKey: 'incSuspicious', icon: 'eye' },
+  { key: 'vehicle_damage', labelKey: 'incDamage', icon: 'car-wrench' },
+  { key: 'equipment_malfunction', labelKey: 'incEquipment', icon: 'cog-off' },
+  { key: 'other', labelKey: 'incOther', icon: 'dots-horizontal' },
 ];
 
 export default function IncidentForm() {
   const gateId = useAuthStore((s) => s.user?.gateId) || '';
+  const tr = useT();
   const [expanded, setExpanded] = useState(false);
   const [selectedType, setSelectedType] = useState('');
   const [description, setDescription] = useState('');
@@ -37,10 +39,10 @@ export default function IncidentForm() {
     setLoading(true);
     try {
       await createIncident({ type: selectedType, description: description.trim(), gateId });
-      Alert.alert('Incident Logged', 'Report submitted successfully.');
+      Alert.alert(tr('incidentLogged'), tr('reportSubmitted'));
       resetForm();
     } catch {
-      Alert.alert('Error', 'Failed to submit incident');
+      Alert.alert(tr('error'), tr('failIncident'));
       setLoading(false);
     }
   };
@@ -51,7 +53,7 @@ export default function IncidentForm() {
         <GlowCard variant="warning" style={styles.button}>
           <View style={styles.buttonRow}>
             <MaterialCommunityIcons name="alert-circle" size={18} color={colors.warning} />
-            <Text style={styles.buttonText}>Log Incident</Text>
+            <Text style={styles.buttonText}>{tr('logIncident')}</Text>
           </View>
         </GlowCard>
       </TouchableOpacity>
@@ -60,19 +62,19 @@ export default function IncidentForm() {
 
   return (
     <GlowCard variant="warning" style={styles.container}>
-      <Text style={styles.label}>LOG INCIDENT</Text>
+      <Text style={styles.label}>{tr('logIncidentTitle')}</Text>
       <View style={styles.chipGrid}>
-        {INCIDENT_TYPES.map((t) => (
-          <TouchableOpacity key={t.key} onPress={() => setSelectedType(t.key)}>
-            {selectedType === t.key ? (
+        {INCIDENT_TYPES.map((it) => (
+          <TouchableOpacity key={it.key} onPress={() => setSelectedType(it.key)}>
+            {selectedType === it.key ? (
               <LinearGradient colors={colors.gradientDanger as [string, string]} style={styles.chip}>
-                <MaterialCommunityIcons name={t.icon as any} size={14} color={colors.white} />
-                <Text style={styles.chipTextActive}>{t.label}</Text>
+                <MaterialCommunityIcons name={it.icon as any} size={14} color={colors.white} />
+                <Text style={styles.chipTextActive}>{tr(it.labelKey)}</Text>
               </LinearGradient>
             ) : (
               <View style={styles.chipInactive}>
-                <MaterialCommunityIcons name={t.icon as any} size={14} color={colors.textMuted} />
-                <Text style={styles.chipText}>{t.label}</Text>
+                <MaterialCommunityIcons name={it.icon as any} size={14} color={colors.textMuted} />
+                <Text style={styles.chipText}>{tr(it.labelKey)}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -80,7 +82,7 @@ export default function IncidentForm() {
       </View>
       <TextInput
         style={styles.input}
-        placeholder="Description (optional)"
+        placeholder={tr('description')}
         placeholderTextColor={colors.textMuted}
         value={description}
         onChangeText={setDescription}
@@ -90,10 +92,10 @@ export default function IncidentForm() {
       />
       <View style={styles.actions}>
         <View style={{ flex: 1 }}>
-          <GradientButton title="Cancel" variant="danger" onPress={resetForm} />
+          <GradientButton title={tr('cancel')} variant="danger" onPress={resetForm} />
         </View>
         <View style={{ flex: 1 }}>
-          <GradientButton title="Submit" variant="primary" icon="send" onPress={handleSubmit} loading={loading} disabled={!selectedType} />
+          <GradientButton title={tr('submit')} variant="primary" icon="send" onPress={handleSubmit} loading={loading} disabled={!selectedType} />
         </View>
       </View>
     </GlowCard>
