@@ -7,7 +7,7 @@
     "platforms": ["android", "ios", "web"],
     "android": {
       "package": "com.communitygate.resident",
-      "package": "com.communitygate.resident"
+      "versionCode": 1
     },
     "ios": { "bundleIdentifier": "com.communitygate.resident" }
   }

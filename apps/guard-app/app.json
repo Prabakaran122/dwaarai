@@ -6,7 +6,8 @@
     "orientation": "landscape",
     "platforms": ["android", "web"],
     "android": {
-      "package": "com.communitygate.guard"
+      "package": "com.communitygate.guard",
+      "versionCode": 1
     }
   }
 }
