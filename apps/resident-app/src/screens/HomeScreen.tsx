@@ -11,6 +11,8 @@ import ActivityItem, { ActivityEvent } from '../components/ActivityItem';
 import { getMyUnitEvents, getPasses } from '../api/client';
 import { useVehicleStore } from '../store/vehicleStore';
 import { useAuthStore } from '../store/authStore';
+import { useDueStore } from '../store/dueStore';
+import DuesScreen from './DuesScreen';
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -26,14 +28,17 @@ interface Props {
 export default function HomeScreen({ onNavigate }: Props) {
   const user = useAuthStore((s) => s.user);
   const { vehicles, fetch: fetchVehicles } = useVehicleStore();
+  const { outstanding, fetch: fetchDues } = useDueStore();
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [activePasses, setActivePasses] = useState(0);
   const [todayStats, setTodayStats] = useState({ entries: 0, visitors: 0, deliveries: 0 });
   const [refreshing, setRefreshing] = useState(false);
+  const [showDues, setShowDues] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
       await fetchVehicles();
+      fetchDues().catch(() => {});
       const today = new Date().toISOString().slice(0, 10);
       const [eventRes, passRes] = await Promise.all([
         getMyUnitEvents({ limit: '5' }),
@@ -65,6 +70,10 @@ export default function HomeScreen({ onNavigate }: Props) {
   };
 
   const firstName = user?.name?.split(' ')[0] || 'Resident';
+
+  if (showDues) {
+    return <DuesScreen onClose={() => { setShowDues(false); fetchDues().catch(() => {}); }} />;
+  }
 
   return (
     <LinearGradient colors={colors.gradientBg} style={styles.container}>
@@ -133,6 +142,32 @@ export default function HomeScreen({ onNavigate }: Props) {
           </GlowCard>
         </AnimatedEntry>
 
+        {/* Maintenance Dues */}
+        <AnimatedEntry direction="up" delay={250}>
+          <TouchableOpacity activeOpacity={0.85} onPress={() => setShowDues(true)}>
+            <GlowCard style={StyleSheet.flatten([styles.duesCard, outstanding > 0 && styles.duesCardDue])}>
+              <View style={styles.duesRow}>
+                <View style={styles.duesIcon}>
+                  <MaterialCommunityIcons name="credit-card-outline" size={20} color={outstanding > 0 ? colors.warning : colors.success} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.duesTitle}>Maintenance dues</Text>
+                  <Text style={styles.duesSub}>
+                    {outstanding > 0 ? `₹${outstanding.toLocaleString('en-IN')} outstanding` : 'No dues pending'}
+                  </Text>
+                </View>
+                {outstanding > 0 ? (
+                  <View style={styles.duesPayBtn}>
+                    <Text style={styles.duesPayText}>Pay</Text>
+                  </View>
+                ) : (
+                  <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textMuted} />
+                )}
+              </View>
+            </GlowCard>
+          </TouchableOpacity>
+        </AnimatedEntry>
+
         {/* Live Activity */}
         <Text style={styles.sectionTitle}>Recent Activity</Text>
         {events.length === 0 ? (
@@ -176,6 +211,14 @@ const styles = StyleSheet.create({
   summaryNumber: { fontSize: 28, fontWeight: '800', color: colors.textPrimary },
   summaryLabel: { fontSize: 11, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginTop: 2 },
   summaryDivider: { width: 1, height: 32, backgroundColor: colors.surfaceBorder },
+  duesCard: { marginBottom: spacing.xl },
+  duesCardDue: { borderColor: colors.warningBorder, borderWidth: 1 },
+  duesRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  duesIcon: { width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
+  duesTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  duesSub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  duesPayBtn: { backgroundColor: colors.warningBg, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.pill },
+  duesPayText: { fontSize: 13, fontWeight: '700', color: colors.warning },
   sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.md },
   emptyState: { alignItems: 'center', gap: spacing.md, marginTop: spacing['3xl'] },
   emptyText: { color: colors.textMuted, fontSize: 14 },

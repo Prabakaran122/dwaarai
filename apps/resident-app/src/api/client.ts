@@ -110,6 +110,66 @@ export const updateRecurringPass = (id: string, data: Record<string, any>) =>
 export const cancelRecurringPass = (id: string) =>
   api.delete(`/recurring-passes/${id}`);
 
+// Household / family members
+export const getMembers = () => api.get('/members');
+
+export const createMember = (data: {
+  name: string;
+  mobile: string;
+  relationship?: string;
+  notify_on_approval?: boolean;
+}) => api.post('/members', data);
+
+export const updateMember = (
+  id: string,
+  data: { name?: string; relationship?: string; notify_on_approval?: boolean },
+) => api.put(`/members/${id}`, data);
+
+export const deleteMember = (id: string) => api.delete(`/members/${id}`);
+
+// Community notice board
+export const getNotices = () => api.get('/notices');
+
+export const getNotice = (id: string) => api.get(`/notices/${id}`);
+
+export const createNotice = (data: { title: string; body: string }) =>
+  api.post('/notices', data);
+
+export const replyToNotice = (id: string, body: string) =>
+  api.post(`/notices/${id}/replies`, { body });
+
+export const deleteNotice = (id: string) => api.delete(`/notices/${id}`);
+
+// Maintenance dues
+export const getDues = () => api.get('/dues');
+
+export const getDuesHistory = () => api.get('/dues/history');
+
+export const payDue = (id: string) => api.post(`/dues/${id}/pay`);
+
+export const getPaymentStatus = (paymentId: string) =>
+  api.get(`/dues/payments/${paymentId}`);
+
+export function dueReceiptUrl(paymentId: string) {
+  return `${API_BASE}/dues/payments/${paymentId}/receipt`;
+}
+
+// Face identity & consent
+export const getFaceIdentity = () => api.get('/face');
+
+export const enrollFace = (data: {
+  consent_acknowledged: boolean;
+  consent_locations?: string[];
+  scan_b64?: string;
+}) => api.post('/face/enroll', data);
+
+export const setFaceConsent = (location: string, enabled: boolean) =>
+  api.put('/face/consent', { location, enabled });
+
+export const deleteFaceData = () => api.delete('/face');
+
+export const getFaceAccessLog = () => api.get('/face/access-log');
+
 // 401 interceptor — auto-refresh token on expiry
 let isRefreshing = false;
 let refreshSubscribers: ((token: string) => void)[] = [];

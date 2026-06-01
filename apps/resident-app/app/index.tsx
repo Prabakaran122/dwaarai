@@ -13,14 +13,16 @@ import VisitorsScreen from '../src/screens/VisitorsScreen';
 import ActivityScreen from '../src/screens/ActivityScreen';
 import ProfileScreen from '../src/screens/ProfileScreen';
 import ApprovalScreen from '../src/screens/ApprovalScreen';
+import NoticeBoardScreen from '../src/screens/NoticeBoardScreen';
 import { registerForPushNotifications, setupNotificationListeners } from '../src/lib/notifications';
 
-type TabKey = 'home' | 'visitors' | 'vehicles' | 'activity' | 'profile';
+type TabKey = 'home' | 'visitors' | 'vehicles' | 'community' | 'activity' | 'profile';
 
 const tabs: { key: TabKey; label: string; icon: string }[] = [
   { key: 'home', label: 'Home', icon: 'home' },
   { key: 'visitors', label: 'Visitors', icon: 'account-group' },
   { key: 'vehicles', label: 'Vehicles', icon: 'car' },
+  { key: 'community', label: 'Community', icon: 'forum' },
   { key: 'activity', label: 'Activity', icon: 'history' },
   { key: 'profile', label: 'Profile', icon: 'account' },
 ];
@@ -80,6 +82,7 @@ function ResidentApp() {
         {tab === 'home' && <HomeScreen onNavigate={handleNavigate} />}
         {tab === 'visitors' && <VisitorsScreen />}
         {tab === 'vehicles' && <VehiclesScreen />}
+        {tab === 'community' && <NoticeBoardScreen />}
         {tab === 'activity' && <ActivityScreen />}
         {tab === 'profile' && <ProfileScreen />}
       </View>
