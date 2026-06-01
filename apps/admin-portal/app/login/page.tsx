@@ -42,12 +42,10 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen mesh-bg flex items-center justify-center">
       <div className="glass-panel gradient-border p-8 w-full max-w-md">
-        <div className="flex justify-center mb-6">
-          <div className="w-14 h-14 rounded-2xl bg-glow-primary flex items-center justify-center">
-            <span className="text-white text-xl font-extrabold">D</span>
-          </div>
+        <div className="flex justify-center mb-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/dwaar-ai-logo.png" alt="Dwaar AI" className="h-24 w-auto" />
         </div>
-        <h1 className="text-2xl font-bold text-gray-900 text-center mb-1">Dwaarai</h1>
         <p className="text-xs text-teal-600 text-center uppercase tracking-[0.2em] font-semibold mb-8">Admin Portal</p>
 
         {error && (
