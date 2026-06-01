@@ -4,11 +4,23 @@
     "slug": "communitygate-resident",
     "version": "0.1.0",
     "orientation": "portrait",
-    "platforms": ["android", "ios", "web"],
+    "platforms": [
+      "android",
+      "ios",
+      "web"
+    ],
     "android": {
       "package": "com.communitygate.resident",
       "versionCode": 1
     },
-    "ios": { "bundleIdentifier": "com.communitygate.resident" }
+    "ios": {
+      "bundleIdentifier": "com.communitygate.resident"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d2c60a2a-2eb4-44b7-9640-b092d62294cf"
+      }
+    },
+    "owner": "skprabakaran122"
   }
 }

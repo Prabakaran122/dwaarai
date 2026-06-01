@@ -4,10 +4,19 @@
     "slug": "communitygate-guard",
     "version": "0.1.0",
     "orientation": "landscape",
-    "platforms": ["android", "web"],
+    "platforms": [
+      "android",
+      "web"
+    ],
     "android": {
       "package": "com.communitygate.guard",
       "versionCode": 1
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "559e1037-4634-49b9-8681-f742249c1f94"
+      }
+    },
+    "owner": "skprabakaran122"
   }
 }
