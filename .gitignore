@@ -13,3 +13,23 @@ venv/
 spec_extracted.txt
 scripts/dev-tokens.txt
 *.docx
+
+# Secrets and keys — never commit
+*.pem
+.env.local
+.env.*.local
+
+# Local tooling / agent state
+.claude/
+.superpowers/
+.playwright-mcp/
+.expo/
+*.tsbuildinfo
+next-env.d.ts
+
+# Stray marketing/build artifacts (canonical site lives in dist/)
+*.zip
+*.png
+*.jpg
+*.pdf
+dwaar-ai-*.html
