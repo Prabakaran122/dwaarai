@@ -6,14 +6,16 @@ import { spacing } from '../theme/spacing';
 import AnimatedEntry from './AnimatedEntry';
 import FeedItem from './FeedItem';
 import { useQueueStore, selectFeedEntries } from '../store/queueStore';
+import { useT } from '../store/langStore';
 
 export default function LiveFeed() {
   const entries = useQueueStore((s) => s.entries);
   const feed = selectFeedEntries(entries);
+  const t = useT();
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>LIVE FEED</Text>
+      <Text style={styles.title}>{t('liveFeed')}</Text>
       <FlatList
         data={feed}
         keyExtractor={(e) => e.id}
@@ -26,7 +28,7 @@ export default function LiveFeed() {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <MaterialCommunityIcons name="antenna" size={36} color={colors.textMuted} />
-            <Text style={styles.emptyText}>Waiting for events...</Text>
+            <Text style={styles.emptyText}>{t('waitingEvents')}</Text>
           </View>
         }
       />

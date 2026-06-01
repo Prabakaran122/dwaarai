@@ -4,6 +4,7 @@ import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import GlowCard from './GlowCard';
 import { useQueueStore } from '../store/queueStore';
+import { useT } from '../store/langStore';
 
 function formatDuration(startIso: string): string {
   const ms = Date.now() - new Date(startIso).getTime();
@@ -27,24 +28,25 @@ export default function ShiftStats() {
     return () => clearInterval(interval);
   }, [stats.shiftStart]);
 
+  const t = useT();
   return (
     <GlowCard style={styles.container}>
-      <Text style={styles.label}>SHIFT</Text>
-      <Text style={styles.since}>On since {formatTime(stats.shiftStart)} · {duration}</Text>
+      <Text style={styles.label}>{t('shift')}</Text>
+      <Text style={styles.since}>{formatTime(stats.shiftStart)} · {duration}</Text>
       <View style={styles.statsRow}>
         <View style={styles.stat}>
           <Text style={styles.statNumber}>{stats.totalEntries}</Text>
-          <Text style={styles.statLabel}>Entries</Text>
+          <Text style={styles.statLabel}>{t('entries')}</Text>
         </View>
         <View style={styles.divider} />
         <View style={styles.stat}>
           <Text style={[styles.statNumber, { color: colors.danger }]}>{stats.totalDenied}</Text>
-          <Text style={styles.statLabel}>Denied</Text>
+          <Text style={styles.statLabel}>{t('denied')}</Text>
         </View>
         <View style={styles.divider} />
         <View style={styles.stat}>
           <Text style={[styles.statNumber, { color: colors.info }]}>{stats.totalVisitors}</Text>
-          <Text style={styles.statLabel}>Visitors</Text>
+          <Text style={styles.statLabel}>{t('visitors')}</Text>
         </View>
       </View>
     </GlowCard>

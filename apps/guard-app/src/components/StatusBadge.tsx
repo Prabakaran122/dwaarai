@@ -1,22 +1,24 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { useT } from '../store/langStore';
 
 interface StatusBadgeProps {
   status: 'allow' | 'deny' | 'guard_review';
 }
 
 const STATUS_CONFIG = {
-  allow: { bg: '#22c55e', label: 'ALLOWED' },
-  deny: { bg: '#ef4444', label: 'DENIED' },
-  guard_review: { bg: '#eab308', label: 'REVIEW' },
+  allow: { bg: '#22c55e', key: 'statusAllowed' },
+  deny: { bg: '#ef4444', key: 'statusDenied' },
+  guard_review: { bg: '#eab308', key: 'statusReview' },
 } as const;
 
 export default function StatusBadge({ status }: StatusBadgeProps) {
   const config = STATUS_CONFIG[status];
+  const t = useT();
 
   return (
     <View style={[styles.badge, { backgroundColor: config.bg }]}>
-      <Text style={styles.label}>{config.label}</Text>
+      <Text style={styles.label}>{t(config.key)}</Text>
     </View>
   );
 }

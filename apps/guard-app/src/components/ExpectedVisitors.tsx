@@ -8,6 +8,7 @@ import GlowCard from './GlowCard';
 import GradientButton from './GradientButton';
 import AnimatedEntry from './AnimatedEntry';
 import { getExpectedVisits, markVisitArrived } from '../api/client';
+import { useT } from '../store/langStore';
 
 interface ExpectedGroup {
   id: string;
@@ -48,6 +49,7 @@ export default function ExpectedVisitors() {
   const [expected, setExpected] = useState<ExpectedGroup[]>([]);
   const [arrived, setArrived] = useState<ArrivedEntry[]>([]);
   const [loading, setLoading] = useState<string | null>(null);
+  const t = useT();
 
   const fetchVisits = useCallback(async () => {
     try {
@@ -71,7 +73,7 @@ export default function ExpectedVisitors() {
       // Open camera
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission Required', 'Camera access is needed to take visitor photo');
+        Alert.alert(t('permissionRequired'), t('cameraNeeded'));
         return;
       }
 
@@ -96,10 +98,10 @@ export default function ExpectedVisitors() {
       const res = await markVisitArrived(group.id, formData);
       const data = res.data.data;
 
-      Alert.alert('Arrived', `${data.visitor_name} marked — ${data.marked} unit(s)`);
+      Alert.alert(t('arrived'), `${data.visitor_name} marked — ${data.marked} unit(s)`);
       fetchVisits();
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.error?.message || 'Failed to mark arrived');
+      Alert.alert(t('error'), err?.response?.data?.error?.message || t('failMarkArrived'));
     } finally {
       setLoading(null);
     }
@@ -111,7 +113,7 @@ export default function ExpectedVisitors() {
 
   return (
     <GlowCard style={styles.card}>
-      <Text style={styles.label}>EXPECTED NOW ({expected.length})</Text>
+      <Text style={styles.label}>{t('expectedNow')} ({expected.length})</Text>
 
       {expected.map((group, i) => {
         const icon = ROLE_ICONS[group.visitor_role || 'other'] || 'account';
@@ -133,7 +135,7 @@ export default function ExpectedVisitors() {
               </View>
               <View style={{ width: 90 }}>
                 <GradientButton
-                  title="Arrived"
+                  title={t('arrived')}
                   icon="camera"
                   variant="success"
                   onPress={() => handleArrived(group)}
@@ -147,7 +149,7 @@ export default function ExpectedVisitors() {
 
       {arrived.length > 0 && (
         <>
-          <Text style={[styles.label, { marginTop: spacing.md }]}>ARRIVED TODAY ({arrived.length})</Text>
+          <Text style={[styles.label, { marginTop: spacing.md }]}>{t('arrivedToday')} ({arrived.length})</Text>
           {arrived.map((entry, i) => {
             const time = new Date(entry.arrived_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             return (

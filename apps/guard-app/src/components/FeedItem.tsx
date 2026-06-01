@@ -6,7 +6,9 @@ import { spacing, radius } from '../theme/spacing';
 import GlowCard from './GlowCard';
 import PlateText from './PlateText';
 import type { QueueEntry } from '../store/queueStore';
+import { useT } from '../store/langStore';
 
+// Detection methods keep their technical acronyms across all languages.
 const methodConfig: Record<string, { color: string; label: string; icon: string }> = {
   anpr: { color: '#3b82f6', label: 'ANPR', icon: 'camera' },
   rfid: { color: '#8b5cf6', label: 'RFID', icon: 'card-bulleted' },
@@ -15,10 +17,10 @@ const methodConfig: Record<string, { color: string; label: string; icon: string 
   manual: { color: colors.warning, label: 'Manual', icon: 'account' },
 };
 
-const decisionConfig: Record<string, { color: string; label: string }> = {
-  allow: { color: colors.success, label: 'ALLOWED' },
-  deny: { color: colors.danger, label: 'DENIED' },
-  guard_review: { color: colors.warning, label: 'REVIEW' },
+const decisionConfig: Record<string, { color: string; key: string }> = {
+  allow: { color: colors.success, key: 'statusAllowed' },
+  deny: { color: colors.danger, key: 'statusDenied' },
+  guard_review: { color: colors.warning, key: 'statusReview' },
 };
 
 function getVariant(entry: QueueEntry): 'default' | 'danger' | 'success' {
@@ -35,6 +37,7 @@ export default function FeedItem({ entry }: { entry: QueueEntry }) {
   const method = methodConfig[entry.method] || methodConfig.manual;
   const decision = decisionConfig[entry.decision] || decisionConfig.deny;
   const isEntry = true;
+  const t = useT();
 
   return (
     <GlowCard variant={getVariant(entry)} style={styles.card}>
@@ -50,7 +53,7 @@ export default function FeedItem({ entry }: { entry: QueueEntry }) {
           <Text style={[styles.pillText, { color: method.color }]}>{method.label}</Text>
         </View>
         <View style={[styles.pill, { backgroundColor: decision.color + '20' }]}>
-          <Text style={[styles.pillText, { color: decision.color }]}>{decision.label}</Text>
+          <Text style={[styles.pillText, { color: decision.color }]}>{t(decision.key)}</Text>
         </View>
       </View>
       {entry.residentName ? (

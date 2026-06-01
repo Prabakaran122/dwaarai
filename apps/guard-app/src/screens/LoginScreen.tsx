@@ -7,8 +7,10 @@ import { spacing, radius } from '../theme/spacing';
 import GlowCard from '../components/GlowCard';
 import GradientButton from '../components/GradientButton';
 import AnimatedEntry from '../components/AnimatedEntry';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 import { login as apiLogin } from '../api/client';
 import { useAuthStore } from '../store/authStore';
+import { useT, useLangStore } from '../store/langStore';
 
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
@@ -17,6 +19,8 @@ export default function LoginScreen() {
   const [errorMsg, setErrorMsg] = useState('');
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const login = useAuthStore((s) => s.login);
+  const t = useT();
+  const applyFromServer = useLangStore((s) => s.applyFromServer);
 
   const handleLogin = async () => {
     if (!username.trim() || !password.trim()) return;
@@ -25,10 +29,11 @@ export default function LoginScreen() {
     try {
       const res = await apiLogin(username.trim(), password);
       const { token, user, refreshToken } = res.data.data;
+      applyFromServer(user?.language);
       login(token, user, refreshToken);
     } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.response?.data?.error || 'Login failed';
-      setErrorMsg(typeof msg === 'string' ? msg : 'Login failed');
+      const msg = err?.response?.data?.error?.message || err?.response?.data?.error || t('loginFailed');
+      setErrorMsg(typeof msg === 'string' ? msg : t('loginFailed'));
     } finally {
       setLoading(false);
     }
@@ -52,7 +57,7 @@ export default function LoginScreen() {
             </LinearGradient>
           </View>
           <Text style={styles.title}>CommunityGate</Text>
-          <Text style={styles.subtitle}>Guard Station</Text>
+          <Text style={styles.subtitle}>{t('guardStation')}</Text>
 
           {errorMsg ? (
             <AnimatedEntry direction="fade">
@@ -64,7 +69,7 @@ export default function LoginScreen() {
             <MaterialCommunityIcons name="account" size={18} color={colors.textMuted} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
-              placeholder="Username"
+              placeholder={t('username')}
               placeholderTextColor={colors.textMuted}
               value={username}
               onChangeText={setUsername}
@@ -79,7 +84,7 @@ export default function LoginScreen() {
             <MaterialCommunityIcons name="lock" size={18} color={colors.textMuted} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
-              placeholder="Password"
+              placeholder={t('password')}
               placeholderTextColor={colors.textMuted}
               value={password}
               onChangeText={setPassword}
@@ -91,12 +96,16 @@ export default function LoginScreen() {
 
           <View style={styles.buttonWrapper}>
             <GradientButton
-              title="Sign In"
+              title={t('signIn')}
               onPress={handleLogin}
               icon="login"
               loading={loading}
               disabled={!username.trim() || !password.trim()}
             />
+          </View>
+
+          <View style={styles.langWrapper}>
+            <LanguageSwitcher />
           </View>
         </GlowCard>
       </AnimatedEntry>
@@ -169,5 +178,11 @@ const styles = StyleSheet.create({
   },
   buttonWrapper: {
     marginTop: spacing.sm,
+  },
+  langWrapper: {
+    marginTop: spacing.xl,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceBorder,
   },
 });

@@ -31,6 +31,35 @@ export function setDeviceToken(token: string) {
 export const login = (username: string, password: string) =>
   api.post('/auth/guard-login', { username, password });
 
+// Persist the guard's preferred UI language
+export const setGuardLanguage = (language: 'en' | 'hi' | 'kn') =>
+  api.put('/guard/language', { language });
+
+// SOS / emergency
+export const raiseSos = (type: string, note?: string) =>
+  api.post('/sos', { type, note });
+export const getActiveSos = () => api.get('/sos/active');
+export const resolveSos = (id: string) => api.post(`/sos/${id}/resolve`);
+
+// Deliveries
+export const logDelivery = (unit_number: string, company: string, note?: string) =>
+  api.post('/deliveries', { unit_number, company, note });
+export const getActiveDeliveries = () => api.get('/deliveries/active');
+export const updateDeliveryStatus = (id: string, status: 'delivered' | 'left_at_gate') =>
+  api.post(`/deliveries/${id}/status`, { status });
+
+// Shift handover
+export const postHandover = (note: string) => api.post('/handover', { note });
+export const getLatestHandover = () => api.get('/handover/latest');
+
+// Driver facial verification
+export const verifyDriver = (data: { unit_number?: string; plate?: string; scan_b64: string }) =>
+  api.post('/face/verify-driver', data);
+
+// Daily staff roster
+export const getStaff = () => api.get('/staff');
+export const checkinStaff = (passId: string) => api.post(`/staff/${passId}/checkin`);
+
 // Gate operations
 export const getGates = () => api.get('/gates');
 export const getGateStatus = (id: string) => api.get(`/gates/${id}/status`);

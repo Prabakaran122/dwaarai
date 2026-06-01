@@ -8,6 +8,7 @@ import GradientButton from './GradientButton';
 import AnimatedEntry from './AnimatedEntry';
 import { useApprovalStore, type ApprovalRequest } from '../store/approvalStore';
 import { getApproval } from '../api/client';
+import { useT } from '../store/langStore';
 
 interface Props {
   onDismiss: () => void;
@@ -18,6 +19,7 @@ export default function ApprovalWaiting({ onDismiss, gateId }: Props) {
   const approvals = useApprovalStore((s) => s.approvals);
   const updateApproval = useApprovalStore((s) => s.updateApproval);
   const removeApproval = useApprovalStore((s) => s.removeApproval);
+  const t = useT();
 
   const current = approvals[0];
 
@@ -65,10 +67,10 @@ export default function ApprovalWaiting({ onDismiss, gateId }: Props) {
   const isExpired = current.status === 'expired';
 
   const statusConfig = {
-    pending: { icon: 'clock-outline' as const, color: colors.info, text: `Waiting... ${secondsLeft}s` },
-    approved: { icon: 'check-circle' as const, color: colors.success, text: `Approved by ${current.responded_by_name || 'Resident'}` },
-    denied: { icon: 'close-circle' as const, color: colors.danger, text: 'Denied by Resident' },
-    expired: { icon: 'clock-alert' as const, color: colors.warning, text: 'No Response' },
+    pending: { icon: 'clock-outline' as const, color: colors.info, text: `${secondsLeft}s` },
+    approved: { icon: 'check-circle' as const, color: colors.success, text: current.responded_by_name || t('resident') },
+    denied: { icon: 'close-circle' as const, color: colors.danger, text: t('deniedByResident') },
+    expired: { icon: 'clock-alert' as const, color: colors.warning, text: t('noResponse') },
   };
 
   const cfg = statusConfig[current.status] || statusConfig.pending;
@@ -76,7 +78,7 @@ export default function ApprovalWaiting({ onDismiss, gateId }: Props) {
   return (
     <AnimatedEntry direction="fade" duration={200}>
       <GlowCard variant={isApproved ? 'success' : isDenied ? 'danger' : undefined} style={styles.card}>
-        <Text style={styles.label}>APPROVAL REQUEST</Text>
+        <Text style={styles.label}>{t('approvalRequest')}</Text>
 
         <View style={styles.infoRow}>
           <Text style={styles.visitorName}>{current.visitor_name}</Text>
@@ -99,13 +101,13 @@ export default function ApprovalWaiting({ onDismiss, gateId }: Props) {
 
         <View style={styles.actions}>
           {(isExpired || isDenied) && (
-            <GradientButton title="Dismiss" variant="danger" onPress={() => {
+            <GradientButton title={t('dismiss')} variant="danger" onPress={() => {
               removeApproval(current.id);
               if (approvals.length <= 1) onDismiss();
             }} />
           )}
           {isApproved && (
-            <GradientButton title="Done" variant="success" onPress={() => {
+            <GradientButton title={t('done')} variant="success" onPress={() => {
               removeApproval(current.id);
               if (approvals.length <= 1) onDismiss();
             }} />

@@ -9,6 +9,7 @@ interface AuthUser {
   name: string;
   role: string;
   gateId: string;
+  language?: string;
 }
 
 interface AuthState {

@@ -9,7 +9,11 @@ import OTPInput from './OTPInput';
 import ExpectedVisitors from './ExpectedVisitors';
 import ShiftStats from './ShiftStats';
 import IncidentForm from './IncidentForm';
+import DeliveryPanel from './DeliveryPanel';
+import StaffPanel from './StaffPanel';
+import LanguageSwitcher from './LanguageSwitcher';
 import { useAuthStore } from '../store/authStore';
+import { useT } from '../store/langStore';
 import { sendGateCommand } from '../api/client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -17,6 +21,7 @@ const MUTE_KEY = 'communitygate_guard_muted';
 
 export default function ToolsPanel() {
   const gateId = useAuthStore((s) => s.user?.gateId) || '';
+  const t = useT();
   const [muted, setMuted] = useState(false);
   const [gateLoading, setGateLoading] = useState(false);
 
@@ -36,7 +41,7 @@ export default function ToolsPanel() {
     try {
       await sendGateCommand(gateId, action);
     } catch {
-      Alert.alert('Error', `Failed to ${action} gate`);
+      Alert.alert(t('error'), t('failOpenGate'));
     } finally {
       setGateLoading(false);
     }
@@ -48,7 +53,7 @@ export default function ToolsPanel() {
         <View style={styles.gateHeader}>
           <View style={styles.gateStatus}>
             <View style={[styles.statusDot, { backgroundColor: colors.success }]} />
-            <Text style={styles.gateLabel}>GATE CONTROLS</Text>
+            <Text style={styles.gateLabel}>{t('gateControls')}</Text>
           </View>
           <TouchableOpacity onPress={toggleMute}>
             <MaterialCommunityIcons
@@ -60,16 +65,22 @@ export default function ToolsPanel() {
         </View>
         <View style={styles.gateButtons}>
           <View style={{ flex: 1 }}>
-            <GradientButton title="Open" icon="gate" variant="success" onPress={() => handleManualGate('open')} loading={gateLoading} />
+            <GradientButton title={t('open')} icon="gate" variant="success" onPress={() => handleManualGate('open')} loading={gateLoading} />
           </View>
           <View style={{ flex: 1 }}>
-            <GradientButton title="Close" icon="gate" variant="danger" onPress={() => handleManualGate('close')} loading={gateLoading} />
+            <GradientButton title={t('close')} icon="gate" variant="danger" onPress={() => handleManualGate('close')} loading={gateLoading} />
           </View>
         </View>
       </GlowCard>
 
+      <GlowCard>
+        <LanguageSwitcher compact />
+      </GlowCard>
+
       <OTPInput />
+      <StaffPanel />
       <ExpectedVisitors />
+      <DeliveryPanel />
       <ShiftStats />
       <IncidentForm />
     </ScrollView>

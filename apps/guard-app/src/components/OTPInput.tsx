@@ -8,6 +8,7 @@ import GradientButton from './GradientButton';
 import AnimatedEntry from './AnimatedEntry';
 import { verifyOTP, sendGateCommand } from '../api/client';
 import { useAuthStore } from '../store/authStore';
+import { useT } from '../store/langStore';
 
 interface VerifyResult {
   status: 'allow' | 'deny';
@@ -22,6 +23,7 @@ export default function OTPInput() {
   const [result, setResult] = useState<VerifyResult | null>(null);
   const inputRefs = useRef<(TextInput | null)[]>([]);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const t = useT();
 
   const resetForm = () => {
     setDigits(['', '', '', '', '', '']);
@@ -88,7 +90,7 @@ export default function OTPInput() {
       await sendGateCommand(gateId, 'open');
       resetForm();
     } catch {
-      Alert.alert('Error', 'Failed to open gate');
+      Alert.alert(t('error'), t('failOpenGate'));
     }
   };
 
@@ -104,14 +106,14 @@ export default function OTPInput() {
               color={isAllow ? colors.success : colors.danger}
             />
             <Text style={[styles.resultStatus, { color: isAllow ? colors.success : colors.danger }]}>
-              {isAllow ? 'VERIFIED' : 'INVALID OTP'}
+              {isAllow ? t('verified') : t('invalidOtp')}
             </Text>
           </View>
           {result.visitorName ? (
             <Text style={styles.visitorName}>{result.visitorName}</Text>
           ) : null}
           {isAllow && (
-            <GradientButton title="Open Gate" icon="gate" variant="success" onPress={handleOpenGate} />
+            <GradientButton title={t('openGate')} icon="gate" variant="success" onPress={handleOpenGate} />
           )}
         </GlowCard>
       </AnimatedEntry>
@@ -120,7 +122,7 @@ export default function OTPInput() {
 
   return (
     <GlowCard style={styles.container}>
-      <Text style={styles.label}>VERIFY VISITOR</Text>
+      <Text style={styles.label}>{t('verifyVisitor')}</Text>
       <View style={styles.digitRow}>
         {digits.map((digit, i) => (
           <View key={i} style={[styles.digitBox, digit ? styles.digitBoxFilled : null]}>
@@ -139,7 +141,7 @@ export default function OTPInput() {
         ))}
       </View>
       <GradientButton
-        title="Verify"
+        title={t('verify')}
         icon="check-circle"
         onPress={handleVerify}
         loading={loading}

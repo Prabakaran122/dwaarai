@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Alert, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
@@ -10,8 +10,10 @@ import IconBadge from './IconBadge';
 import AnimatedEntry from './AnimatedEntry';
 import { useQueueStore, selectPendingEntries, type QueueEntry } from '../store/queueStore';
 import { useAuthStore } from '../store/authStore';
-import { sendGateCommand, registerVehicleAtGate, createApproval } from '../api/client';
+import { sendGateCommand, registerVehicleAtGate, createApproval, verifyDriver } from '../api/client';
 import { useApprovalStore } from '../store/approvalStore';
+import { useT } from '../store/langStore';
+import * as ImagePicker from 'expo-image-picker';
 import ApprovalWaiting from './ApprovalWaiting';
 
 const methodIcons: Record<string, { icon: string; color: string; gradient: readonly [string, string] }> = {
@@ -36,6 +38,30 @@ export default function ActionZone() {
   const addApproval = useApprovalStore((s) => s.addApproval);
   const approvals = useApprovalStore((s) => s.approvals);
   const [showApproval, setShowApproval] = useState(false);
+  const [driverCheck, setDriverCheck] = useState<{ entryId: string; status: string; name?: string | null } | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const t = useT();
+
+  const handleVerifyDriver = async (entry: QueueEntry) => {
+    setVerifying(true);
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) { setVerifying(false); return; }
+      const shot = await ImagePicker.launchCameraAsync({ quality: 0.6, base64: true, allowsEditing: false });
+      if (shot.canceled || !shot.assets?.[0]?.base64) { setVerifying(false); return; }
+      const res = await verifyDriver({
+        plate: entry.plate !== 'Unknown' ? entry.plate : undefined,
+        unit_number: entry.unitNumber,
+        scan_b64: shot.assets[0].base64,
+      });
+      const data = res.data.data;
+      setDriverCheck({ entryId: entry.id, status: data.status, name: data.resident_name });
+    } catch (err: any) {
+      setDriverCheck({ entryId: entry.id, status: 'unavailable' });
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   const pending = selectPendingEntries(entries);
   const current = pending[0] || null;
@@ -47,7 +73,7 @@ export default function ActionZone() {
       await sendGateCommand(gateId, 'open');
       removeEntry(current.id);
     } catch {
-      Alert.alert('Error', 'Failed to open gate');
+      Alert.alert(t('error'), t('failOpenGate'));
     } finally {
       setActionLoading(false);
     }
@@ -60,7 +86,7 @@ export default function ActionZone() {
       await sendGateCommand(gateId, 'deny');
       removeEntry(current.id);
     } catch {
-      Alert.alert('Error', 'Failed to send deny command');
+      Alert.alert(t('error'), t('failDeny'));
     } finally {
       setActionLoading(false);
     }
@@ -81,7 +107,7 @@ export default function ActionZone() {
       setShowRegister(false);
       setUnitNumber('');
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.error || 'Registration failed');
+      Alert.alert(t('error'), err?.response?.data?.error || t('failRegister'));
     } finally {
       setActionLoading(false);
     }
@@ -114,7 +140,7 @@ export default function ActionZone() {
       setNotifyName('');
       setNotifyUnit('');
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.error?.message || 'Failed to request approval');
+      Alert.alert(t('error'), err?.response?.data?.error?.message || t('failApproval'));
     } finally {
       setNotifyLoading(false);
     }
@@ -126,8 +152,8 @@ export default function ActionZone() {
         <AnimatedEntry direction="fade">
           <GlowCard variant="success" style={styles.emptyCard}>
             <MaterialCommunityIcons name="check-circle" size={48} color={colors.success} />
-            <Text style={styles.emptyTitle}>All Clear</Text>
-            <Text style={styles.emptySubtext}>No vehicles pending review</Text>
+            <Text style={styles.emptyTitle}>{t('allClear')}</Text>
+            <Text style={styles.emptySubtext}>{t('noVehiclesPending')}</Text>
           </GlowCard>
         </AnimatedEntry>
       </View>
@@ -160,7 +186,7 @@ export default function ActionZone() {
           {current.alertType === 'auto_paired' && (
             <View style={[styles.alertBanner, { backgroundColor: 'rgba(6,182,212,0.15)' }]}>
               <MaterialCommunityIcons name="information" size={16} color="#06b6d4" />
-              <Text style={[styles.alertText, { color: '#06b6d4' }]}>FASTag auto-paired</Text>
+              <Text style={[styles.alertText, { color: '#06b6d4' }]}>{t('fastagAutoPaired')}</Text>
             </View>
           )}
 
@@ -175,43 +201,72 @@ export default function ActionZone() {
             </View>
           </View>
 
+          {/* Driver facial verification — only for recognized resident vehicles; non-blocking */}
+          {current.residentName && current.unitNumber && (
+            <View style={styles.driverBlock}>
+              {driverCheck && driverCheck.entryId === current.id ? (
+                <View style={[
+                  styles.driverBanner,
+                  { backgroundColor: driverCheck.status === 'confirmed' ? colors.successBg : driverCheck.status === 'flagged' ? colors.warningBg : colors.surface },
+                ]}>
+                  <MaterialCommunityIcons
+                    name={driverCheck.status === 'confirmed' ? 'face-recognition' : driverCheck.status === 'flagged' ? 'account-alert' : 'face-recognition'}
+                    size={16}
+                    color={driverCheck.status === 'confirmed' ? colors.success : driverCheck.status === 'flagged' ? colors.warning : colors.textMuted}
+                  />
+                  <Text style={[
+                    styles.driverText,
+                    { color: driverCheck.status === 'confirmed' ? colors.success : driverCheck.status === 'flagged' ? colors.warning : colors.textMuted },
+                  ]}>
+                    {driverCheck.status === 'confirmed' ? `${t('driverConfirmed')}${driverCheck.name ? ` · ${driverCheck.name}` : ''}` : driverCheck.status === 'flagged' ? t('driverFlagged') : t('faceCheckUnavailable')}
+                  </Text>
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.driverBtn} onPress={() => handleVerifyDriver(current)} disabled={verifying} activeOpacity={0.8}>
+                  <MaterialCommunityIcons name="face-recognition" size={16} color={colors.info} />
+                  <Text style={styles.driverBtnText}>{verifying ? t('verifyingDriver') : t('verifyDriver')}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           <View style={styles.actions}>
-            <GradientButton title="Approve" icon="check-circle" variant="success" onPress={handleApprove} loading={actionLoading} />
-            <GradientButton title="Deny" icon="close-circle" variant="danger" onPress={handleDeny} loading={actionLoading} />
+            <GradientButton title={t('approve')} icon="check-circle" variant="success" onPress={handleApprove} loading={actionLoading} />
+            <GradientButton title={t('deny')} icon="close-circle" variant="danger" onPress={handleDeny} loading={actionLoading} />
             {showRegisterButton && !showRegister && (
-              <GradientButton title="Approve + Register" icon="plus-circle" variant="primary" onPress={() => setShowRegister(true)} />
+              <GradientButton title={t('approveRegister')} icon="plus-circle" variant="primary" onPress={() => setShowRegister(true)} />
             )}
           </View>
 
           {/* Notify Resident */}
           {!showRegister && !showNotify && (
-            <GradientButton title="Request Approval" icon="bell-ring" variant="primary" onPress={() => setShowNotify(true)} />
+            <GradientButton title={t('requestApproval')} icon="bell-ring" variant="primary" onPress={() => setShowNotify(true)} />
           )}
 
           {showNotify && (
             <AnimatedEntry direction="fade" duration={200}>
               <View style={styles.registerForm}>
-                <Text style={styles.registerLabel}>REQUEST APPROVAL</Text>
+                <Text style={styles.registerLabel}>{t('requestApprovalTitle')}</Text>
                 <TextInput
                   style={styles.registerInput}
-                  placeholder="Visitor name"
+                  placeholder={t('visitorName')}
                   placeholderTextColor={colors.textMuted}
                   value={notifyName}
                   onChangeText={setNotifyName}
                 />
                 <TextInput
                   style={styles.registerInput}
-                  placeholder="Unit number"
+                  placeholder={t('unitNumber')}
                   placeholderTextColor={colors.textMuted}
                   value={notifyUnit}
                   onChangeText={setNotifyUnit}
                 />
                 <View style={styles.registerActions}>
                   <View style={{ flex: 1 }}>
-                    <GradientButton title="Cancel" variant="danger" onPress={() => { setShowNotify(false); setNotifyName(''); setNotifyUnit(''); }} />
+                    <GradientButton title={t('cancel')} variant="danger" onPress={() => { setShowNotify(false); setNotifyName(''); setNotifyUnit(''); }} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <GradientButton title="Send" icon="bell-ring" variant="success" onPress={handleRequestApproval} loading={notifyLoading} disabled={!notifyName.trim() || !notifyUnit.trim()} />
+                    <GradientButton title={t('send')} icon="bell-ring" variant="success" onPress={handleRequestApproval} loading={notifyLoading} disabled={!notifyName.trim() || !notifyUnit.trim()} />
                   </View>
                 </View>
               </View>
@@ -225,20 +280,20 @@ export default function ActionZone() {
           {showRegister && (
             <AnimatedEntry direction="fade" duration={200}>
               <View style={styles.registerForm}>
-                <Text style={styles.registerLabel}>REGISTER VEHICLE</Text>
+                <Text style={styles.registerLabel}>{t('registerVehicle')}</Text>
                 <TextInput
                   style={styles.registerInput}
-                  placeholder="Unit number"
+                  placeholder={t('unitNumber')}
                   placeholderTextColor={colors.textMuted}
                   value={unitNumber}
                   onChangeText={setUnitNumber}
                 />
                 <View style={styles.registerActions}>
                   <View style={{ flex: 1 }}>
-                    <GradientButton title="Cancel" variant="danger" onPress={() => { setShowRegister(false); setUnitNumber(''); }} />
+                    <GradientButton title={t('cancel')} variant="danger" onPress={() => { setShowRegister(false); setUnitNumber(''); }} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <GradientButton title="Register & Open" icon="check-circle" variant="success" onPress={handleRegister} loading={actionLoading} disabled={!unitNumber.trim()} />
+                    <GradientButton title={t('registerOpen')} icon="check-circle" variant="success" onPress={handleRegister} loading={actionLoading} disabled={!unitNumber.trim()} />
                   </View>
                 </View>
               </View>
@@ -261,6 +316,14 @@ const styles = StyleSheet.create({
   residentText: { fontSize: 14, color: colors.textSecondary },
   timeText: { fontSize: 12, color: colors.textMuted },
   actions: { gap: spacing.sm },
+  driverBlock: { marginBottom: spacing.sm },
+  driverBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.sm, borderRadius: radius.sm },
+  driverText: { fontSize: 13, fontWeight: '700', flex: 1 },
+  driverBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+    paddingVertical: spacing.sm, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.surfaceBorder, backgroundColor: colors.surface,
+  },
+  driverBtnText: { fontSize: 13, fontWeight: '700', color: colors.info },
   registerForm: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.surfaceBorder },
   registerLabel: { fontSize: 10, fontWeight: '700', color: colors.textMuted, letterSpacing: 1.5, marginBottom: spacing.sm },
   registerInput: {
