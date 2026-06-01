@@ -84,9 +84,11 @@ router.post('/auth/guard-login', loginLimiter, async (req, res) => {
     // Look up guard by username (name) or mobile, must have password_hash
     let guard = await queryOne(
       `SELECT r.id, r.community_id, r.unit_id, r.name, r.mobile, r.type,
-              r.password_hash,
+              r.password_hash, r.preferred_language,
+              c.config AS community_config,
               g.id AS gate_id
        FROM residents r
+       JOIN communities c ON c.id = r.community_id
        LEFT JOIN gates g ON g.community_id = r.community_id AND g.is_active = true
        WHERE r.is_active = true
          AND r.type = 'guard'
@@ -118,6 +120,9 @@ router.post('/auth/guard-login', loginLimiter, async (req, res) => {
     });
 
     const refreshToken = signRefreshToken(guard.id);
+    // Language: guard's saved preference → society default (communities.config) → 'en'.
+    const societyDefault = guard.community_config?.default_language;
+    const language = guard.preferred_language || societyDefault || 'en';
     return success(res, {
       token,
       refreshToken,
@@ -125,6 +130,7 @@ router.post('/auth/guard-login', loginLimiter, async (req, res) => {
         name: guard.name,
         role: 'guard',
         gateId: guard.gate_id || null,
+        language,
       },
     });
   } catch (err) {

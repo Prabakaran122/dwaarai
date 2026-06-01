@@ -15,6 +15,16 @@ import notificationRoutes from './routes/notifications.js';
 import approvalRoutes from './routes/approvals.js';
 import recurringPassRoutes from './routes/recurring-passes.js';
 import expectedVisitRoutes from './routes/expected-visits.js';
+import memberRoutes from './routes/members.js';
+import noticeRoutes from './routes/notices.js';
+import dueRoutes from './routes/dues.js';
+import faceRoutes from './routes/face.js';
+import guardRoutes from './routes/guard.js';
+import sosRoutes from './routes/sos.js';
+import deliveryRoutes from './routes/deliveries.js';
+import handoverRoutes from './routes/handover.js';
+import staffRoutes from './routes/staff.js';
+import incidentRoutes from './routes/incidents.js';
 import { startVisitCron } from './cron/generate-visits.js';
 import { initWebSocket } from './websocket.js';
 
@@ -31,7 +41,11 @@ app.use(cors({
   origin: CORS_ORIGINS,
   credentials: true,
 }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({
+  limit: '10mb',
+  // Preserve the exact bytes so payment webhooks can verify their HMAC signature.
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 app.use(requestIdMiddleware);
 app.use(globalLimiter);
 
@@ -49,6 +63,16 @@ app.use('/api/v1', notificationRoutes);
 app.use('/api/v1', approvalRoutes);
 app.use('/api/v1', recurringPassRoutes);
 app.use('/api/v1', expectedVisitRoutes);
+app.use('/api/v1', memberRoutes);
+app.use('/api/v1', noticeRoutes);
+app.use('/api/v1', dueRoutes);
+app.use('/api/v1', faceRoutes);
+app.use('/api/v1', guardRoutes);
+app.use('/api/v1', sosRoutes);
+app.use('/api/v1', deliveryRoutes);
+app.use('/api/v1', handoverRoutes);
+app.use('/api/v1', staffRoutes);
+app.use('/api/v1', incidentRoutes);
 
 // Serve uploaded visit photos
 const UPLOAD_BASE = process.env.UPLOAD_DIR || '/opt/communitygate/uploads';

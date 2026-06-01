@@ -99,9 +99,11 @@ router.post('/approvals', authenticateJWT(['guard']), async (req, res) => {
       [community_id, unit.id, gate_id, user.sub, visitor_name, vehicle_plate || null, expiresAt]
     );
 
-    // Send push to all active residents in the unit
+    // Send push to active residents in the unit who haven't opted out of
+    // gate-approval alerts (notify_on_approval). The primary resident always
+    // keeps this on, so a unit can never end up with nobody notified.
     const residents = await queryRows(
-      'SELECT id, fcm_token, name FROM residents WHERE unit_id = $1 AND is_active = true',
+      'SELECT id, fcm_token, name FROM residents WHERE unit_id = $1 AND is_active = true AND notify_on_approval IS NOT FALSE',
       [unit.id]
     );
 
