@@ -70,7 +70,7 @@ describe('API Gateway', () => {
     });
     expect(status).toBe(200);
     expect(json.success).toBe(true);
-    expect(json.data.vehicles).toEqual([]);
+    expect(json.data).toEqual([]);
   });
 
   it('GET /api/v1/vehicles with resident JWT returns 200', async () => {
@@ -174,7 +174,7 @@ describe('API Gateway', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(status).toBe(200);
-    expect(json.data.passes).toEqual([]);
+    expect(json.data).toEqual([]);
   });
 
   it('GET /api/v1/reports/daily requires date param', async () => {
