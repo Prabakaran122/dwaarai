@@ -33,3 +33,9 @@ next-env.d.ts
 *.jpg
 *.pdf
 dwaar-ai-*.html
+
+# Built mobile APKs — distributed via EAS / dwaarai.in/install, not committed
+apk-builds/
+*.apk
+# Stray empty Expo config accidentally created at repo root (real config lives in apps/*/app.json)
+/app.json
