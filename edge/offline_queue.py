@@ -1,9 +1,14 @@
-import sqlite3, json, time, uuid as _uuid, logging, requests
+import os, sqlite3, json, time, uuid as _uuid, logging, requests
 log = logging.getLogger("offline_queue")
 
 class OfflineQueue:
     def __init__(self, path):
         self.path = path
+        # Ensure the parent directory exists (persistent paths like
+        # /var/lib/communitygate/ won't exist on a fresh install).
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         with sqlite3.connect(path) as c:
             c.execute("""CREATE TABLE IF NOT EXISTS pending_events (
                 id TEXT PRIMARY KEY, payload TEXT NOT NULL,
@@ -28,7 +33,7 @@ class OfflineQueue:
                                  headers={"X-Device-Token":token}, timeout=30)
             if resp.status_code == 200:
                 with sqlite3.connect(self.path) as c:
-                    c.executemany("UPDATE pending_events SET synced=1 WHERE id=?",
+                    c.executemany("DELETE FROM pending_events WHERE id=?",
                                  [(r[0],) for r in rows])
                 log.info(f"Synced {len(rows)} offline events"); return len(rows)
         except Exception as e:

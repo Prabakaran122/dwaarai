@@ -14,7 +14,7 @@ Configure your ANPR camera to POST events to:
 Runs on port 8001 (same port as old ANPR service).
 """
 import json, logging, re, threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from xml.etree import ElementTree
 
 log = logging.getLogger("anpr_receiver")
@@ -163,7 +163,9 @@ class ANPRReceiver:
     def start(self):
         """Start the HTTP server in a background thread."""
         ANPREventHandler.callback = self.callback
-        self._server = HTTPServer(('0.0.0.0', self.port), ANPREventHandler)
+        # ThreadingHTTPServer: each plate event is handled on its own thread so a
+        # slow cloud access-check in the callback can't stall the next camera event.
+        self._server = ThreadingHTTPServer(('0.0.0.0', self.port), ANPREventHandler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
         log.info(f"ANPR receiver listening on port {self.port}")
