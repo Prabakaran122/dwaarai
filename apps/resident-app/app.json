@@ -21,6 +21,9 @@
         "projectId": "d2c60a2a-2eb4-44b7-9640-b092d62294cf"
       }
     },
-    "owner": "skprabakaran122"
+    "owner": "skprabakaran122",
+    "plugins": [
+      "expo-font"
+    ]
   }
 }
