@@ -39,3 +39,6 @@ apk-builds/
 *.apk
 # Stray empty Expo config accidentally created at repo root (real config lives in apps/*/app.json)
 /app.json
+
+# Playwright MCP scratch
+.playwright-mcp/
