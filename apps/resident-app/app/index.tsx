@@ -15,6 +15,8 @@ import ProfileScreen from '../src/screens/ProfileScreen';
 import ApprovalScreen from '../src/screens/ApprovalScreen';
 import NoticeBoardScreen from '../src/screens/NoticeBoardScreen';
 import { registerForPushNotifications, setupNotificationListeners } from '../src/lib/notifications';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useAppFonts } from '../src/lib/fonts';
 
 type TabKey = 'home' | 'visitors' | 'vehicles' | 'community' | 'activity' | 'profile';
 
@@ -106,22 +108,25 @@ export default function Page() {
   const isLoading = useAuthStore((s) => s.isLoading);
   const showRegister = useAuthStore((s) => s.showRegister);
   const rehydrate = useAuthStore((s) => s.rehydrate);
+  const fontsLoaded = useAppFonts();
 
   useEffect(() => { rehydrate(); }, []);
 
-  if (isLoading) {
+  if (!fontsLoaded || isLoading) {
     return (
-      <LinearGradient colors={colors.gradientBg} style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={colors.info} />
-      </LinearGradient>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.mist }}>
+        <ActivityIndicator size="large" color={colors.teal} />
+      </View>
     );
   }
 
-  if (!isAuthenticated) {
-    return showRegister ? <RegisterScreen /> : <LoginScreen />;
-  }
-
-  return <ResidentApp />;
+  return (
+    <SafeAreaProvider>
+      {!isAuthenticated
+        ? (showRegister ? <RegisterScreen /> : <LoginScreen />)
+        : <ResidentApp />}
+    </SafeAreaProvider>
+  );
 }
 
 const tabStyles = StyleSheet.create({

@@ -12,6 +12,9 @@
   },
   "dependencies": {
     "@babel/runtime": "^7.29.2",
+    "@expo-google-fonts/dm-sans": "^0.4.2",
+    "@expo-google-fonts/noto-sans-devanagari": "^0.4.1",
+    "@expo-google-fonts/noto-sans-kannada": "^0.4.3",
     "@expo/vector-icons": "~14.0.4",
     "@react-native-async-storage/async-storage": "1.23.1",
     "@react-navigation/bottom-tabs": "^7.0.0",
@@ -21,6 +24,7 @@
     "expo": "~52.0.0",
     "expo-constants": "~17.0.8",
     "expo-device": "~7.0.3",
+    "expo-font": "~13.0.4",
     "expo-linear-gradient": "~14.0.2",
     "expo-linking": "~7.0.5",
     "expo-notifications": "~0.29.14",
