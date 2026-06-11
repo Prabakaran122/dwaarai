@@ -10,6 +10,7 @@ import LoginScreen from '../src/screens/LoginScreen';
 import RegisterScreen from '../src/screens/RegisterScreen';
 import ApprovalScreen from '../src/screens/ApprovalScreen';
 import TabPlaceholder from '../src/components/TabPlaceholder';
+import ComponentGallery from '../src/screens/ComponentGallery';
 import { registerForPushNotifications, setupNotificationListeners } from '../src/lib/notifications';
 import { useAppFonts } from '../src/lib/fonts';
 
@@ -65,7 +66,7 @@ function ResidentApp() {
         {tab === 'myunit' && <TabPlaceholder name="My Unit" icon="home-city" />}
         {tab === 'community' && <TabPlaceholder name="Community" icon="forum" />}
         {tab === 'events' && <TabPlaceholder name="Events" icon="calendar-star" />}
-        {tab === 'profile' && <TabPlaceholder name="Profile" icon="account" />}
+        {tab === 'profile' && (__DEV__ ? <ComponentGallery /> : <TabPlaceholder name="Profile" icon="account" />)}
       </View>
 
       {/* Tab Bar */}
