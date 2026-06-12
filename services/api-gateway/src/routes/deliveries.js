@@ -131,6 +131,9 @@ router.get('/deliveries', authenticateJWT(['resident']), async (req, res) => {
   try {
     const { community_id, unit_id } = req.user;
     const statusFilter = req.query.status || null;
+    if (statusFilter && !['waiting', 'delivered', 'left_at_gate'].includes(statusFilter)) {
+      return error(res, 'Invalid status filter', 400);
+    }
     let sql = 'SELECT * FROM deliveries WHERE community_id = $1 AND unit_id = $2';
     const params = [community_id, unit_id];
     if (statusFilter) {
@@ -142,6 +145,28 @@ router.get('/deliveries', authenticateJWT(['resident']), async (req, res) => {
     return success(res, rows.map(shape));
   } catch (err) {
     console.error('GET /deliveries error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- POST /deliveries/:id/collect (resident) — mark my parcel collected ------
+
+router.post('/deliveries/:id/collect', authenticateJWT(['resident']), async (req, res) => {
+  try {
+    const { community_id, unit_id } = req.user;
+    const d = await queryOne(
+      'SELECT id, unit_id, status FROM deliveries WHERE id = $1 AND community_id = $2',
+      [req.params.id, community_id]
+    );
+    if (!d) return error(res, 'Delivery not found', 404);
+    if (d.unit_id !== unit_id) return error(res, 'Not your delivery', 403);
+    if (d.status !== 'waiting') return error(res, 'Delivery already resolved', 409);
+
+    await query("UPDATE deliveries SET status = 'delivered', resolved_at = NOW() WHERE id = $1", [d.id]);
+    broadcast(community_id, 'delivery:updated', { id: d.id, status: 'delivered' });
+    return success(res, { id: d.id, status: 'delivered' });
+  } catch (err) {
+    console.error('POST /deliveries/:id/collect error:', err);
     return error(res, 'Internal server error', 500);
   }
 });

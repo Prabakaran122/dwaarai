@@ -123,4 +123,47 @@ describe('Delivery management', () => {
     expect(json.data[0].company).toBe('Amazon');
     expect(queryRows.mock.calls[0][1]).toEqual(['c1', 'u1']);
   });
+
+  it('POST /deliveries/:id/collect requires a resident', async () => {
+    const r = await request('POST', '/api/v1/deliveries/d1/collect', { headers: { Authorization: `Bearer ${guard}` } });
+    expect(r.status).toBe(403);
+  });
+
+  it('collect returns 404 for an unknown delivery', async () => {
+    queryOne.mockResolvedValueOnce(null);
+    const { status } = await request('POST', '/api/v1/deliveries/dX/collect', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(404);
+  });
+
+  it('collect rejects another unit\'s parcel with 403', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'd1', unit_id: 'u2', status: 'waiting' });
+    const { status } = await request('POST', '/api/v1/deliveries/d1/collect', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(403);
+  });
+
+  it('collect rejects an already-resolved parcel with 409', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'd1', unit_id: 'u1', status: 'delivered' });
+    const { status } = await request('POST', '/api/v1/deliveries/d1/collect', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(409);
+  });
+
+  it('collect marks the parcel delivered and broadcasts', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'd1', unit_id: 'u1', status: 'waiting' });
+    const { status, json } = await request('POST', '/api/v1/deliveries/d1/collect', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(200);
+    expect(json.data.status).toBe('delivered');
+    expect(broadcast.mock.calls[0][1]).toBe('delivery:updated');
+  });
+
+  it('GET /deliveries?status=waiting filters by status', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    const { status } = await request('GET', '/api/v1/deliveries?status=waiting', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(200);
+    expect(queryRows.mock.calls[0][1]).toEqual(['c1', 'u1', 'waiting']);
+  });
+
+  it('GET /deliveries rejects an invalid status filter', async () => {
+    const { status } = await request('GET', '/api/v1/deliveries?status=bogus', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(400);
+  });
 });
