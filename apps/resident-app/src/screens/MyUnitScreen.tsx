@@ -14,8 +14,9 @@ import VehiclesScreen from './VehiclesScreen';
 import DuesScreen from './DuesScreen';
 import PetsScreen from './PetsScreen';
 import PetRow from '../components/PetRow';
+import DocumentsScreen from './DocumentsScreen';
 
-type Overlay = 'members' | 'vehicles' | 'dues' | 'pets' | null;
+type Overlay = 'members' | 'vehicles' | 'dues' | 'pets' | 'documents' | null;
 
 interface Props { onNavigate?: (tab: 'home' | 'myunit' | 'community' | 'events' | 'profile') => void; }
 
@@ -32,6 +33,7 @@ export default function MyUnitScreen({ onNavigate }: Props) {
   if (overlay === 'vehicles') return <VehiclesScreen onClose={() => { setOverlay(null); load(); }} />;
   if (overlay === 'dues') return <DuesScreen onClose={() => { setOverlay(null); load(); }} />;
   if (overlay === 'pets') return <PetsScreen onBack={() => { setOverlay(null); load(); }} />;
+  if (overlay === 'documents') return <DocumentsScreen onBack={() => setOverlay(null)} />;
 
   const members = profile?.members ?? [];
   const vehicles = profile?.vehicles ?? [];
@@ -70,8 +72,13 @@ export default function MyUnitScreen({ onNavigate }: Props) {
         </View>
 
         <View style={styles.block}>
+          <SectionHeader title="Documents" actionLabel="Open" onAction={() => setOverlay('documents')} />
+          <Card><Text style={type.bodySecondary}>Ownership deed, maintenance receipts, ID proof — your secure unit vault.</Text></Card>
+        </View>
+
+        <View style={styles.block}>
           <SectionHeader title="More" />
-          <Card><Text style={type.bodySecondary}>Documents &amp; facility booking are coming in this redesign.</Text></Card>
+          <Card><Text style={type.bodySecondary}>Facility booking is coming in this redesign.</Text></Card>
         </View>
       </ScrollView>
     </View>
