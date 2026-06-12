@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { render, fireEvent } from '@testing-library/react-native';
 import CommunityStrip from './CommunityStrip';
 
 describe('CommunityStrip', () => {
@@ -13,5 +13,13 @@ describe('CommunityStrip', () => {
     const { getByText } = render(<CommunityStrip pinnedNotice={null} upcomingEvent={null} />);
     expect(getByText('No announcements')).toBeTruthy();
     expect(getByText('Nothing scheduled yet')).toBeTruthy();
+  });
+
+  it('fires onNotice when the pinned notice is tapped', () => {
+    const onNotice = jest.fn();
+    const notice = { id: 'n1', title: 'Water cut 6pm', authorName: 'RWA', createdAt: '2026-06-12T10:00:00Z' };
+    const { getByText } = render(<CommunityStrip pinnedNotice={notice} upcomingEvent={null} onNotice={onNotice} />);
+    fireEvent.press(getByText('Water cut 6pm'));
+    expect(onNotice).toHaveBeenCalledTimes(1);
   });
 });
