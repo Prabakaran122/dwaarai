@@ -41,7 +41,7 @@ const badgeStyles = StyleSheet.create({
   text: { fontSize: 10, fontWeight: '700' },
 });
 
-export default function VehiclesScreen() {
+export default function VehiclesScreen({ onClose }: { onClose?: () => void } = {}) {
   const { vehicles, loading, fetch, add, update, remove } = useVehicleStore();
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Vehicle | null>(null);
@@ -85,6 +85,11 @@ export default function VehiclesScreen() {
 
   return (
     <LinearGradient colors={colors.gradientBg} style={styles.container}>
+      {onClose && (
+        <TouchableOpacity onPress={onClose} style={{ padding: spacing.lg, paddingBottom: 0 }}>
+          <MaterialCommunityIcons name="chevron-left" size={26} color={colors.textPrimary} />
+        </TouchableOpacity>
+      )}
       <FlatList
         data={vehicles}
         keyExtractor={(v) => v.id}
