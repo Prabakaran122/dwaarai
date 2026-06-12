@@ -27,5 +27,6 @@ module.exports = {
     // ("RCTText") — so getByText/getByRole silently match nothing. Pin both to one
     // instance so host-component detection agrees with what tests render.
     '^react-native$': require.resolve('react-native'),
+    '^react-native-safe-area-context$': '<rootDir>/src/__mocks__/react-native-safe-area-context.js',
   },
 };
