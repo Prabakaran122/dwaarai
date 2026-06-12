@@ -28,5 +28,6 @@ module.exports = {
     // instance so host-component detection agrees with what tests render.
     '^react-native$': require.resolve('react-native'),
     '^react-native-safe-area-context$': '<rootDir>/src/__mocks__/react-native-safe-area-context.js',
+    '^expo-linear-gradient$': '<rootDir>/src/__mocks__/expo-linear-gradient.js',
   },
 };
