@@ -20,7 +20,7 @@ const DURATION_OPTIONS = [
   { label: 'Custom', hours: 0 },
 ];
 
-export default function VisitorsScreen() {
+export default function VisitorsScreen({ onClose }: { onClose?: () => void } = {}) {
   const user = useAuthStore((s) => s.user);
   const [passes, setPasses] = useState<PassData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -130,6 +130,11 @@ export default function VisitorsScreen() {
 
   return (
     <LinearGradient colors={colors.gradientBg} style={styles.container}>
+      {onClose && (
+        <TouchableOpacity onPress={onClose} style={{ padding: spacing.lg, paddingBottom: 0 }}>
+          <MaterialCommunityIcons name="chevron-left" size={26} color={colors.textPrimary} />
+        </TouchableOpacity>
+      )}
       {/* Quick Share Bar */}
       <TouchableOpacity onPress={() => setShowForm(true)} activeOpacity={0.8} style={styles.shareBarWrap}>
         <LinearGradient colors={colors.gradientAccent as [string, string]} style={styles.shareBar}>
