@@ -11,6 +11,7 @@ import RegisterScreen from '../src/screens/RegisterScreen';
 import ApprovalScreen from '../src/screens/ApprovalScreen';
 import TabPlaceholder from '../src/components/TabPlaceholder';
 import ComponentGallery from '../src/screens/ComponentGallery';
+import HomeScreen from '../src/screens/HomeScreen';
 import { registerForPushNotifications, setupNotificationListeners } from '../src/lib/notifications';
 import { useAppFonts } from '../src/lib/fonts';
 
@@ -62,7 +63,7 @@ function ResidentApp() {
     <View style={{ flex: 1, backgroundColor: colors.mist }}>
       {/* Content */}
       <View style={{ flex: 1, backgroundColor: colors.mist }}>
-        {tab === 'home' && <TabPlaceholder name="Home" icon="home-variant" />}
+        {tab === 'home' && <HomeScreen onNavigate={setTab} />}
         {tab === 'myunit' && <TabPlaceholder name="My Unit" icon="home-city" />}
         {tab === 'community' && <TabPlaceholder name="Community" icon="forum" />}
         {tab === 'events' && <TabPlaceholder name="Events" icon="calendar-star" />}
