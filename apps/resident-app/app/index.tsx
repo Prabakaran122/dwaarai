@@ -13,6 +13,7 @@ import TabPlaceholder from '../src/components/TabPlaceholder';
 import ComponentGallery from '../src/screens/ComponentGallery';
 import HomeScreen from '../src/screens/HomeScreen';
 import MyUnitScreen from '../src/screens/MyUnitScreen';
+import CommunityScreen from '../src/screens/CommunityScreen';
 import { registerForPushNotifications, setupNotificationListeners } from '../src/lib/notifications';
 import { useAppFonts } from '../src/lib/fonts';
 
@@ -66,7 +67,7 @@ function ResidentApp() {
       <View style={{ flex: 1, backgroundColor: colors.mist }}>
         {tab === 'home' && <HomeScreen onNavigate={setTab} />}
         {tab === 'myunit' && <MyUnitScreen onNavigate={setTab} />}
-        {tab === 'community' && <TabPlaceholder name="Community" icon="forum" />}
+        {tab === 'community' && <CommunityScreen />}
         {tab === 'events' && <TabPlaceholder name="Events" icon="calendar-star" />}
         {tab === 'profile' && (__DEV__ ? <ComponentGallery /> : <TabPlaceholder name="Profile" icon="account" />)}
       </View>
