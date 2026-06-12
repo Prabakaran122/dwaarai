@@ -23,7 +23,7 @@ const styles = StyleSheet.create({
   card: { gap: spacing.xs },
   pin: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: colors.overlayLight,
     borderRadius: 4,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,

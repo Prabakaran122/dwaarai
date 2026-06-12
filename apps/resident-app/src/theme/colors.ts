@@ -31,6 +31,7 @@ const palette = {
   // Surfaces
   surface: '#FFFFFF',
   surfaceBorder: 'rgba(27,58,75,0.15)',
+  overlayLight: 'rgba(255,255,255,0.15)',
   inputBorder: 'rgba(27,58,75,0.20)',
   notifBadge: '#E84C3D',
   white: '#FFFFFF',

@@ -17,16 +17,18 @@ export default function ComposeSheet({ visible, onClose, onPosted }: { visible: 
   const [question, setQuestion] = useState('');
   const [options, setOptions] = useState(['', '']);
   const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
 
   const reset = () => { setTitle(''); setBody(''); setCategory('general'); setQuestion(''); setOptions(['', '']); setTab('issue'); };
   const close = () => { reset(); onClose(); };
 
   const submit = async () => {
+    setMsg(null);
     setSaving(true);
     try {
-      if (tab === 'issue') { if (!title.trim() || !body.trim()) return; await api.createIssue({ title: title.trim(), body: body.trim(), category }); }
-      else if (tab === 'discussion') { if (!title.trim() || !body.trim()) return; await api.createNotice({ title: title.trim(), body: body.trim() }); }
-      else { const opts = options.map((o) => o.trim()).filter(Boolean); if (!question.trim() || opts.length < 2) return; await api.createPoll({ question: question.trim(), options: opts }); }
+      if (tab === 'issue') { if (!title.trim() || !body.trim()) { setMsg('Add a title and details.'); return; } await api.createIssue({ title: title.trim(), body: body.trim(), category }); }
+      else if (tab === 'discussion') { if (!title.trim() || !body.trim()) { setMsg('Add a title and details.'); return; } await api.createNotice({ title: title.trim(), body: body.trim() }); }
+      else { const opts = options.map((o) => o.trim()).filter(Boolean); if (!question.trim() || opts.length < 2) { setMsg('Add a question and at least 2 options.'); return; } await api.createPoll({ question: question.trim(), options: opts }); }
       reset(); onPosted();
     } catch { /* ignore */ } finally { setSaving(false); }
   };
@@ -52,7 +54,7 @@ export default function ComposeSheet({ visible, onClose, onPosted }: { visible: 
             ) : (
               <>
                 <Input label="Title" placeholder="Short title" value={title} onChangeText={setTitle} />
-                <Input label="Details" placeholder="Describe it" value={body} onChangeText={setBody} />
+                <Input testID="compose-body" label="Details" placeholder="Describe it" value={body} onChangeText={setBody} multiline style={{ minHeight: 90, textAlignVertical: 'top' }} />
                 {tab === 'issue' ? (
                   <View style={styles.cats}>
                     {ISSUE_CATS.map((c) => <Text key={c} onPress={() => setCategory(c)} style={[styles.cat, category === c && styles.catActive]}>{c}</Text>)}
@@ -60,6 +62,7 @@ export default function ComposeSheet({ visible, onClose, onPosted }: { visible: 
                 ) : null}
               </>
             )}
+            {msg ? <Text style={styles.msg}>{msg}</Text> : null}
             <Button title="Post" onPress={submit} loading={saving} style={styles.post} />
             <Text onPress={close} style={styles.cancel}>Cancel</Text>
           </ScrollView>
@@ -79,6 +82,7 @@ const styles = StyleSheet.create({
   cat: { ...font(500), fontSize: 12, color: colors.textSecondary, backgroundColor: colors.surface, borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, overflow: 'hidden', textTransform: 'capitalize' },
   catActive: { backgroundColor: colors.teal, color: colors.textInverse },
   addOpt: { ...font(500), fontSize: 13, color: colors.teal },
+  msg: { ...font(400), fontSize: 12, color: colors.textError, marginTop: spacing.xs },
   post: { marginTop: spacing.sm, alignSelf: 'flex-start' },
   cancel: { ...font(500), fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm },
 });

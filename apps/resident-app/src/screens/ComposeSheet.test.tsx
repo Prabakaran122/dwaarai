@@ -8,9 +8,9 @@ describe('ComposeSheet', () => {
   it('posts an issue', async () => {
     (api.createIssue as jest.Mock).mockResolvedValue({ data: { data: { id: 'i9' } } });
     const onPosted = jest.fn();
-    const { getByText, getByPlaceholderText } = render(<ComposeSheet visible onClose={() => {}} onPosted={onPosted} />);
+    const { getByText, getByPlaceholderText, getByTestId } = render(<ComposeSheet visible onClose={() => {}} onPosted={onPosted} />);
     fireEvent.changeText(getByPlaceholderText('Short title'), 'Gate light out');
-    fireEvent.changeText(getByPlaceholderText('Describe it'), 'Main gate light not working');
+    fireEvent.changeText(getByTestId('compose-body'), 'Main gate light not working');
     fireEvent.press(getByText('Post'));
     await waitFor(() => expect(api.createIssue).toHaveBeenCalledWith(expect.objectContaining({ title: 'Gate light out', body: 'Main gate light not working' })));
     await waitFor(() => expect(onPosted).toHaveBeenCalled());
