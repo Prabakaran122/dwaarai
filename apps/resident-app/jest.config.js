@@ -1,5 +1,9 @@
 module.exports = {
   preset: 'jest-expo',
+  // jest-expo suites are heavy; the default (cores-1) workers starve the
+  // async waitFor() screen tests under load and they time out non-deterministically.
+  // Cap concurrency so the suite is reliably green locally and in CI.
+  maxWorkers: 2,
   setupFiles: ['<rootDir>/jest.setup.js'],
   setupFilesAfterEnv: ['@testing-library/react-native/extend-expect'],
   // pnpm stores packages under node_modules/.pnpm/<pkg>/node_modules/<pkg>.
