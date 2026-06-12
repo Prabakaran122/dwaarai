@@ -14,4 +14,11 @@ describe('ProfileTabScreen', () => {
     expect(getByText(/A-204/)).toBeTruthy();
     expect(getByText('Log out')).toBeTruthy();
   });
+
+  it('renders safely with no user (fallback name, no crash)', () => {
+    useAuthStore.setState({ user: null as any });
+    const { getByText } = render(<ProfileTabScreen />);
+    expect(getByText('Resident')).toBeTruthy();
+    expect(getByText('Log out')).toBeTruthy();
+  });
 });

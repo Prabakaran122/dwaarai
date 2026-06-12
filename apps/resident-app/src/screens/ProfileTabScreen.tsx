@@ -7,7 +7,6 @@ import { font, type } from '../theme/typography';
 import { AppBar, Card, Avatar, Button, SectionHeader } from '../components/ui';
 import { useAuthStore } from '../store/authStore';
 import FaceIdentityScreen from './FaceIdentityScreen';
-import ComponentGallery from './ComponentGallery';
 
 const LANGS = [{ code: 'en', label: 'English' }, { code: 'hi', label: 'हिंदी' }, { code: 'kn', label: 'ಕನ್ನಡ' }];
 
@@ -29,7 +28,11 @@ export default function ProfileTabScreen() {
   const [lang, setLang] = useState('en');
 
   if (overlay === 'face') return <FaceIdentityScreen onClose={() => setOverlay(null)} />;
-  if (overlay === 'gallery') return <ComponentGallery />;
+  if (overlay === 'gallery') {
+    // Dev-only: required lazily so the gallery never lands in a production bundle.
+    const ComponentGallery = require('./ComponentGallery').default;
+    return <ComponentGallery />;
+  }
 
   return (
     <View style={styles.container}>
