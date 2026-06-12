@@ -154,6 +154,15 @@ export function dueReceiptUrl(paymentId: string) {
   return `${API_BASE}/dues/payments/${paymentId}/receipt`;
 }
 
+// Resident home (aggregate dashboard)
+export const getResidentHome = () => api.get('/resident/home');
+
+// Deliveries (parcels) — resident
+export const getDeliveries = (params?: Record<string, string>) =>
+  api.get('/deliveries', { params });
+
+export const collectDelivery = (id: string) => api.post(`/deliveries/${id}/collect`);
+
 // Face identity & consent
 export const getFaceIdentity = () => api.get('/face');
 
