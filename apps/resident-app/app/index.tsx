@@ -9,12 +9,11 @@ import { font } from '../src/theme/typography';
 import LoginScreen from '../src/screens/LoginScreen';
 import RegisterScreen from '../src/screens/RegisterScreen';
 import ApprovalScreen from '../src/screens/ApprovalScreen';
-import TabPlaceholder from '../src/components/TabPlaceholder';
-import ComponentGallery from '../src/screens/ComponentGallery';
 import HomeScreen from '../src/screens/HomeScreen';
 import MyUnitScreen from '../src/screens/MyUnitScreen';
 import CommunityScreen from '../src/screens/CommunityScreen';
 import EventsScreen from '../src/screens/EventsScreen';
+import ProfileTabScreen from '../src/screens/ProfileTabScreen';
 import { registerForPushNotifications, setupNotificationListeners } from '../src/lib/notifications';
 import { useAppFonts } from '../src/lib/fonts';
 
@@ -70,7 +69,7 @@ function ResidentApp() {
         {tab === 'myunit' && <MyUnitScreen onNavigate={setTab} />}
         {tab === 'community' && <CommunityScreen />}
         {tab === 'events' && <EventsScreen />}
-        {tab === 'profile' && (__DEV__ ? <ComponentGallery /> : <TabPlaceholder name="Profile" icon="account" />)}
+        {tab === 'profile' && <ProfileTabScreen />}
       </View>
 
       {/* Tab Bar */}
