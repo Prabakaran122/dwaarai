@@ -206,6 +206,15 @@ export const bookFacility = (id: string, data: { date: string; start: string }) 
 export const getMyBookings = () => api.get('/facilities/mine');
 export const cancelBooking = (id: string) => api.delete(`/facilities/bookings/${id}`);
 
+// Community
+export const getCommunityFeed = () => api.get('/community/feed');
+export const getIssues = () => api.get('/issues');
+export const createIssue = (data: { title: string; body: string; category?: string }) => api.post('/issues', data);
+export const upvoteIssue = (id: string) => api.post(`/issues/${id}/upvote`);
+export const getPolls = () => api.get('/polls');
+export const createPoll = (data: { question: string; options: string[]; closesAt?: string }) => api.post('/polls', data);
+export const votePoll = (id: string, optionId: string) => api.post(`/polls/${id}/vote`, { optionId });
+
 // 401 interceptor — auto-refresh token on expiry
 let isRefreshing = false;
 let refreshSubscribers: ((token: string) => void)[] = [];

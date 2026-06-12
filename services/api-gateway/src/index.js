@@ -30,6 +30,9 @@ import incidentRoutes from './routes/incidents.js';
 import petRoutes from './routes/pets.js';
 import documentRoutes from './routes/documents.js';
 import facilityRoutes from './routes/facilities.js';
+import issueRoutes from './routes/issues.js';
+import pollRoutes from './routes/polls.js';
+import communityFeedRoutes from './routes/community-feed.js';
 import { startVisitCron } from './cron/generate-visits.js';
 import { initWebSocket } from './websocket.js';
 
@@ -83,6 +86,10 @@ app.use('/api/v1', incidentRoutes);
 app.use('/api/v1', petRoutes);
 app.use('/api/v1', documentRoutes);
 app.use('/api/v1', facilityRoutes);
+// Community: /community/feed must be mounted before :id-style routes
+app.use('/api/v1', communityFeedRoutes);
+app.use('/api/v1', issueRoutes);
+app.use('/api/v1', pollRoutes);
 
 // Serve uploaded visit photos
 const UPLOAD_BASE = process.env.UPLOAD_DIR || '/opt/communitygate/uploads';
