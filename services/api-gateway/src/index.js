@@ -33,6 +33,7 @@ import facilityRoutes from './routes/facilities.js';
 import issueRoutes from './routes/issues.js';
 import pollRoutes from './routes/polls.js';
 import communityFeedRoutes from './routes/community-feed.js';
+import communityEventRoutes from './routes/community-events.js';
 import { startVisitCron } from './cron/generate-visits.js';
 import { initWebSocket } from './websocket.js';
 
@@ -88,6 +89,7 @@ app.use('/api/v1', documentRoutes);
 app.use('/api/v1', facilityRoutes);
 // Community: /community/feed must be mounted before :id-style routes
 app.use('/api/v1', communityFeedRoutes);
+app.use('/api/v1', communityEventRoutes);
 app.use('/api/v1', issueRoutes);
 app.use('/api/v1', pollRoutes);
 

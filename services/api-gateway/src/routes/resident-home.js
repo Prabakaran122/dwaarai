@@ -51,6 +51,12 @@ router.get('/resident/home', authenticateJWT(['resident']), async (req, res) => 
         ORDER BY last_activity_at DESC LIMIT 1`,
       [community_id]
     ),
+    queryOne(
+      `SELECT id, title, location, starts_at FROM events
+        WHERE community_id = $1 AND is_cancelled = false AND starts_at >= NOW()
+        ORDER BY starts_at ASC LIMIT 1`,
+      [community_id]
+    ),
   ]);
 
   const val = (i, fallback) => {
@@ -65,6 +71,7 @@ router.get('/resident/home', authenticateJWT(['resident']), async (req, res) => 
   const activity = val(3, []) || [];
   const dues = val(4, []) || [];
   const notice = val(5, null);
+  const upcoming = val(6, null);
 
   const outstanding = Number(
     dues.reduce((s, d) => s + Number(d.base_amount || 0) + Number(d.penalty_amount || 0), 0).toFixed(2)
@@ -94,7 +101,7 @@ router.get('/resident/home', authenticateJWT(['resident']), async (req, res) => 
       pinnedNotice: notice
         ? { id: notice.id, title: notice.title, authorName: notice.author_name, createdAt: notice.created_at }
         : null,
-      upcomingEvent: null,
+      upcomingEvent: upcoming ? { id: upcoming.id, title: upcoming.title, location: upcoming.location || null, startsAt: upcoming.starts_at } : null,
     },
   });
 });

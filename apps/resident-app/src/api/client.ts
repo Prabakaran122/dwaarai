@@ -206,6 +206,11 @@ export const bookFacility = (id: string, data: { date: string; start: string }) 
 export const getMyBookings = () => api.get('/facilities/mine');
 export const cancelBooking = (id: string) => api.delete(`/facilities/bookings/${id}`);
 
+// Events
+export const getEvents = (scope: 'upcoming' | 'past' = 'upcoming') => api.get('/community-events', { params: { scope } });
+export const createEvent = (data: { title: string; description?: string; location?: string; category?: string; startsAt: string; endsAt?: string }) => api.post('/community-events', data);
+export const rsvpEvent = (id: string, status: 'going' | 'maybe' | 'no') => api.post(`/community-events/${id}/rsvp`, { status });
+
 // Community
 export const getCommunityFeed = () => api.get('/community/feed');
 export const getIssues = () => api.get('/issues');

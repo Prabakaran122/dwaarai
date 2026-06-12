@@ -34,7 +34,8 @@ function seedHappyPath() {
     .mockResolvedValueOnce({ c: 2 })
     .mockResolvedValueOnce({ c: 1 })
     .mockResolvedValueOnce({ expected: 3, arrived: 1 })
-    .mockResolvedValueOnce({ id: 'n1', title: 'Water cut 6pm', author_name: 'RWA', created_at: new Date('2026-06-12T10:00:00Z') });
+    .mockResolvedValueOnce({ id: 'n1', title: 'Water cut 6pm', author_name: 'RWA', created_at: new Date('2026-06-12T10:00:00Z') })
+    .mockResolvedValueOnce({ id: 'ev1', title: 'Holi Bash', location: 'Clubhouse', starts_at: new Date('2026-06-20T17:00:00Z') });
   queryRows
     .mockResolvedValueOnce([
       { id: 'e1', event_ts: new Date('2026-06-12T09:00:00Z'), raw_value: 'KA01AB1234', detection_method: 'FASTag', direction: 'entry', access_decision: 'allow', resident_name: 'Mukesh' },
@@ -62,7 +63,7 @@ describe('GET /resident/home', () => {
     expect(json.data.recentActivity[0].plate).toBe('KA01AB1234');
     expect(json.data.dues).toEqual({ outstanding: 4500, earliestDueDate: '2026-06-30', pendingCount: 1 });
     expect(json.data.community.pinnedNotice.title).toBe('Water cut 6pm');
-    expect(json.data.community.upcomingEvent).toBeNull();
+    expect(json.data.community.upcomingEvent).toEqual({ id: 'ev1', title: 'Holi Bash', location: 'Clubhouse', startsAt: expect.anything() });
   });
 
   it('degrades a failed section to a default instead of 500', async () => {
@@ -70,6 +71,7 @@ describe('GET /resident/home', () => {
       .mockResolvedValueOnce({ c: 2 })
       .mockResolvedValueOnce({ c: 1 })
       .mockResolvedValueOnce({ expected: 0, arrived: 0 })
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null);
     queryRows
       .mockResolvedValueOnce([])
