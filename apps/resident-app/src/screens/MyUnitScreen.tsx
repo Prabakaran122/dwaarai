@@ -15,8 +15,9 @@ import DuesScreen from './DuesScreen';
 import PetsScreen from './PetsScreen';
 import PetRow from '../components/PetRow';
 import DocumentsScreen from './DocumentsScreen';
+import FacilityBookingScreen from './FacilityBookingScreen';
 
-type Overlay = 'members' | 'vehicles' | 'dues' | 'pets' | 'documents' | null;
+type Overlay = 'members' | 'vehicles' | 'dues' | 'pets' | 'documents' | 'facilities' | null;
 
 interface Props { onNavigate?: (tab: 'home' | 'myunit' | 'community' | 'events' | 'profile') => void; }
 
@@ -34,6 +35,7 @@ export default function MyUnitScreen({ onNavigate }: Props) {
   if (overlay === 'dues') return <DuesScreen onClose={() => { setOverlay(null); load(); }} />;
   if (overlay === 'pets') return <PetsScreen onBack={() => { setOverlay(null); load(); }} />;
   if (overlay === 'documents') return <DocumentsScreen onBack={() => setOverlay(null)} />;
+  if (overlay === 'facilities') return <FacilityBookingScreen onBack={() => setOverlay(null)} />;
 
   const members = profile?.members ?? [];
   const vehicles = profile?.vehicles ?? [];
@@ -77,8 +79,8 @@ export default function MyUnitScreen({ onNavigate }: Props) {
         </View>
 
         <View style={styles.block}>
-          <SectionHeader title="More" />
-          <Card><Text style={type.bodySecondary}>Facility booking is coming in this redesign.</Text></Card>
+          <SectionHeader title="Facilities" actionLabel="Book" onAction={() => setOverlay('facilities')} />
+          <Card><Text style={type.bodySecondary}>Book badminton, tennis, basketball and more — one tap.</Text></Card>
         </View>
       </ScrollView>
     </View>
