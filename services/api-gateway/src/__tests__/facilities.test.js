@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { slotStatus } from '../routes/facilities.js';
 
 vi.mock('../../src/db/queries.js', () => ({
   query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
@@ -64,6 +65,30 @@ const fakeFacility = {
   slot_minutes: 60,
 };
 
+// ── slotStatus unit tests (pure, deterministic) ─────────────────────────────
+
+describe('slotStatus (pure function)', () => {
+  it('returns "booked" when slot is booked by a different unit', () => {
+    expect(slotStatus('09:00', 'u2', 'u1', false, '08:00')).toBe('booked');
+  });
+
+  it('returns "mine" when slot is booked by the requesting unit', () => {
+    expect(slotStatus('09:00', 'u1', 'u1', false, '08:00')).toBe('mine');
+  });
+
+  it('returns "open" for an unbooked slot on a non-today date (isToday=false)', () => {
+    expect(slotStatus('06:00', null, 'u1', false, '09:00')).toBe('open');
+  });
+
+  it('returns "past" for an unbooked today-slot whose start is before nowHHMM', () => {
+    expect(slotStatus('06:00', null, 'u1', true, '09:00')).toBe('past');
+  });
+
+  it('returns "open" for an unbooked today-slot whose start is after nowHHMM', () => {
+    expect(slotStatus('21:00', null, 'u1', true, '09:00')).toBe('open');
+  });
+});
+
 // ── GET /facilities ──────────────────────────────────────────────────────────
 
 describe('GET /facilities', () => {
@@ -112,6 +137,8 @@ describe('GET /facilities', () => {
 
 describe('GET /facilities/:id/availability', () => {
   it('marks slots correctly (open and booked)', async () => {
+    // Use a future date (inThreeDays) so isToday=false and 06:00 is always 'open'
+    // regardless of what time the test runs — making this deterministic.
     // Call order:
     //  1. queryOne → facility row
     //  2. queryRows → bookings for that facility+date
@@ -122,7 +149,7 @@ describe('GET /facilities/:id/availability', () => {
 
     const { status, json } = await request(
       'GET',
-      `/api/v1/facilities/fac-1/availability?date=${today}`,
+      `/api/v1/facilities/fac-1/availability?date=${inThreeDays}`,
       { headers: { Authorization: `Bearer ${resident}` } }
     );
 
@@ -138,6 +165,7 @@ describe('GET /facilities/:id/availability', () => {
   });
 
   it('marks slot as "mine" when booked by the requesting unit', async () => {
+    // Use a future date (inThreeDays) so isToday=false for determinism.
     // Call order:
     //  1. queryOne → facility row
     //  2. queryRows → bookings with this unit's booking at 07:00
@@ -148,7 +176,7 @@ describe('GET /facilities/:id/availability', () => {
 
     const { status, json } = await request(
       'GET',
-      `/api/v1/facilities/fac-1/availability?date=${today}`,
+      `/api/v1/facilities/fac-1/availability?date=${inThreeDays}`,
       { headers: { Authorization: `Bearer ${resident}` } }
     );
 

@@ -96,7 +96,9 @@ router.post('/documents', authenticateJWT(['resident']), (req, res, next) => {
       return error(res, 'No file uploaded', 400);
     }
 
-    const month = new Date().toISOString().slice(0, 7);
+    // Derive the month from the folder multer actually wrote to, avoiding
+    // month-boundary drift if the month rolls over between storage and handler.
+    const month = path.basename(req.file.destination);
     const servedPath = `/uploads/documents/${month}/${req.file.filename}`;
 
     const doc = await queryOne(

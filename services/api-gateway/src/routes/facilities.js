@@ -7,6 +7,22 @@ import { authenticateJWT } from '../middleware/auth.js';
 const router = Router();
 
 // ---------------------------------------------------------------------------
+// IST helpers (India Standard Time = UTC+5:30, platform-wide assumption)
+// ---------------------------------------------------------------------------
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+function istNow() { return new Date(Date.now() + IST_OFFSET_MS); }
+function istTodayStr() { return istNow().toISOString().slice(0, 10); }   // 'YYYY-MM-DD' in IST
+function istNowHHMM() { return istNow().toISOString().slice(11, 16); }   // 'HH:MM' in IST
+
+// Pure slot-status decision so it can be unit-tested deterministically.
+// bookedByUnit: the unit_id that booked this slot start (or null if unbooked).
+export function slotStatus(start, bookedByUnit, myUnit, isToday, nowHHMM) {
+  if (bookedByUnit) return bookedByUnit === myUnit ? 'mine' : 'booked';
+  if (isToday && start < nowHHMM) return 'past';
+  return 'open';
+}
+
+// ---------------------------------------------------------------------------
 // Helper: build time slots between open and close times
 // open/close are 'HH:MM' or 'HH:MM:SS'; returns [{ start:'HH:MM', end:'HH:MM' }]
 // ---------------------------------------------------------------------------
@@ -33,7 +49,7 @@ const bookSchema = z.object({
 router.get('/facilities/mine', authenticateJWT(['resident']), async (req, res) => {
   try {
     const user = req.user;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = istTodayStr();
 
     const bookings = await queryRows(
       `SELECT fb.id,
@@ -131,27 +147,27 @@ router.get('/facilities/:id/availability', authenticateJWT(['resident']), async 
       [facilityId, date]
     );
 
-    // Build a map of start -> unit_id for fast lookup
+    // Build a map of start -> unit_id for fast lookup (normalize to 'HH:MM')
     const bookedMap = new Map(); // 'HH:MM' -> unit_id
     for (const b of bookings) {
-      // Normalize to HH:MM (DB may return 'HH:MM:SS')
       const key = String(b.start_time).slice(0, 5);
       bookedMap.set(key, b.unit_id);
     }
 
-    // Build all slots and mark status
+    // IST-aware past-slot computation
+    const isToday = date === istTodayStr();
+    const nowHHMM = istNowHHMM();
+
+    // Build all slots and mark status using the pure slotStatus function
     const slots = buildSlots(
       String(facility.open_time),
       String(facility.close_time),
       facility.slot_minutes
-    ).map((slot) => {
-      const bookedUnit = bookedMap.get(slot.start);
-      let status = 'open';
-      if (bookedUnit) {
-        status = bookedUnit === user.unit_id ? 'mine' : 'booked';
-      }
-      return { start: slot.start, end: slot.end, status };
-    });
+    ).map((slot) => ({
+      start: slot.start,
+      end: slot.end,
+      status: slotStatus(slot.start, bookedMap.get(slot.start) || null, user.unit_id, isToday, nowHHMM),
+    }));
 
     return success(res, {
       facility: {
@@ -204,14 +220,19 @@ router.post('/facilities/:id/book', authenticateJWT(['resident']), async (req, r
     }
     const end = matchedSlot.end;
 
-    // Window check: today .. today+7 (inclusive)
-    const today = new Date().toISOString().slice(0, 10);
-    const maxDate = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    // Window check: today .. today+7 (inclusive) — all in IST
+    const today = istTodayStr();
+    const maxDate = new Date(istNow().getTime() + 7 * 86400000).toISOString().slice(0, 10);
     if (date < today) {
       return error(res, 'Date in the past', 400);
     }
     if (date > maxDate) {
       return error(res, 'Outside booking window', 400);
+    }
+
+    // Past-slot check: cannot book a slot that has already passed today (IST)
+    if (date === today && start < istNowHHMM()) {
+      return error(res, 'Slot has passed', 400);
     }
 
     // Conflict check: existing booked slot for this facility+date+start
@@ -289,11 +310,13 @@ router.delete('/facilities/bookings/:id', authenticateJWT(['resident']), async (
       return error(res, 'Booking not found', 404);
     }
 
-    // Cutoff: cannot cancel if less than 1 hour from the slot start
+    // Cutoff: cannot cancel if less than 1 hour from the slot start.
+    // Normalize date and time robustly (handles both string 'YYYY-MM-DD' and Date objects).
+    const dateStr = String(booking.booking_date).slice(0, 10);
     const startStr = String(booking.start_time).slice(0, 5); // 'HH:MM'
-    const slotDateTime = new Date(`${booking.booking_date}T${startStr}:00`);
-    const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000);
-    if (slotDateTime < oneHourFromNow) {
+    // Anchor to IST so the cutoff is server-TZ-independent
+    const slotStart = new Date(`${dateStr}T${startStr}:00+05:30`);
+    if (slotStart.getTime() - Date.now() < 3600000) {
       return error(res, 'Too late to cancel', 409);
     }
 
