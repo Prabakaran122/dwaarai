@@ -105,4 +105,22 @@ describe('Delivery management', () => {
     });
     expect(status).toBe(404);
   });
+
+  it('GET /deliveries (resident) requires a resident token', async () => {
+    const r1 = await request('GET', '/api/v1/deliveries');
+    expect(r1.status).toBe(401);
+    const r2 = await request('GET', '/api/v1/deliveries', { headers: { Authorization: `Bearer ${guard}` } });
+    expect(r2.status).toBe(403);
+  });
+
+  it('GET /deliveries lists the resident unit\'s parcels', async () => {
+    queryRows.mockResolvedValueOnce([
+      { id: 'd1', company: 'Amazon', note: 'Brown box', status: 'waiting', unit_id: 'u1', logged_by_name: 'Ramesh', created_at: new Date(), resolved_at: null },
+    ]);
+    const { status, json } = await request('GET', '/api/v1/deliveries', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(200);
+    expect(json.data).toHaveLength(1);
+    expect(json.data[0].company).toBe('Amazon');
+    expect(queryRows.mock.calls[0][1]).toEqual(['c1', 'u1']);
+  });
 });

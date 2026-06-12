@@ -125,4 +125,25 @@ router.post('/deliveries/:id/status', authenticateJWT(['guard']), async (req, re
   }
 });
 
+// -- GET /deliveries (resident) — my unit's parcels --------------------------
+
+router.get('/deliveries', authenticateJWT(['resident']), async (req, res) => {
+  try {
+    const { community_id, unit_id } = req.user;
+    const statusFilter = req.query.status || null;
+    let sql = 'SELECT * FROM deliveries WHERE community_id = $1 AND unit_id = $2';
+    const params = [community_id, unit_id];
+    if (statusFilter) {
+      sql += ` AND status = $${params.length + 1}`;
+      params.push(statusFilter);
+    }
+    sql += ' ORDER BY created_at DESC LIMIT 100';
+    const rows = await queryRows(sql, params);
+    return success(res, rows.map(shape));
+  } catch (err) {
+    console.error('GET /deliveries error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
 export default router;
