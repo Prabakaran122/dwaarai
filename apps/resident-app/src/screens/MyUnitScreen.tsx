@@ -12,8 +12,10 @@ import { useUnitStore } from '../store/unitStore';
 import MembersScreen from './MembersScreen';
 import VehiclesScreen from './VehiclesScreen';
 import DuesScreen from './DuesScreen';
+import PetsScreen from './PetsScreen';
+import PetRow from '../components/PetRow';
 
-type Overlay = 'members' | 'vehicles' | 'dues' | null;
+type Overlay = 'members' | 'vehicles' | 'dues' | 'pets' | null;
 
 interface Props { onNavigate?: (tab: 'home' | 'myunit' | 'community' | 'events' | 'profile') => void; }
 
@@ -29,9 +31,11 @@ export default function MyUnitScreen({ onNavigate }: Props) {
   if (overlay === 'members') return <MembersScreen onClose={() => { setOverlay(null); load(); }} />;
   if (overlay === 'vehicles') return <VehiclesScreen onClose={() => { setOverlay(null); load(); }} />;
   if (overlay === 'dues') return <DuesScreen onClose={() => { setOverlay(null); load(); }} />;
+  if (overlay === 'pets') return <PetsScreen onBack={() => { setOverlay(null); load(); }} />;
 
   const members = profile?.members ?? [];
   const vehicles = profile?.vehicles ?? [];
+  const pets = profile?.pets ?? [];
   const dues = profile?.dues ?? { outstanding: 0, pendingCount: 0 };
 
   return (
@@ -59,8 +63,15 @@ export default function MyUnitScreen({ onNavigate }: Props) {
         </View>
 
         <View style={styles.block}>
+          <SectionHeader title="Pets" actionLabel="Manage" onAction={() => setOverlay('pets')} />
+          <Card>
+            {pets.length === 0 ? <Text style={type.bodySecondary}>No pets added yet</Text> : pets.map((p) => <PetRow key={p.id} pet={p} />)}
+          </Card>
+        </View>
+
+        <View style={styles.block}>
           <SectionHeader title="More" />
-          <Card><Text style={type.bodySecondary}>Pets, documents &amp; facility booking are coming in this redesign.</Text></Card>
+          <Card><Text style={type.bodySecondary}>Documents &amp; facility booking are coming in this redesign.</Text></Card>
         </View>
       </ScrollView>
     </View>
