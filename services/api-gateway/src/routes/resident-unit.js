@@ -20,14 +20,14 @@ router.get('/resident/unit', authenticateJWT(['resident']), async (req, res) => 
               (fe.status = 'active') AS face_enrolled, r.is_active AS app_access
          FROM residents r
          LEFT JOIN face_enrollments fe ON fe.resident_id = r.id
-        WHERE r.unit_id = $1 AND r.is_active = true
+        WHERE r.unit_id = $1 AND r.community_id = $2 AND r.is_active = true
         ORDER BY r.is_primary DESC, r.created_at ASC`,
-      [unit_id]
+      [unit_id, community_id]
     );
     const vehicles = await queryRows(
       `SELECT id, plate_display, plate, make, model, type, (fastag_tid_hash IS NOT NULL) AS fastag_linked
-         FROM vehicles WHERE unit_id = $1 AND is_active = true ORDER BY created_at ASC`,
-      [unit_id]
+         FROM vehicles WHERE unit_id = $1 AND community_id = $2 AND is_active = true ORDER BY created_at ASC`,
+      [unit_id, community_id]
     );
     const duesRows = await queryRows(
       `SELECT base_amount, penalty_amount FROM dues

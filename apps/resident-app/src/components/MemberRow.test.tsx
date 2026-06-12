@@ -7,9 +7,10 @@ describe('MemberRow', () => {
     expect(getByText('Arjun')).toBeTruthy();
     expect(getByText('Not enrolled')).toBeTruthy();
   });
-  it('shows Face ID when enrolled', () => {
+  it('shows Face ID and an App chip when enrolled with app access', () => {
     const { getByText } = render(<MemberRow member={{ id: 'm2', name: 'Asha', relationship: null, isPrimary: true, faceEnrolled: true, appAccess: true }} />);
     expect(getByText('Face ID')).toBeTruthy();
+    expect(getByText('App')).toBeTruthy();
     expect(getByText(/Primary/)).toBeTruthy();
   });
 });

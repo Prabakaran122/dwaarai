@@ -14,11 +14,15 @@ export default function MemberRow({ member }: { member: UnitMember }) {
         <Text style={type.body}>{member.name}</Text>
         {!!sub && <Text style={type.micro}>{sub}</Text>}
       </View>
-      <StatusBadge preset={member.faceEnrolled ? 'granted' : 'pending'} label={member.faceEnrolled ? 'Face ID' : 'Not enrolled'} size="sm" />
+      <View style={styles.chips}>
+        <StatusBadge preset={member.faceEnrolled ? 'granted' : 'pending'} label={member.faceEnrolled ? 'Face ID' : 'Not enrolled'} size="sm" />
+        {member.appAccess && <StatusBadge preset="info" label="App" size="sm" />}
+      </View>
     </View>
   );
 }
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm },
   mid: { flex: 1, gap: 2 },
+  chips: { alignItems: 'flex-end', gap: 4 },
 });
