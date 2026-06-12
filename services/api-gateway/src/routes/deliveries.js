@@ -162,7 +162,12 @@ router.post('/deliveries/:id/collect', authenticateJWT(['resident']), async (req
     if (d.unit_id !== unit_id) return error(res, 'Not your delivery', 403);
     if (d.status !== 'waiting') return error(res, 'Delivery already resolved', 409);
 
-    await query("UPDATE deliveries SET status = 'delivered', resolved_at = NOW() WHERE id = $1", [d.id]);
+    // Atomic guard: only one concurrent request can flip a 'waiting' row to 'delivered'.
+    const upd = await query(
+      "UPDATE deliveries SET status = 'delivered', resolved_at = NOW() WHERE id = $1 AND status = 'waiting'",
+      [d.id]
+    );
+    if (!upd.rowCount) return error(res, 'Delivery already resolved', 409); // lost a concurrent race
     broadcast(community_id, 'delivery:updated', { id: d.id, status: 'delivered' });
     return success(res, { id: d.id, status: 'delivered' });
   } catch (err) {

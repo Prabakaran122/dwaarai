@@ -125,8 +125,10 @@ describe('Delivery management', () => {
   });
 
   it('POST /deliveries/:id/collect requires a resident', async () => {
-    const r = await request('POST', '/api/v1/deliveries/d1/collect', { headers: { Authorization: `Bearer ${guard}` } });
-    expect(r.status).toBe(403);
+    const r1 = await request('POST', '/api/v1/deliveries/d1/collect');
+    expect(r1.status).toBe(401);
+    const r2 = await request('POST', '/api/v1/deliveries/d1/collect', { headers: { Authorization: `Bearer ${guard}` } });
+    expect(r2.status).toBe(403);
   });
 
   it('collect returns 404 for an unknown delivery', async () => {
@@ -141,18 +143,20 @@ describe('Delivery management', () => {
     expect(status).toBe(403);
   });
 
-  it('collect rejects an already-resolved parcel with 409', async () => {
-    queryOne.mockResolvedValueOnce({ id: 'd1', unit_id: 'u1', status: 'delivered' });
+  it.each(['delivered', 'left_at_gate'])('collect rejects an already-resolved (%s) parcel with 409', async (st) => {
+    queryOne.mockResolvedValueOnce({ id: 'd1', unit_id: 'u1', status: st });
     const { status } = await request('POST', '/api/v1/deliveries/d1/collect', { headers: { Authorization: `Bearer ${resident}` } });
     expect(status).toBe(409);
   });
 
   it('collect marks the parcel delivered and broadcasts', async () => {
     queryOne.mockResolvedValueOnce({ id: 'd1', unit_id: 'u1', status: 'waiting' });
+    query.mockResolvedValueOnce({ rows: [], rowCount: 1 });
     const { status, json } = await request('POST', '/api/v1/deliveries/d1/collect', { headers: { Authorization: `Bearer ${resident}` } });
     expect(status).toBe(200);
     expect(json.data.status).toBe('delivered');
     expect(broadcast.mock.calls[0][1]).toBe('delivery:updated');
+    expect(broadcast.mock.calls[0][2]).toMatchObject({ id: 'd1', status: 'delivered' });
   });
 
   it('GET /deliveries?status=waiting filters by status', async () => {
