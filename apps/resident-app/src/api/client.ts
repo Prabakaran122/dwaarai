@@ -157,6 +157,9 @@ export function dueReceiptUrl(paymentId: string) {
 // Resident home (aggregate dashboard)
 export const getResidentHome = () => api.get('/resident/home');
 
+// Resident unit (My Unit aggregate)
+export const getResidentUnit = () => api.get('/resident/unit');
+
 // Deliveries (parcels) — resident
 export const getDeliveries = (params?: Record<string, string>) =>
   api.get('/deliveries', { params });
