@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Image } from 'react-native';
 import { colors } from '../theme/colors';
-import { spacing } from '../theme/spacing';
+import { spacing, radius } from '../theme/spacing';
 import { type } from '../theme/typography';
 import { AppBar, Card, StatusBadge, Button } from '../components/ui';
 import * as api from '../api/client';
+import { uploadUrl } from '../api/client';
 
 interface Parcel {
   id: string;
@@ -13,6 +14,7 @@ interface Parcel {
   status: string;
   loggedByName: string | null;
   createdAt: string;
+  imageUrl: string | null;
 }
 
 function mapParcel(raw: any): Parcel {
@@ -23,6 +25,7 @@ function mapParcel(raw: any): Parcel {
     status: raw.status,
     loggedByName: raw.logged_by_name ?? null,
     createdAt: raw.created_at,
+    imageUrl: raw.image_url ?? null,
   };
 }
 
@@ -73,6 +76,7 @@ export default function ParcelsScreen({ onBack }: { onBack: () => void }) {
         <ScrollView contentContainerStyle={styles.scroll}>
           {items.map((p) => (
             <Card key={p.id} accent={ageAccent(p.createdAt)} style={styles.card}>
+              {p.imageUrl ? <Image source={{ uri: uploadUrl(p.imageUrl) || undefined }} style={styles.photo} resizeMode="cover" /> : null}
               <View style={styles.rowTop}>
                 <Text style={type.h3}>{p.company}</Text>
                 <StatusBadge preset={p.status === 'waiting' ? 'pending' : 'granted'} size="sm" />
@@ -97,4 +101,5 @@ const styles = StyleSheet.create({
   card: { gap: spacing.xs },
   rowTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   collectBtn: { marginTop: spacing.sm, alignSelf: 'flex-start' },
+  photo: { width: '100%', height: 140, borderRadius: radius.sm, marginBottom: spacing.xs },
 });

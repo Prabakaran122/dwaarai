@@ -4,6 +4,12 @@ import { z } from 'zod';
 const API_BASE =
   process.env.EXPO_PUBLIC_API_URL || 'https://dwaarai.in/api/v1';
 
+const SERVER_ORIGIN = API_BASE.replace(/\/api\/v1\/?$/, '');
+export function uploadUrl(p?: string | null): string | null {
+  if (!p) return null;
+  return /^https?:\/\//.test(p) ? p : `${SERVER_ORIGIN}${p}`;
+}
+
 const api = axios.create({ baseURL: API_BASE, timeout: 10000 });
 
 export const ApiResponseSchema = z.object({

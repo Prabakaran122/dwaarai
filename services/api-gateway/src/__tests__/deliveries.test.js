@@ -170,4 +170,13 @@ describe('Delivery management', () => {
     const { status } = await request('GET', '/api/v1/deliveries?status=bogus', { headers: { Authorization: `Bearer ${resident}` } });
     expect(status).toBe(400);
   });
+
+  it('GET /deliveries returns image_url from image_path', async () => {
+    queryRows.mockResolvedValueOnce([
+      { id: 'd1', company: 'Amazon', note: null, status: 'waiting', unit_id: 'u1', logged_by_name: 'Ramesh', created_at: new Date(), resolved_at: null, image_path: '/uploads/parcels/2026-06/abc.jpg' },
+    ]);
+    const { status, json } = await request('GET', '/api/v1/deliveries', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(200);
+    expect(json.data[0].image_url).toBe('/uploads/parcels/2026-06/abc.jpg');
+  });
 });
