@@ -18,6 +18,13 @@ export interface PinnedNotice {
   createdAt: string;
 }
 
+export interface UpcomingEvent {
+  id: string;
+  title: string;
+  location: string | null;
+  startsAt: string;
+}
+
 export interface HomeSummary {
   gateGlance: {
     visitors: { expected: number };
@@ -26,7 +33,7 @@ export interface HomeSummary {
   };
   recentActivity: ActivityEvent[];
   dues: { outstanding: number; earliestDueDate: string | null; pendingCount: number };
-  community: { pinnedNotice: PinnedNotice | null; upcomingEvent: null };
+  community: { pinnedNotice: PinnedNotice | null; upcomingEvent: UpcomingEvent | null };
 }
 
 interface HomeState {

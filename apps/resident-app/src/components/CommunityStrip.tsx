@@ -5,11 +5,11 @@ import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { type } from '../theme/typography';
 import { Card } from './ui';
-import type { PinnedNotice } from '../store/homeStore';
+import type { PinnedNotice, UpcomingEvent } from '../store/homeStore';
 
 interface Props {
   pinnedNotice: PinnedNotice | null;
-  upcomingEvent: null; // stub until the Events sub-project
+  upcomingEvent: UpcomingEvent | null;
   onNotice?: () => void;
 }
 
@@ -35,8 +35,20 @@ export default function CommunityStrip({ pinnedNotice, upcomingEvent, onNotice }
         <View style={styles.row}>
           <MaterialCommunityIcons name="calendar-star" size={18} color={colors.textTertiary} />
           <View style={{ flex: 1 }}>
-            <Text style={type.h3}>Upcoming event</Text>
-            <Text style={type.micro}>Nothing scheduled yet</Text>
+            {upcomingEvent ? (
+              <>
+                <Text style={type.h3} numberOfLines={1}>{upcomingEvent.title}</Text>
+                <Text style={type.micro}>
+                  {new Date(upcomingEvent.startsAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                  {upcomingEvent.location ? ` · ${upcomingEvent.location}` : ''}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={type.h3}>Upcoming event</Text>
+                <Text style={type.micro}>Nothing scheduled yet</Text>
+              </>
+            )}
           </View>
         </View>
       </Card>

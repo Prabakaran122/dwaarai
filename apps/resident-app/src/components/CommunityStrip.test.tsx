@@ -22,4 +22,10 @@ describe('CommunityStrip', () => {
     fireEvent.press(getByText('Water cut 6pm'));
     expect(onNotice).toHaveBeenCalledTimes(1);
   });
+
+  it('shows the upcoming event title when present', () => {
+    const ev = { id: 'e1', title: 'Holi Bash', location: 'Lawn', startsAt: '2026-06-20T17:00:00Z' };
+    const { getByText } = render(<CommunityStrip pinnedNotice={null} upcomingEvent={ev} />);
+    expect(getByText('Holi Bash')).toBeTruthy();
+  });
 });
