@@ -166,6 +166,11 @@ export const getDeliveries = (params?: Record<string, string>) =>
 
 export const collectDelivery = (id: string) => api.post(`/deliveries/${id}/collect`);
 
+// Pets (My Unit)
+export const getPets = () => api.get('/pets');
+export const createPet = (data: { name: string; species: string; breed?: string; notes?: string }) => api.post('/pets', data);
+export const deletePet = (id: string) => api.delete(`/pets/${id}`);
+
 // Face identity & consent
 export const getFaceIdentity = () => api.get('/face');
 

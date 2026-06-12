@@ -29,6 +29,11 @@ router.get('/resident/unit', authenticateJWT(['resident']), async (req, res) => 
          FROM vehicles WHERE unit_id = $1 AND community_id = $2 AND is_active = true ORDER BY created_at ASC`,
       [unit_id, community_id]
     );
+    const pets = await queryRows(
+      `SELECT id, name, species, breed FROM pets
+        WHERE unit_id = $1 AND community_id = $2 AND is_active = true ORDER BY created_at ASC`,
+      [unit_id, community_id]
+    );
     const duesRows = await queryRows(
       `SELECT base_amount, penalty_amount FROM dues
         WHERE community_id = $1 AND unit_id = $2 AND status = 'pending'`,
@@ -51,6 +56,7 @@ router.get('/resident/unit', authenticateJWT(['resident']), async (req, res) => 
         makeModel: [v.make, v.model].filter(Boolean).join(' ') || null,
         type: v.type, fastagLinked: !!v.fastag_linked,
       })),
+      pets: pets.map((p) => ({ id: p.id, name: p.name, species: p.species, breed: p.breed || null })),
       dues: { outstanding, pendingCount: duesRows.length },
     });
   } catch (err) {

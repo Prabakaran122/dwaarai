@@ -27,6 +27,7 @@ import residentUnitRoutes from './routes/resident-unit.js';
 import handoverRoutes from './routes/handover.js';
 import staffRoutes from './routes/staff.js';
 import incidentRoutes from './routes/incidents.js';
+import petRoutes from './routes/pets.js';
 import { startVisitCron } from './cron/generate-visits.js';
 import { initWebSocket } from './websocket.js';
 
@@ -77,6 +78,7 @@ app.use('/api/v1', residentUnitRoutes);
 app.use('/api/v1', handoverRoutes);
 app.use('/api/v1', staffRoutes);
 app.use('/api/v1', incidentRoutes);
+app.use('/api/v1', petRoutes);
 
 // Serve uploaded visit photos
 const UPLOAD_BASE = process.env.UPLOAD_DIR || '/opt/communitygate/uploads';

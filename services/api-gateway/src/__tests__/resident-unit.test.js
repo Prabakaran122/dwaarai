@@ -38,6 +38,7 @@ describe('GET /resident/unit', () => {
       .mockResolvedValueOnce([
         { id: 'v1', plate_display: 'KA01AB1234', plate: 'KA01AB1234', make: 'Maruti', model: 'Swift', type: 'car', fastag_linked: true },
       ])
+      .mockResolvedValueOnce([{ id: 'p1', name: 'Bruno', species: 'dog', breed: 'Labrador' }])
       .mockResolvedValueOnce([{ base_amount: 4000, penalty_amount: 500 }]);
     const { status, json } = await request('GET', '/api/v1/resident/unit', { headers: { Authorization: `Bearer ${resident}` } });
     expect(status).toBe(200);
@@ -46,6 +47,7 @@ describe('GET /resident/unit', () => {
     expect(json.data.members[0]).toEqual({ id: 'm1', name: 'Prabakaran', relationship: null, isPrimary: true, faceEnrolled: true, appAccess: true });
     expect(json.data.members[1].faceEnrolled).toBe(false);
     expect(json.data.vehicles[0]).toEqual({ id: 'v1', plate: 'KA01AB1234', makeModel: 'Maruti Swift', type: 'car', fastagLinked: true });
+    expect(json.data.pets[0]).toEqual({ id: 'p1', name: 'Bruno', species: 'dog', breed: 'Labrador' });
     expect(json.data.dues).toEqual({ outstanding: 4500, pendingCount: 1 });
   });
 });
