@@ -199,6 +199,13 @@ export const deleteDocument = (id: string) => api.delete(`/documents/${id}`);
 export const uploadDocument = (form: FormData) =>
   api.post('/documents', form, { headers: { 'Content-Type': 'multipart/form-data' } });
 
+// Facility booking (My Unit)
+export const getFacilities = () => api.get('/facilities');
+export const getFacilityAvailability = (id: string, date: string) => api.get(`/facilities/${id}/availability`, { params: { date } });
+export const bookFacility = (id: string, data: { date: string; start: string }) => api.post(`/facilities/${id}/book`, data);
+export const getMyBookings = () => api.get('/facilities/mine');
+export const cancelBooking = (id: string) => api.delete(`/facilities/bookings/${id}`);
+
 // 401 interceptor — auto-refresh token on expiry
 let isRefreshing = false;
 let refreshSubscribers: ((token: string) => void)[] = [];

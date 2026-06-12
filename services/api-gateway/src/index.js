@@ -29,6 +29,7 @@ import staffRoutes from './routes/staff.js';
 import incidentRoutes from './routes/incidents.js';
 import petRoutes from './routes/pets.js';
 import documentRoutes from './routes/documents.js';
+import facilityRoutes from './routes/facilities.js';
 import { startVisitCron } from './cron/generate-visits.js';
 import { initWebSocket } from './websocket.js';
 
@@ -81,6 +82,7 @@ app.use('/api/v1', staffRoutes);
 app.use('/api/v1', incidentRoutes);
 app.use('/api/v1', petRoutes);
 app.use('/api/v1', documentRoutes);
+app.use('/api/v1', facilityRoutes);
 
 // Serve uploaded visit photos
 const UPLOAD_BASE = process.env.UPLOAD_DIR || '/opt/communitygate/uploads';
