@@ -193,6 +193,12 @@ export const deleteFaceData = () => api.delete('/face');
 
 export const getFaceAccessLog = () => api.get('/face/access-log');
 
+// Unit documents (vault)
+export const getDocuments = () => api.get('/documents');
+export const deleteDocument = (id: string) => api.delete(`/documents/${id}`);
+export const uploadDocument = (form: FormData) =>
+  api.post('/documents', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+
 // 401 interceptor — auto-refresh token on expiry
 let isRefreshing = false;
 let refreshSubscribers: ((token: string) => void)[] = [];
