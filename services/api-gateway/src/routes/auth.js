@@ -211,7 +211,7 @@ router.post('/auth/resident-verify', loginLimiter, async (req, res) => {
 
     // Look up resident
     const resident = await queryOne(
-      `SELECT r.id, r.community_id, r.unit_id, r.name, r.mobile,
+      `SELECT r.id, r.community_id, r.unit_id, r.name, r.mobile, r.is_committee,
               u.unit_number
        FROM residents r
        JOIN units u ON r.unit_id = u.id
@@ -229,6 +229,7 @@ router.post('/auth/resident-verify', loginLimiter, async (req, res) => {
       community_id: resident.community_id,
       unit_id: resident.unit_id,
       name: resident.name,
+      is_committee: resident.is_committee || false,
     });
 
     const refreshToken = signRefreshToken(resident.id);
@@ -240,6 +241,7 @@ router.post('/auth/resident-verify', loginLimiter, async (req, res) => {
         name: resident.name,
         phone: resident.mobile,
         unitNumber: resident.unit_number,
+        isCommittee: resident.is_committee || false,
       },
     });
   } catch (err) {
@@ -387,6 +389,7 @@ router.post('/auth/resident-register-verify', loginLimiter, async (req, res) => 
       community_id: resident.community_id,
       unit_id: resident.unit_id,
       name: resident.name,
+      is_committee: false, // freshly created residents are never committee members
     });
 
     const refreshToken = signRefreshToken(resident.id);
@@ -401,6 +404,7 @@ router.post('/auth/resident-register-verify', loginLimiter, async (req, res) => 
           phone: resident.mobile,
           unitNumber: unit_number,
           communityName: community_name,
+          isCommittee: false,
         },
       },
     });

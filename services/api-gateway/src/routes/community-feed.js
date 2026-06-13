@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { queryRows } from '../db/queries.js';
+import { queryOne, queryRows } from '../db/queries.js';
 import { success } from '../middleware/response.js';
 import { authenticateJWT } from '../middleware/auth.js';
 import { assemblePolls } from './polls.js';
@@ -11,7 +11,7 @@ const router = Router();
 // Promise.allSettled degrades each section to [] on failure — never 500.
 
 router.get('/community/feed', authenticateJWT(['resident', 'admin']), async (req, res) => {
-  const { community_id, sub } = req.user;
+  const { community_id, sub, unit_id } = req.user;
 
   // ── Announcements sub-query ───────────────────────────────────────────────
   async function fetchAnnouncements() {
@@ -61,15 +61,27 @@ router.get('/community/feed', authenticateJWT(['resident', 'admin']), async (req
     }));
   }
 
-  // ── Polls sub-query (top 5 open polls) ───────────────────────────────────
+  // ── Polls sub-query (top 5 open polls, audience-filtered) ────────────────
+  // Query order within fetchPolls:
+  //   queryOne  1: SELECT block_id FROM units WHERE id=$1  (caller's block)
+  //   queryRows 2: polls list (audience-filtered, only open)
+  //   queryRows 3: options with vote counts (only if polls found)
+  //   queryRows 4: caller's votes by unit_id (only if polls found)
   async function fetchPolls() {
+    // Resolve the caller's block for audience filter
+    const callerBlockRow = await queryOne('SELECT block_id FROM units WHERE id=$1', [unit_id]);
+    const callerBlock = callerBlockRow?.block_id || null;
+
     const polls = await queryRows(
-      `SELECT id, question, status, closes_at, author_name, created_at
+      `SELECT id, question, status, closes_at, target_block_id, author_name, created_at
          FROM polls
-        WHERE community_id = $1 AND status = 'open'
+        WHERE community_id = $1
+          AND status = 'open'
+          AND (closes_at IS NULL OR closes_at > NOW())
+          AND (target_block_id IS NULL OR target_block_id = $2)
         ORDER BY created_at DESC
         LIMIT 5`,
-      [community_id]
+      [community_id, callerBlock]
     );
     if (polls.length === 0) return [];
 
@@ -84,13 +96,15 @@ router.get('/community/feed', authenticateJWT(['resident', 'admin']), async (req
       [pollIds]
     );
 
+    // Per-unit my-votes for feed
     const myVotes = await queryRows(
       `SELECT poll_id, option_id FROM poll_votes
-        WHERE poll_id = ANY($1) AND resident_id = $2`,
-      [pollIds, sub]
+        WHERE poll_id = ANY($1) AND unit_id = $2`,
+      [pollIds, unit_id]
     );
 
-    return assemblePolls(polls, options, myVotes);
+    // Feed shows polls without canManage (false — it's a read-only feed)
+    return assemblePolls(polls, options, myVotes, false);
   }
 
   const [announcementsResult, issuesResult, pollsResult] = await Promise.allSettled([
