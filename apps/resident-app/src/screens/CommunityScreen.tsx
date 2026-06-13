@@ -30,6 +30,9 @@ export default function CommunityScreen() {
   const onVote = async (pollId: string, optionId: string) => {
     try { await api.votePoll(pollId, optionId); await load(); } catch { /* ignore */ }
   };
+  const onClosePoll = async (id: string) => {
+    try { await api.closePoll(id); await load(); } catch { /* ignore */ }
+  };
 
   const announcements = feed?.announcements ?? [];
   const issues = feed?.issues ?? [];
@@ -52,7 +55,7 @@ export default function CommunityScreen() {
           <SectionHeader title="Polls" />
           {polls.length === 0 ? (
             <Card><Text style={type.bodySecondary}>No active polls</Text></Card>
-          ) : polls.map((p) => <View key={p.id} style={styles.item}><PollCard poll={p} onVote={onVote} /></View>)}
+          ) : polls.map((p) => <View key={p.id} style={styles.item}><PollCard poll={p} onVote={onVote} onClose={onClosePoll} /></View>)}
         </View>
       </ScrollView>
 
