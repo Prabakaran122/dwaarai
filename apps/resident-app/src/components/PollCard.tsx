@@ -6,13 +6,30 @@ import { font, type } from '../theme/typography';
 import { Card } from './ui';
 import type { Poll } from '../store/communityStore';
 
-export default function PollCard({ poll, onVote }: { poll: Poll; onVote: (pollId: string, optionId: string) => void }) {
+export default function PollCard({
+  poll,
+  onVote,
+  onClose,
+}: {
+  poll: Poll;
+  onVote: (pollId: string, optionId: string) => void;
+  onClose?: (pollId: string) => void;
+}) {
   const voted = !!poll.myOptionId || poll.status !== 'open';
   const total = poll.totalVotes || poll.options.reduce((s, o) => s + o.votes, 0);
+
+  const statusLine = poll.status === 'closed'
+    ? 'Closed'
+    : poll.closesAt
+      ? `Closes ${new Date(poll.closesAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+      : null;
+
   return (
     <Card style={styles.card}>
       <Text style={type.h3}>{poll.question}</Text>
       <Text style={type.micro}>{poll.authorName} · {total} vote{total === 1 ? '' : 's'}</Text>
+      {statusLine ? <Text style={styles.statusLine}>{statusLine}</Text> : null}
+      {poll.targetBlockId ? <Text style={styles.blockCaption}>Block-only</Text> : null}
       <View style={styles.options}>
         {poll.options.map((o) => {
           const pct = total > 0 ? Math.round((o.votes / total) * 100) : 0;
@@ -35,6 +52,11 @@ export default function PollCard({ poll, onVote }: { poll: Poll; onVote: (pollId
           );
         })}
       </View>
+      {poll.canManage && poll.status === 'open' && onClose ? (
+        <Pressable onPress={() => onClose(poll.id)}>
+          <Text style={styles.closeAction}>Close poll</Text>
+        </Pressable>
+      ) : null}
     </Card>
   );
 }
@@ -49,4 +71,7 @@ const styles = StyleSheet.create({
   barMine: { backgroundColor: colors.tintSuccess },
   resultLabel: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   mineText: { color: colors.textSuccess },
+  statusLine: { ...font(400), fontSize: 12, color: colors.textSecondary },
+  blockCaption: { ...font(400), fontSize: 11, color: colors.textTertiary },
+  closeAction: { ...font(500), fontSize: 13, color: colors.textError, marginTop: spacing.xs },
 });
