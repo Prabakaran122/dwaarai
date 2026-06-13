@@ -15,6 +15,7 @@
     "@expo-google-fonts/dm-sans": "^0.4.2",
     "@expo-google-fonts/noto-sans-devanagari": "^0.4.1",
     "@expo-google-fonts/noto-sans-kannada": "^0.4.3",
+    "@expo/metro-runtime": "~4.0.1",
     "@expo/vector-icons": "~14.0.4",
     "@react-native-async-storage/async-storage": "1.23.1",
     "@react-navigation/bottom-tabs": "^7.0.0",

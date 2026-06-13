@@ -138,6 +138,9 @@ importers:
       '@expo-google-fonts/noto-sans-kannada':
         specifier: ^0.4.3
         version: 0.4.3
+      '@expo/metro-runtime':
+        specifier: ~4.0.1
+        version: 4.0.1(react-native@0.76.9(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(react@18.3.1))
       '@expo/vector-icons':
         specifier: ~14.0.4
         version: 14.0.4
