@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { z } from 'zod';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE =
   process.env.EXPO_PUBLIC_API_URL || 'https://dwaarai.in/api/v1';
@@ -239,7 +240,6 @@ api.interceptors.response.use(
       if (!isRefreshing) {
         isRefreshing = true;
         try {
-          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
           const raw = await AsyncStorage.getItem('communitygate_resident_auth');
           if (raw) {
             const { refreshToken } = JSON.parse(raw);

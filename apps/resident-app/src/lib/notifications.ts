@@ -51,8 +51,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
     {
       identifier: 'deny',
       buttonTitle: 'Deny',
-      isDestructive: true,
-      options: { opensAppToForeground: false },
+      options: { isDestructive: true, opensAppToForeground: false },
     },
   ]);
 
