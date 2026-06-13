@@ -10,6 +10,7 @@ export interface AuthUser {
   phone: string;
   unitNumber: string;
   communityName?: string;
+  isCommittee?: boolean;
 }
 
 interface AuthState {

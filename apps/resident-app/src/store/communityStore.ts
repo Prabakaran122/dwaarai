@@ -4,7 +4,7 @@ import * as api from '../api/client';
 export interface Announcement { id: string; title: string; body: string; authorName: string; createdAt: string; }
 export interface Issue { id: string; title: string; body: string; category: string; status: string; authorName: string; authorUnit: string | null; upvoteCount: number; myUpvoted: boolean; createdAt: string; }
 export interface PollOption { id: string; label: string; votes: number; }
-export interface Poll { id: string; question: string; status: string; closesAt: string | null; authorName: string; createdAt: string; totalVotes: number; myOptionId: string | null; options: PollOption[]; }
+export interface Poll { id: string; question: string; status: string; closesAt: string | null; targetBlockId: string | null; canManage: boolean; authorName: string; createdAt: string; totalVotes: number; myOptionId: string | null; options: PollOption[]; }
 export interface CommunityFeed { announcements: Announcement[]; issues: Issue[]; polls: Poll[]; }
 
 interface CommunityState {

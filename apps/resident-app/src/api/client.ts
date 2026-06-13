@@ -218,8 +218,10 @@ export const getIssues = () => api.get('/issues');
 export const createIssue = (data: { title: string; body: string; category?: string }) => api.post('/issues', data);
 export const upvoteIssue = (id: string) => api.post(`/issues/${id}/upvote`);
 export const getPolls = () => api.get('/polls');
-export const createPoll = (data: { question: string; options: string[]; closesAt?: string }) => api.post('/polls', data);
+export const createPoll = (data: { question: string; options: string[]; closesAt?: string; targetBlockId?: string | null }) => api.post('/polls', data);
 export const votePoll = (id: string, optionId: string) => api.post(`/polls/${id}/vote`, { optionId });
+export const closePoll = (id: string) => api.post(`/polls/${id}/close`);
+export const getBlocks = () => api.get('/blocks');
 
 // 401 interceptor — auto-refresh token on expiry
 let isRefreshing = false;

@@ -5,7 +5,7 @@ import { useCommunityStore } from './communityStore';
 const sample = {
   announcements: [{ id: 'a1', title: 'Water cut', body: '6pm today', authorName: 'RWA', createdAt: '2026-06-12T10:00:00Z' }],
   issues: [{ id: 'i1', title: 'Lift broken', body: 'Block A lift', category: 'maintenance', status: 'open', authorName: 'Asha', authorUnit: 'A-204', upvoteCount: 3, myUpvoted: false, createdAt: '2026-06-12T09:00:00Z' }],
-  polls: [{ id: 'p1', question: 'Paint colour?', status: 'open', closesAt: null, authorName: 'RWA', createdAt: '2026-06-12T08:00:00Z', totalVotes: 2, myOptionId: null, options: [{ id: 'o1', label: 'Blue', votes: 2 }, { id: 'o2', label: 'Green', votes: 0 }] }],
+  polls: [{ id: 'p1', question: 'Paint colour?', status: 'open', closesAt: null, targetBlockId: null, canManage: false, authorName: 'RWA', createdAt: '2026-06-12T08:00:00Z', totalVotes: 2, myOptionId: null, options: [{ id: 'o1', label: 'Blue', votes: 2 }, { id: 'o2', label: 'Green', votes: 0 }] }],
 };
 
 beforeEach(() => { useCommunityStore.setState({ feed: null, loading: false, error: false }); jest.clearAllMocks(); });
