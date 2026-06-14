@@ -22,9 +22,19 @@ import faceRoutes from './routes/face.js';
 import guardRoutes from './routes/guard.js';
 import sosRoutes from './routes/sos.js';
 import deliveryRoutes from './routes/deliveries.js';
+import residentHomeRoutes from './routes/resident-home.js';
+import residentUnitRoutes from './routes/resident-unit.js';
 import handoverRoutes from './routes/handover.js';
 import staffRoutes from './routes/staff.js';
 import incidentRoutes from './routes/incidents.js';
+import petRoutes from './routes/pets.js';
+import documentRoutes from './routes/documents.js';
+import facilityRoutes from './routes/facilities.js';
+import issueRoutes from './routes/issues.js';
+import pollRoutes from './routes/polls.js';
+import blockRoutes from './routes/blocks.js';
+import communityFeedRoutes from './routes/community-feed.js';
+import communityEventRoutes from './routes/community-events.js';
 import { startVisitCron } from './cron/generate-visits.js';
 import { initWebSocket } from './websocket.js';
 
@@ -70,9 +80,20 @@ app.use('/api/v1', faceRoutes);
 app.use('/api/v1', guardRoutes);
 app.use('/api/v1', sosRoutes);
 app.use('/api/v1', deliveryRoutes);
+app.use('/api/v1', residentHomeRoutes);
+app.use('/api/v1', residentUnitRoutes);
 app.use('/api/v1', handoverRoutes);
 app.use('/api/v1', staffRoutes);
 app.use('/api/v1', incidentRoutes);
+app.use('/api/v1', petRoutes);
+app.use('/api/v1', documentRoutes);
+app.use('/api/v1', facilityRoutes);
+// Community: /community/feed must be mounted before :id-style routes
+app.use('/api/v1', communityFeedRoutes);
+app.use('/api/v1', communityEventRoutes);
+app.use('/api/v1', issueRoutes);
+app.use('/api/v1', pollRoutes);
+app.use('/api/v1', blockRoutes);
 
 // Serve uploaded visit photos
 const UPLOAD_BASE = process.env.UPLOAD_DIR || '/opt/communitygate/uploads';

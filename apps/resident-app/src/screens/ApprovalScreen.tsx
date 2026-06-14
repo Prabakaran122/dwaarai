@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
+import { type } from '../theme/typography';
+import { Card, Button } from '../components/ui';
 import { respondToApproval } from '../api/client';
 
 interface Props {
@@ -59,23 +60,25 @@ export default function ApprovalScreen({ approvalId, data, onDismiss }: Props) {
     const isSuccess = state === 'approved';
     return (
       <View style={styles.overlay}>
-        <View style={styles.resultCard}>
-          <MaterialCommunityIcons
-            name={isSuccess ? 'check-circle' : state === 'expired' ? 'clock-alert' : 'close-circle'}
-            size={64}
-            color={isSuccess ? colors.success : state === 'expired' ? colors.warning : colors.danger}
-          />
-          <Text style={[styles.resultText, { color: isSuccess ? colors.success : colors.danger }]}>
-            {message}
-          </Text>
-        </View>
+        <Card style={styles.resultCard}>
+          <View style={styles.resultContent}>
+            <MaterialCommunityIcons
+              name={isSuccess ? 'check-circle' : state === 'expired' ? 'clock-alert' : 'close-circle'}
+              size={64}
+              color={isSuccess ? colors.success : state === 'expired' ? colors.warning : colors.danger}
+            />
+            <Text style={[styles.resultText, { color: isSuccess ? colors.success : colors.danger }]}>
+              {message}
+            </Text>
+          </View>
+        </Card>
       </View>
     );
   }
 
   return (
     <View style={styles.overlay}>
-      <View style={styles.card}>
+      <Card style={styles.card}>
         <Text style={styles.title}>Visitor at Gate</Text>
 
         <View style={styles.info}>
@@ -90,31 +93,24 @@ export default function ApprovalScreen({ approvalId, data, onDismiss }: Props) {
         </View>
 
         <View style={styles.buttons}>
-          <LinearGradient
-            colors={['#22c55e', '#16a34a']}
-            style={styles.button}
-          >
-            <Text
-              style={styles.buttonText}
+          <View style={{ flex: 1 }}>
+            <Button
+              title={loading ? '…' : 'Approve'}
+              variant="primary"
               onPress={() => !loading && handleRespond('approve')}
-            >
-              {loading ? '...' : 'Approve'}
-            </Text>
-          </LinearGradient>
-
-          <LinearGradient
-            colors={['#ef4444', '#dc2626']}
-            style={styles.button}
-          >
-            <Text
-              style={styles.buttonText}
+              disabled={loading}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Button
+              title={loading ? '…' : 'Deny'}
+              variant="destructive"
               onPress={() => !loading && handleRespond('deny')}
-            >
-              {loading ? '...' : 'Deny'}
-            </Text>
-          </LinearGradient>
+              disabled={loading}
+            />
+          </View>
         </View>
-      </View>
+      </Card>
     </View>
   );
 }
@@ -122,24 +118,19 @@ export default function ApprovalScreen({ approvalId, data, onDismiss }: Props) {
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.xl,
     zIndex: 100,
   },
   card: {
-    backgroundColor: colors.bgSecondary || '#1a1a2e',
-    borderRadius: radius.lg,
-    padding: spacing.xl,
     width: '100%',
     maxWidth: 400,
     gap: spacing.lg,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: colors.textPrimary,
+    ...type.h1,
     textAlign: 'center',
   },
   info: {
@@ -148,37 +139,27 @@ const styles = StyleSheet.create({
   },
   visitorName: {
     fontSize: 22,
-    fontWeight: '700',
+    fontFamily: 'DMSans_700Bold',
     color: colors.textPrimary,
   },
   detail: {
-    fontSize: 14,
+    ...type.body,
     color: colors.textSecondary,
   },
   buttons: {
     flexDirection: 'row',
     gap: spacing.md,
   },
-  button: {
-    flex: 1,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-  },
   resultCard: {
-    backgroundColor: colors.bgSecondary || '#1a1a2e',
-    borderRadius: radius.lg,
-    padding: spacing['3xl'],
+    width: '100%',
+    maxWidth: 400,
+  },
+  resultContent: {
     alignItems: 'center',
     gap: spacing.md,
+    paddingVertical: spacing.xl,
   },
   resultText: {
-    fontSize: 18,
-    fontWeight: '700',
+    ...type.h2,
   },
 });

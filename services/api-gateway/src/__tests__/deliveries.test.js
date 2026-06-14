@@ -105,4 +105,78 @@ describe('Delivery management', () => {
     });
     expect(status).toBe(404);
   });
+
+  it('GET /deliveries (resident) requires a resident token', async () => {
+    const r1 = await request('GET', '/api/v1/deliveries');
+    expect(r1.status).toBe(401);
+    const r2 = await request('GET', '/api/v1/deliveries', { headers: { Authorization: `Bearer ${guard}` } });
+    expect(r2.status).toBe(403);
+  });
+
+  it('GET /deliveries lists the resident unit\'s parcels', async () => {
+    queryRows.mockResolvedValueOnce([
+      { id: 'd1', company: 'Amazon', note: 'Brown box', status: 'waiting', unit_id: 'u1', logged_by_name: 'Ramesh', created_at: new Date(), resolved_at: null },
+    ]);
+    const { status, json } = await request('GET', '/api/v1/deliveries', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(200);
+    expect(json.data).toHaveLength(1);
+    expect(json.data[0].company).toBe('Amazon');
+    expect(queryRows.mock.calls[0][1]).toEqual(['c1', 'u1']);
+  });
+
+  it('POST /deliveries/:id/collect requires a resident', async () => {
+    const r1 = await request('POST', '/api/v1/deliveries/d1/collect');
+    expect(r1.status).toBe(401);
+    const r2 = await request('POST', '/api/v1/deliveries/d1/collect', { headers: { Authorization: `Bearer ${guard}` } });
+    expect(r2.status).toBe(403);
+  });
+
+  it('collect returns 404 for an unknown delivery', async () => {
+    queryOne.mockResolvedValueOnce(null);
+    const { status } = await request('POST', '/api/v1/deliveries/dX/collect', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(404);
+  });
+
+  it('collect rejects another unit\'s parcel with 403', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'd1', unit_id: 'u2', status: 'waiting' });
+    const { status } = await request('POST', '/api/v1/deliveries/d1/collect', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(403);
+  });
+
+  it.each(['delivered', 'left_at_gate'])('collect rejects an already-resolved (%s) parcel with 409', async (st) => {
+    queryOne.mockResolvedValueOnce({ id: 'd1', unit_id: 'u1', status: st });
+    const { status } = await request('POST', '/api/v1/deliveries/d1/collect', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(409);
+  });
+
+  it('collect marks the parcel delivered and broadcasts', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'd1', unit_id: 'u1', status: 'waiting' });
+    query.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+    const { status, json } = await request('POST', '/api/v1/deliveries/d1/collect', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(200);
+    expect(json.data.status).toBe('delivered');
+    expect(broadcast.mock.calls[0][1]).toBe('delivery:updated');
+    expect(broadcast.mock.calls[0][2]).toMatchObject({ id: 'd1', status: 'delivered' });
+  });
+
+  it('GET /deliveries?status=waiting filters by status', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    const { status } = await request('GET', '/api/v1/deliveries?status=waiting', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(200);
+    expect(queryRows.mock.calls[0][1]).toEqual(['c1', 'u1', 'waiting']);
+  });
+
+  it('GET /deliveries rejects an invalid status filter', async () => {
+    const { status } = await request('GET', '/api/v1/deliveries?status=bogus', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(400);
+  });
+
+  it('GET /deliveries returns image_url from image_path', async () => {
+    queryRows.mockResolvedValueOnce([
+      { id: 'd1', company: 'Amazon', note: null, status: 'waiting', unit_id: 'u1', logged_by_name: 'Ramesh', created_at: new Date(), resolved_at: null, image_path: '/uploads/parcels/2026-06/abc.jpg' },
+    ]);
+    const { status, json } = await request('GET', '/api/v1/deliveries', { headers: { Authorization: `Bearer ${resident}` } });
+    expect(status).toBe(200);
+    expect(json.data[0].image_url).toBe('/uploads/parcels/2026-06/abc.jpg');
+  });
 });

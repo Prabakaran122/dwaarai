@@ -29,9 +29,12 @@ class Config:
     MQTT_KEY_PATH:  str  = os.getenv("MQTT_KEY_PATH", "")
     MQTT_CA_PATH:   str  = os.getenv("MQTT_CA_PATH", "")
 
-    # Offline storage
-    OFFLINE_DB_PATH:    str = os.getenv("OFFLINE_DB_PATH",    "/tmp/whitelist.db")
-    OFFLINE_QUEUE_PATH: str = os.getenv("OFFLINE_QUEUE_PATH", "/tmp/event_queue.db")
+    # Offline storage — must persist across reboots. /tmp is cleared on a Pi
+    # reboot, which would wipe the offline whitelist cache and queued events,
+    # so default to a persistent dir (provisioning creates it owned by the
+    # service user). Override via env in dev/tests.
+    OFFLINE_DB_PATH:    str = os.getenv("OFFLINE_DB_PATH",    "/var/lib/communitygate/whitelist.db")
+    OFFLINE_QUEUE_PATH: str = os.getenv("OFFLINE_QUEUE_PATH", "/var/lib/communitygate/event_queue.db")
     WHITELIST_SYNC_INTERVAL: int = int(os.getenv("WHITELIST_SYNC_INTERVAL_SECONDS","300"))
     HEARTBEAT_INTERVAL: int = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS","60"))
 

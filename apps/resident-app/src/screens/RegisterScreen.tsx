@@ -1,12 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
-import GlowCard from '../components/GlowCard';
-import GradientButton from '../components/GradientButton';
-import AnimatedEntry from '../components/AnimatedEntry';
+import { font } from '../theme/typography';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
 import { registerResident, verifyRegistration } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 
@@ -90,125 +90,184 @@ export default function RegisterScreen() {
   };
 
   return (
-    <LinearGradient colors={colors.gradientBg} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.container}>
-      <AnimatedEntry direction="up" duration={600}>
-        <GlowCard style={styles.card}>
-          <View style={styles.logoRow}>
-            <LinearGradient colors={colors.gradientSuccess as [string, string]} style={styles.logoCircle}>
-              <MaterialCommunityIcons name="account-plus" size={28} color={colors.white} />
-            </LinearGradient>
+    <View style={styles.container}>
+      <Card style={styles.card}>
+        {/* Brand header */}
+        <View style={styles.logoRow}>
+          <View style={styles.logoCircle}>
+            <MaterialCommunityIcons name="account-plus" size={28} color={colors.textInverse} />
           </View>
-          <Text style={styles.title}>Join Community</Text>
-          <Text style={styles.subtitle}>RESIDENT REGISTRATION</Text>
+        </View>
+        <Text style={styles.title}>Join Community</Text>
+        <Text style={styles.subtitle}>Resident Registration</Text>
 
-          {errorMsg ? (
-            <AnimatedEntry direction="fade">
-              <Text style={styles.error}>{errorMsg}</Text>
-            </AnimatedEntry>
-          ) : null}
+        {errorMsg ? (
+          <Text style={styles.error}>{errorMsg}</Text>
+        ) : null}
 
-          {step === 'details' ? (
-            <>
-              <TextInput
-                style={styles.input}
-                placeholder="Community Code (e.g., PALM2026)"
-                placeholderTextColor={colors.textMuted}
+        {step === 'details' ? (
+          <>
+            <View style={styles.inputSpacing}>
+              <Input
+                label="Community code"
+                placeholder="e.g. PALM2026"
                 value={communityCode}
                 onChangeText={setCommunityCode}
                 autoCapitalize="characters"
               />
-              <TextInput
-                style={styles.input}
-                placeholder="Phone number"
-                placeholderTextColor={colors.textMuted}
+            </View>
+            <View style={styles.inputSpacing}>
+              <Input
+                label="Phone number"
+                placeholder="e.g. 9876543210"
                 value={phone}
                 onChangeText={setPhone}
                 keyboardType="phone-pad"
               />
-              <TextInput
-                style={styles.input}
-                placeholder="Unit number (e.g., 301)"
-                placeholderTextColor={colors.textMuted}
+            </View>
+            <View style={styles.inputSpacing}>
+              <Input
+                label="Unit number"
+                placeholder="e.g. 301"
                 value={unitNumber}
                 onChangeText={setUnitNumber}
               />
-              <GradientButton
-                title="Register"
-                onPress={handleRegister}
-                icon="account-plus"
-                variant="success"
-                loading={loading}
-                disabled={!communityCode.trim() || !phone.trim() || !unitNumber.trim()}
-              />
-            </>
-          ) : (
-            <>
-              <Text style={styles.otpSentLabel}>OTP sent to {phone}</Text>
-              {communityName ? (
-                <Text style={styles.communityLabel}>Joining {communityName}</Text>
-              ) : null}
-              <View style={styles.digitRow}>
-                {digits.map((digit, i) => (
-                  <View key={i} style={[styles.digitBox, digit ? styles.digitBoxFilled : null]}>
-                    <TextInput
-                      ref={(ref) => { inputRefs.current[i] = ref; }}
-                      style={styles.digitInput}
-                      value={digit}
-                      onChangeText={(v) => handleDigitChange(i, v)}
-                      onKeyPress={({ nativeEvent }) => handleKeyPress(i, nativeEvent.key)}
-                      keyboardType="number-pad"
-                      maxLength={1}
-                      textAlign="center"
-                      selectTextOnFocus
-                    />
-                  </View>
-                ))}
-              </View>
-              <GradientButton
-                title="Verify OTP"
-                onPress={handleVerifyOTP}
-                icon="check-circle"
-                variant="success"
-                loading={loading}
-                disabled={otp.length !== 6}
-              />
-              <TouchableOpacity onPress={() => { setStep('details'); setDigits(['', '', '', '', '', '']); setErrorMsg(''); }} style={styles.changeLink}>
-                <Text style={styles.changeLinkText}>Change details</Text>
-              </TouchableOpacity>
-            </>
-          )}
+            </View>
+            <Button
+              title="Register"
+              onPress={handleRegister}
+              icon="account-plus"
+              loading={loading}
+              disabled={!communityCode.trim() || !phone.trim() || !unitNumber.trim()}
+            />
+          </>
+        ) : (
+          <>
+            <Text style={styles.otpSentLabel}>OTP sent to {phone}</Text>
+            {communityName ? (
+              <Text style={styles.communityLabel}>Joining {communityName}</Text>
+            ) : null}
+            <View style={styles.digitRow}>
+              {digits.map((digit, i) => (
+                <View key={i} style={[styles.digitBox, digit ? styles.digitBoxFilled : null]}>
+                  <TextInput
+                    ref={(ref) => { inputRefs.current[i] = ref; }}
+                    style={styles.digitInput}
+                    value={digit}
+                    onChangeText={(v) => handleDigitChange(i, v)}
+                    onKeyPress={({ nativeEvent }) => handleKeyPress(i, nativeEvent.key)}
+                    keyboardType="number-pad"
+                    maxLength={1}
+                    textAlign="center"
+                    selectTextOnFocus
+                  />
+                </View>
+              ))}
+            </View>
+            <Button
+              title="Verify OTP"
+              onPress={handleVerifyOTP}
+              icon="check-circle"
+              loading={loading}
+              disabled={otp.length !== 6}
+            />
+            <TouchableOpacity
+              onPress={() => { setStep('details'); setDigits(['', '', '', '', '', '']); setErrorMsg(''); }}
+              style={styles.linkRow}
+            >
+              <Text style={styles.linkText}>Change details</Text>
+            </TouchableOpacity>
+          </>
+        )}
 
-          <TouchableOpacity onPress={() => setShowRegister(false)} style={styles.changeLink}>
-            <Text style={styles.changeLinkText}>Already have an account? Login</Text>
-          </TouchableOpacity>
-        </GlowCard>
-      </AnimatedEntry>
-    </LinearGradient>
+        <TouchableOpacity onPress={() => setShowRegister(false)} style={styles.linkRow}>
+          <Text style={styles.linkText}>Already have an account? Login</Text>
+        </TouchableOpacity>
+      </Card>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  card: { width: '85%', maxWidth: 360 },
+  container: {
+    flex: 1,
+    backgroundColor: colors.mist,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  card: { width: '100%', maxWidth: 360 },
   logoRow: { alignItems: 'center', marginBottom: spacing.lg },
-  logoCircle: { width: 56, height: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 24, fontWeight: '800', color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.xs },
-  subtitle: { fontSize: 12, color: colors.success, textAlign: 'center', marginBottom: spacing['2xl'], letterSpacing: 2 },
-  error: { color: colors.danger, fontSize: 13, textAlign: 'center', marginBottom: spacing.lg },
-  input: {
-    backgroundColor: colors.surface, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.surfaceBorder,
-    padding: spacing.lg, fontSize: 16, color: colors.textPrimary, marginBottom: spacing.md,
+  logoCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.full,
+    backgroundColor: colors.teal,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  otpSentLabel: { color: colors.textMuted, fontSize: 13, textAlign: 'center', marginBottom: spacing.xs },
-  communityLabel: { color: colors.success, fontSize: 14, fontWeight: '600', textAlign: 'center', marginBottom: spacing.lg },
-  digitRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl, justifyContent: 'center' },
+  title: {
+    ...font(700),
+    fontSize: 24,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  subtitle: {
+    ...font(400),
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing['2xl'],
+    letterSpacing: 0.5,
+  },
+  error: {
+    ...font(400),
+    color: colors.error,
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  inputSpacing: { marginBottom: spacing.md },
+  otpSentLabel: {
+    ...font(400),
+    color: colors.textSecondary,
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  communityLabel: {
+    ...font(500),
+    color: colors.teal,
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  digitRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.xl,
+    justifyContent: 'center',
+  },
   digitBox: {
-    width: 44, height: 56, borderRadius: radius.md, borderWidth: 1,
-    borderColor: colors.surfaceBorder, backgroundColor: colors.surface,
-    justifyContent: 'center', alignItems: 'center',
+    width: 44,
+    height: 56,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.surfaceBorder,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  digitBoxFilled: { borderColor: 'rgba(34,197,94,0.5)' },
-  digitInput: { fontSize: 24, fontWeight: '800', color: colors.textPrimary, width: '100%', height: '100%', textAlign: 'center' },
-  changeLink: { alignItems: 'center', marginTop: spacing.lg },
-  changeLinkText: { color: colors.textSecondary, fontSize: 14 },
+  digitBoxFilled: { borderColor: colors.teal, borderWidth: 1.5 },
+  digitInput: {
+    ...font(700),
+    fontSize: 24,
+    color: colors.textPrimary,
+    width: '100%',
+    height: '100%',
+    textAlign: 'center',
+  },
+  linkRow: { alignItems: 'center', marginTop: spacing.lg },
+  linkText: { ...font(400), color: colors.textSecondary, fontSize: 14 },
 });

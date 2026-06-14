@@ -57,6 +57,17 @@ def _local_check(method, value):
         return {"decision":"allow","source":"local",**row}
     return {"decision":"guard_review","source":"local","reason":"unknown_offline"}
 
+def _open_gate() -> bool:
+    """Trigger the C3 barrier if connected. Returns True only if the open command
+    succeeded — callers record this so the audit reflects whether the barrier
+    actually moved (not just that access was granted)."""
+    if _c3 and _c3.is_connected():
+        ok = _c3.open_door()
+        if not ok:
+            log.error("C3 open_door FAILED — barrier may not have physically opened")
+        return ok
+    return False
+
 def _try_auto_pair(tid_hash: str, plate: str):
     try:
         r = requests.post(f"{cfg.CLOUD_API_URL}/vehicles/auto-pair",
@@ -83,15 +94,18 @@ def _process_c3_event(event: dict):
     card = event["card_number"]
     etype = event["event_type"]
 
-    # Deduplicate: skip if same card read within DEDUP_WINDOW seconds
+    # Deduplicate: skip if same card read within DEDUP_WINDOW seconds.
+    # _last_read is shared with no other writer but is touched from this poll
+    # thread; guard it under _lock alongside the other shared dicts.
     now = time.time()
-    if card in _last_read and (now - _last_read[card]) < DEDUP_WINDOW:
-        log.debug(f"Dedup: ignoring repeat read for {card[:12]}... ({now - _last_read[card]:.1f}s)")
-        return
-    _last_read[card] = now
-    # Clean old dedup entries periodically
-    for k in [k for k, ts in _last_read.items() if now - ts > 30]:
-        del _last_read[k]
+    with _lock:
+        if card in _last_read and (now - _last_read[card]) < DEDUP_WINDOW:
+            log.debug(f"Dedup: ignoring repeat read for {card[:12]}... ({now - _last_read[card]:.1f}s)")
+            return
+        _last_read[card] = now
+        # Clean old dedup entries periodically (snapshot keys — dict mutates here)
+        for k in [k for k, ts in list(_last_read.items()) if now - ts > 30]:
+            del _last_read[k]
 
     if etype == "allow":
         log.info(f"C3 ALLOWED (local): {card[:12]}...")
@@ -101,23 +115,52 @@ def _process_c3_event(event: dict):
                       "event_ts": time.time()})
     elif etype == "deny":
         log.info(f"C3 DENIED (unknown card): {card[:12]}... — queuing for ANPR correlation")
-        _pending_unknown[card] = {"ts": time.time(), "event": event}
-        # Clean old pending entries
-        now = time.time()
-        for k in [k for k, v in _pending_unknown.items() if now - v["ts"] > 30]:
-            del _pending_unknown[k]
+        # _pending_unknown is mutated here (poll thread) and read/deleted in
+        # handle_anpr_detection (ANPR HTTP thread) — guard under _lock.
+        with _lock:
+            _pending_unknown[card] = {"ts": time.time(), "event": event}
+            for k in [k for k, v in list(_pending_unknown.items()) if now - v["ts"] > 30]:
+                del _pending_unknown[k]
 
 def _c3_poll_loop():
-    """Continuously poll C3 for new events."""
+    """Continuously poll C3 for new events, reconnecting if the link drops."""
+    reconnect_backoff = 1.0
     while True:
         try:
             if _c3 and _c3.is_connected():
                 events = _c3.poll_events()
                 for event in events:
                     _process_c3_event(event)
+            elif _c3:
+                # Link is down (initial failure or dropped mid-run). Try to
+                # re-establish with capped exponential backoff so the gate
+                # recovers on its own instead of going dead until restart.
+                log.warning("C3 not connected — attempting reconnect")
+                if _c3.connect():
+                    log.info("C3 reconnected")
+                    reconnect_backoff = 1.0
+                else:
+                    time.sleep(reconnect_backoff)
+                    reconnect_backoff = min(reconnect_backoff * 2, 30.0)
+                    continue
         except Exception as e:
             log.error(f"C3 poll error: {e}")
         time.sleep(cfg.C3_POLL_INTERVAL)
+
+def _offline_sync_loop():
+    """Periodically flush queued gate events to the cloud when online.
+
+    Without this the offline queue is never drained — local C3 'allow' events
+    (which never hit the cloud check) and any events captured while MQTT was
+    down would never reach the cloud audit/activity feed.
+    """
+    while True:
+        try:
+            if _online and _oq.pending_count() > 0:
+                _oq.sync(cfg.CLOUD_API_URL, cfg.DEVICE_TOKEN)
+        except Exception as e:
+            log.error(f"Offline sync error: {e}")
+        time.sleep(max(10, cfg.HEARTBEAT_INTERVAL))
 
 # ── ANPR handler (correlates with pending unknown FASTag) ─────────────
 def handle_anpr_detection(plate: str, confidence: float = None):
@@ -126,8 +169,11 @@ def handle_anpr_detection(plate: str, confidence: float = None):
     log.info(f"ANPR detection: plate={plate} conf={confidence}")
     now = time.time()
 
-    # Check for pending unknown FASTag within correlation window
-    for card_number, pending in list(_pending_unknown.items()):
+    # Check for pending unknown FASTag within correlation window.
+    # Snapshot under lock; the poll thread may mutate _pending_unknown concurrently.
+    with _lock:
+        pending_items = list(_pending_unknown.items())
+    for card_number, pending in pending_items:
         if (now - pending["ts"]) < cfg.FASTAG_CORRELATION_WINDOW:
             # Correlate: unknown FASTag + ANPR result
             if is_blacklisted_local(cfg.OFFLINE_DB_PATH, "anpr", plate):
@@ -137,7 +183,8 @@ def handle_anpr_detection(plate: str, confidence: float = None):
                               "access_decision": "deny", "deny_reason": "blacklisted",
                               "anpr_confidence": confidence, "is_offline_event": not _online,
                               "event_ts": time.time()})
-                del _pending_unknown[card_number]
+                with _lock:
+                    _pending_unknown.pop(card_number, None)
                 return
 
             plate_result = None
@@ -147,10 +194,9 @@ def handle_anpr_detection(plate: str, confidence: float = None):
                 plate_result = _local_check("anpr", plate)
 
             if plate_result and plate_result["decision"] == "allow":
-                # Remote unlock C3
-                if _c3 and _c3.is_connected():
-                    _c3.open_door()
-                log.info(f"GRANTED (ANPR correlated) → {plate_result.get('unit_number')}")
+                # Remote unlock C3 — record whether the barrier actually opened
+                opened = _open_gate()
+                log.info(f"GRANTED (ANPR correlated) → {plate_result.get('unit_number')} gate_opened={opened}")
                 # Auto-pair in background
                 if _online:
                     threading.Thread(target=_try_auto_pair,
@@ -158,8 +204,10 @@ def handle_anpr_detection(plate: str, confidence: float = None):
                 _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
                               "detection_method": "anpr", "raw_value": plate,
                               "access_decision": "allow", "anpr_confidence": confidence,
+                              "gate_opened": opened,
                               "is_offline_event": not _online, "event_ts": time.time()})
-                del _pending_unknown[card_number]
+                with _lock:
+                    _pending_unknown.pop(card_number, None)
                 return
             else:
                 log.info(f"GUARD REVIEW — unknown FASTag + unknown plate {plate}")
@@ -168,7 +216,8 @@ def handle_anpr_detection(plate: str, confidence: float = None):
                               "access_decision": "guard_review", "deny_reason": "not_recognized",
                               "anpr_confidence": confidence, "is_offline_event": not _online,
                               "event_ts": time.time()})
-                del _pending_unknown[card_number]
+                with _lock:
+                    _pending_unknown.pop(card_number, None)
                 return
 
     # No pending FASTag — standard ANPR-only access check
@@ -180,18 +229,18 @@ def handle_anpr_detection(plate: str, confidence: float = None):
         result = _local_check("anpr", plate)
 
     decision = result["decision"]
+    opened = False
     if decision == "allow":
-        if _c3 and _c3.is_connected():
-            _c3.open_door()
-        log.info(f"GRANTED (ANPR) → {result.get('unit_number')} ({result.get('resident_name')})")
+        opened = _open_gate()
+        log.info(f"GRANTED (ANPR) → {result.get('unit_number')} ({result.get('resident_name')}) gate_opened={opened}")
     else:
         log.info(f"DENIED (ANPR) — {result.get('reason')}")
 
     _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
                  "detection_method": "anpr", "raw_value": plate,
                  "access_decision": decision, "deny_reason": result.get("reason"),
-                 "anpr_confidence": confidence, "is_offline_event": not _online,
-                 "event_ts": time.time()})
+                 "anpr_confidence": confidence, "gate_opened": opened,
+                 "is_offline_event": not _online, "event_ts": time.time()})
 
 # ── ANPR camera event handler ─────────────────────────────────────────
 def _handle_anpr_event(plate: str, confidence: float = None):
@@ -216,16 +265,17 @@ def _on_command(client, userdata, msg):
         if ttl is not None and ttl < time.time():
             log.warning(f"TTL expired — command {eid} rejected"); return
         now = time.time()
-        if _seen_ids.get(eid,0) > now-60:
-            log.warning(f"Duplicate command {eid} ignored"); return
-        _seen_ids[eid] = now
-        for k in [k for k,v in _seen_ids.items() if v < now-60]: del _seen_ids[k]
+        with _lock:
+            if _seen_ids.get(eid,0) > now-60:
+                log.warning(f"Duplicate command {eid} ignored"); return
+            _seen_ids[eid] = now
+            for k in [k for k,v in list(_seen_ids.items()) if v < now-60]: del _seen_ids[k]
         if cmd.get("action") == "open":
-            if _c3 and _c3.is_connected():
-                _c3.open_door()
+            opened = _open_gate()
             if client:
                 client.publish(f"cg/{cfg.COMMUNITY_ID}/gates/{cfg.GATE_ID}/ack",
-                               json.dumps({"event_id":eid,"status":"opened",
+                               json.dumps({"event_id":eid,
+                                           "status":"opened" if opened else "open_failed",
                                            "gate_id":cfg.GATE_ID,"ts":time.time()}), qos=1)
     except Exception as e:
         log.error(f"Command error: {e}")
@@ -256,6 +306,10 @@ def main():
     global _c3
     log.info(f"CommunityGate starting — gate={cfg.GATE_ID} type={cfg.GATE_TYPE}")
     start_mqtt()
+
+    # Drain queued events to the cloud in the background (online only).
+    threading.Thread(target=_offline_sync_loop, daemon=True).start()
+    log.info(f"Offline event sync started (interval={max(10, cfg.HEARTBEAT_INTERVAL)}s)")
 
     # Start ANPR camera event receiver (listens for HTTP POST from any ANPR camera)
     anpr = ANPRReceiver(port=cfg.ANPR_RECEIVER_PORT, on_plate_callback=_handle_anpr_event)

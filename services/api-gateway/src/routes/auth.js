@@ -191,10 +191,18 @@ router.post('/auth/resident-verify', loginLimiter, async (req, res) => {
     if (msg91Configured()) {
       otpValid = await msg91Verify(phone, otp);
     } else {
-      const redis = getRedisClient();
-      const storedOtp = await redis.get(`otp:${phone}`);
-      otpValid = !!(storedOtp && storedOtp === otp);
-      if (otpValid) await redis.del(`otp:${phone}`);
+      // Dev-only master OTP bypass for testing. Active ONLY when real SMS is
+      // not configured AND DEV_MASTER_OTP is set. Unset the env var (or
+      // configure MSG91) to disable.
+      const master = process.env.DEV_MASTER_OTP;
+      if (master && otp === master) {
+        otpValid = true;
+      } else {
+        const redis = getRedisClient();
+        const storedOtp = await redis.get(`otp:${phone}`);
+        otpValid = !!(storedOtp && storedOtp === otp);
+        if (otpValid) await redis.del(`otp:${phone}`);
+      }
     }
 
     if (!otpValid) {
@@ -203,7 +211,7 @@ router.post('/auth/resident-verify', loginLimiter, async (req, res) => {
 
     // Look up resident
     const resident = await queryOne(
-      `SELECT r.id, r.community_id, r.unit_id, r.name, r.mobile,
+      `SELECT r.id, r.community_id, r.unit_id, r.name, r.mobile, r.is_committee,
               u.unit_number
        FROM residents r
        JOIN units u ON r.unit_id = u.id
@@ -221,6 +229,7 @@ router.post('/auth/resident-verify', loginLimiter, async (req, res) => {
       community_id: resident.community_id,
       unit_id: resident.unit_id,
       name: resident.name,
+      is_committee: resident.is_committee || false,
     });
 
     const refreshToken = signRefreshToken(resident.id);
@@ -232,6 +241,7 @@ router.post('/auth/resident-verify', loginLimiter, async (req, res) => {
         name: resident.name,
         phone: resident.mobile,
         unitNumber: resident.unit_number,
+        isCommittee: resident.is_committee || false,
       },
     });
   } catch (err) {
@@ -342,7 +352,9 @@ router.post('/auth/resident-register-verify', loginLimiter, async (req, res) => 
     if (msg91Configured()) {
       otpValid = await msg91Verify(phone, otp);
     } else {
-      otpValid = !!(regData.otp && regData.otp === otp);
+      // Dev-only master OTP bypass (see POST /auth/resident-verify).
+      const master = process.env.DEV_MASTER_OTP;
+      otpValid = !!((master && otp === master) || (regData.otp && regData.otp === otp));
     }
 
     if (!otpValid) {
@@ -377,6 +389,7 @@ router.post('/auth/resident-register-verify', loginLimiter, async (req, res) => 
       community_id: resident.community_id,
       unit_id: resident.unit_id,
       name: resident.name,
+      is_committee: false, // freshly created residents are never committee members
     });
 
     const refreshToken = signRefreshToken(resident.id);
@@ -391,6 +404,7 @@ router.post('/auth/resident-register-verify', loginLimiter, async (req, res) => 
           phone: resident.mobile,
           unitNumber: unit_number,
           communityName: community_name,
+          isCommittee: false,
         },
       },
     });

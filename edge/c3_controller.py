@@ -10,11 +10,23 @@ import time, logging
 log = logging.getLogger("c3_controller")
 
 try:
-    from c3 import C3, ControlDeviceOutput
+    from c3 import C3
+    # ControlDeviceOutput moved between top-level and the controldevice submodule
+    # across zkaccess-c3 versions — import defensively so either layout works.
+    try:
+        from c3 import ControlDeviceOutput
+    except ImportError:
+        from c3.controldevice import ControlDeviceOutput
     _HAS_SDK = True
 except ImportError:
     _HAS_SDK = False
     log.warning("zkaccess-c3 not installed — C3 controller unavailable. Install: pip install zkaccess-c3")
+
+# zkaccess-c3 (0.0.15) does NOT implement set_device_data/delete_device_data, so
+# the C3 user/card table cannot be written from Python. Cards must be loaded onto
+# the panel out-of-band (ZKAccess/ZKBio desktop software). The write methods below
+# degrade gracefully instead of raising. See reference_app_distribution / hardware notes.
+_WRITES_SUPPORTED = False
 
 
 class C3Controller:
@@ -69,88 +81,46 @@ class C3Controller:
         return self._connected and self._panel is not None
 
     def sync_cards(self, cards: list[str]) -> int:
-        """Replace all cards on the C3 with the given list.
+        """Load the given cards onto the C3.
 
-        Uses the C3 'user' table: clears existing, then adds each card
-        with access to the configured door.
+        NOTE: zkaccess-c3 (0.0.15) does not implement writing the 'user' table,
+        so this cannot push cards to the panel. Cards must be provisioned via
+        ZKAccess/ZKBio. This logs the gap once and no-ops rather than raising.
         """
-        if not self._panel:
+        if not _WRITES_SUPPORTED:
+            log.warning(
+                "C3 sync_cards skipped: zkaccess-c3 cannot write the user table. "
+                f"Load {len(cards)} card(s) onto the panel via ZKAccess/ZKBio software."
+            )
             return 0
-        try:
-            # Clear existing users
-            try:
-                self._panel.set_device_data("user", [])
-            except Exception:
-                log.warning("C3 clear users failed — may not be supported, continuing with add")
-
-            # Add each card as a user record
-            for i, card in enumerate(cards):
-                try:
-                    self._panel.set_device_data("user", [{
-                        "CardNo": card,
-                        "Pin": str(i + 1),
-                        "Password": "",
-                        "Group": "1",
-                        "StartTime": "2000-01-01 00:00:00",
-                        "EndTime": "2099-12-31 23:59:59",
-                    }])
-                except Exception as e:
-                    log.warning(f"C3 add card {card[:12]}... failed: {e}")
-
-            log.info(f"C3 synced {len(cards)} cards")
-            return len(cards)
-        except Exception as e:
-            log.error(f"C3 card sync failed: {e}")
-            return 0
+        return 0
 
     def clear_cards(self) -> bool:
-        if not self._panel:
+        if not _WRITES_SUPPORTED:
+            log.warning("C3 clear_cards skipped: zkaccess-c3 cannot write the user table.")
             return False
-        try:
-            self._panel.set_device_data("user", [])
-            return True
-        except Exception as e:
-            log.error(f"C3 clear cards failed: {e}")
-            return False
+        return False
 
     def add_card(self, card_number: str) -> bool:
-        if not self._panel:
+        if not _WRITES_SUPPORTED:
+            log.warning(
+                f"C3 add_card skipped ({card_number[:12]}...): zkaccess-c3 cannot write "
+                "the user table. Provision via ZKAccess/ZKBio."
+            )
             return False
-        try:
-            self._panel.set_device_data("user", [{
-                "CardNo": card_number,
-                "Pin": card_number[:10],
-                "Password": "",
-                "Group": "1",
-                "StartTime": "2000-01-01 00:00:00",
-                "EndTime": "2099-12-31 23:59:59",
-            }])
-            log.info(f"C3 added card {card_number[:12]}...")
-            return True
-        except Exception as e:
-            log.error(f"C3 add card failed: {e}")
-            return False
+        return False
 
     def remove_card(self, card_number: str) -> bool:
-        """Remove a card. Note: zkaccess-c3 may not support individual delete.
-        Falls back to clearing and re-syncing if needed."""
-        if not self._panel:
+        if not _WRITES_SUPPORTED:
+            log.warning(
+                f"C3 remove_card skipped ({card_number[:12]}...): zkaccess-c3 cannot write "
+                "the user table. Block via ZKAccess/ZKBio."
+            )
             return False
-        try:
-            # Try to get all users, filter out the card, re-sync
-            users = self._panel.get_device_data("user", ["CardNo", "Pin"])
-            remaining = [u for u in users if u.get("CardNo") != card_number]
-            self._panel.set_device_data("user", [])
-            for u in remaining:
-                self._panel.set_device_data("user", [u])
-            log.info(f"C3 removed card {card_number[:12]}...")
-            return True
-        except Exception as e:
-            log.error(f"C3 remove card failed: {e}")
-            return False
+        return False
 
     def block_card(self, card_number: str) -> bool:
-        """Remove the card so C3 denies it."""
+        """Block a card. Not writable via zkaccess-c3 — handle via ZKAccess/ZKBio."""
         return self.remove_card(card_number)
 
     def poll_events(self) -> list[dict]:
@@ -183,6 +153,7 @@ class C3Controller:
             return new_events
         except Exception as e:
             log.error(f"C3 poll events failed: {e}")
+            self._connected = False  # surface the drop so the poll loop reconnects
             return []
 
     def open_door(self) -> bool:
@@ -190,18 +161,23 @@ class C3Controller:
         if not self._panel:
             return False
         try:
-            duration_ms = self.open_duration * 1000
+            # C3 ControlDeviceOutput.duration is in SECONDS (0 = close, 1-254 =
+            # seconds open, 255 = stay open). It is a single byte — passing
+            # milliseconds (e.g. 5000) overflows and keeps the barrier up far too
+            # long. Clamp to the valid 1-254s range.
+            duration_s = max(1, min(254, int(self.open_duration)))
             self._panel.control_device(
                 ControlDeviceOutput(
                     output_number=self.door_number,
-                    address=0,
-                    duration=duration_ms
+                    address=1,  # 1 = door output (2 = auxiliary)
+                    duration=duration_s
                 )
             )
-            log.info(f"C3 door {self.door_number} opened ({self.open_duration}s)")
+            log.info(f"C3 door {self.door_number} opened ({duration_s}s)")
             return True
         except Exception as e:
             log.error(f"C3 open door failed: {e}")
+            self._connected = False  # surface the drop so the poll loop reconnects
             return False
 
     def get_status(self) -> dict:

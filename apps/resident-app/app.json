@@ -2,7 +2,7 @@
   "expo": {
     "name": "CommunityGate",
     "slug": "communitygate-resident",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "orientation": "portrait",
     "platforms": [
       "android",
@@ -11,7 +11,7 @@
     ],
     "android": {
       "package": "com.communitygate.resident",
-      "versionCode": 1
+      "versionCode": 2
     },
     "ios": {
       "bundleIdentifier": "com.communitygate.resident"
@@ -21,6 +21,9 @@
         "projectId": "d2c60a2a-2eb4-44b7-9640-b092d62294cf"
       }
     },
-    "owner": "skprabakaran122"
+    "owner": "skprabakaran122",
+    "plugins": [
+      "expo-font"
+    ]
   }
 }

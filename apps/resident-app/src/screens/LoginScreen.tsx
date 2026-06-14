@@ -1,12 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
-import GlowCard from '../components/GlowCard';
-import GradientButton from '../components/GradientButton';
-import AnimatedEntry from '../components/AnimatedEntry';
+import { font } from '../theme/typography';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
 import { requestOTP, verifyOTP } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 
@@ -87,113 +87,157 @@ export default function LoginScreen() {
   };
 
   return (
-    <LinearGradient colors={colors.gradientBg} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.container}>
-      <AnimatedEntry direction="up" duration={600}>
-        <GlowCard style={styles.card}>
-          <View style={styles.logoRow}>
-            <LinearGradient colors={colors.gradientPrimary as [string, string]} style={styles.logoCircle}>
-              <MaterialCommunityIcons name="cellphone" size={28} color={colors.white} />
-            </LinearGradient>
+    <View style={styles.container}>
+      <Card style={styles.card}>
+        {/* Brand header */}
+        <View style={styles.logoRow}>
+          <View style={styles.logoCircle}>
+            <MaterialCommunityIcons name="door-sliding" size={28} color={colors.textInverse} />
           </View>
-          <Text style={styles.title}>CommunityGate</Text>
-          <Text style={styles.subtitle}>RESIDENT LOGIN</Text>
+        </View>
+        <Text style={styles.title}>Dwaar AI</Text>
+        <Text style={styles.subtitle}>Resident Login</Text>
 
-          {errorMsg ? (
-            <AnimatedEntry direction="fade">
-              <Text style={styles.error}>{errorMsg}</Text>
-            </AnimatedEntry>
-          ) : null}
+        {errorMsg ? (
+          <Text style={styles.error}>{errorMsg}</Text>
+        ) : null}
 
-          {otpStep === 'phone' ? (
-            <>
-              <View style={[styles.inputWrapper, focusedField && styles.inputFocused]}>
-                <MaterialCommunityIcons name="phone" size={18} color={colors.textMuted} style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Phone number"
-                  placeholderTextColor={colors.textMuted}
-                  value={phone}
-                  onChangeText={setPhone}
-                  keyboardType="phone-pad"
-                  onFocus={() => setFocusedField(true)}
-                  onBlur={() => setFocusedField(false)}
-                />
-              </View>
-              <GradientButton
-                title="Send OTP"
-                onPress={handleRequestOTP}
-                icon="message-text"
-                loading={loading}
-                disabled={!phone.trim() || phone.trim().length < 10}
+        {otpStep === 'phone' ? (
+          <>
+            <View style={styles.inputSpacing}>
+              <Input
+                label="Phone number"
+                placeholder="e.g. 9876543210"
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+                onFocus={() => setFocusedField(true)}
+                onBlur={() => setFocusedField(false)}
               />
-            </>
-          ) : (
-            <>
-              <Text style={styles.otpSentLabel}>OTP sent to {phone}</Text>
-              <View style={styles.digitRow}>
-                {digits.map((digit, i) => (
-                  <View key={i} style={[styles.digitBox, digit ? styles.digitBoxFilled : null]}>
-                    <TextInput
-                      ref={(ref) => { inputRefs.current[i] = ref; }}
-                      style={styles.digitInput}
-                      value={digit}
-                      onChangeText={(v) => handleDigitChange(i, v)}
-                      onKeyPress={({ nativeEvent }) => handleKeyPress(i, nativeEvent.key)}
-                      keyboardType="number-pad"
-                      maxLength={1}
-                      textAlign="center"
-                      selectTextOnFocus
-                    />
-                  </View>
-                ))}
-              </View>
-              <GradientButton
-                title="Verify OTP"
-                onPress={handleVerifyOTP}
-                icon="check-circle"
-                loading={loading}
-                disabled={otp.length !== 6}
-              />
-              <TouchableOpacity onPress={handleChangeNumber} style={styles.changeLink}>
-                <Text style={styles.changeLinkText}>Change number</Text>
-              </TouchableOpacity>
-            </>
-          )}
-          <TouchableOpacity onPress={() => setShowRegister(true)} style={styles.changeLink}>
-            <Text style={styles.registerLinkText}>First time? Register with community code</Text>
-          </TouchableOpacity>
-        </GlowCard>
-      </AnimatedEntry>
-    </LinearGradient>
+            </View>
+            <Button
+              title="Send OTP"
+              onPress={handleRequestOTP}
+              icon="message-text"
+              loading={loading}
+              disabled={!phone.trim() || phone.trim().length < 10}
+            />
+          </>
+        ) : (
+          <>
+            <Text style={styles.otpSentLabel}>OTP sent to {phone}</Text>
+            <View style={styles.digitRow}>
+              {digits.map((digit, i) => (
+                <View key={i} style={[styles.digitBox, digit ? styles.digitBoxFilled : null]}>
+                  <TextInput
+                    ref={(ref) => { inputRefs.current[i] = ref; }}
+                    style={styles.digitInput}
+                    value={digit}
+                    onChangeText={(v) => handleDigitChange(i, v)}
+                    onKeyPress={({ nativeEvent }) => handleKeyPress(i, nativeEvent.key)}
+                    keyboardType="number-pad"
+                    maxLength={1}
+                    textAlign="center"
+                    selectTextOnFocus
+                  />
+                </View>
+              ))}
+            </View>
+            <Button
+              title="Verify"
+              onPress={handleVerifyOTP}
+              icon="check-circle"
+              loading={loading}
+              disabled={otp.length !== 6}
+            />
+            <TouchableOpacity onPress={handleChangeNumber} style={styles.linkRow}>
+              <Text style={styles.linkText}>Change number</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        <TouchableOpacity onPress={() => setShowRegister(true)} style={styles.linkRow}>
+          <Text style={styles.registerLinkText}>New here? Register with community code</Text>
+        </TouchableOpacity>
+      </Card>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  card: { width: '85%', maxWidth: 360 },
+  container: {
+    flex: 1,
+    backgroundColor: colors.mist,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  card: { width: '100%', maxWidth: 360 },
   logoRow: { alignItems: 'center', marginBottom: spacing.lg },
-  logoCircle: { width: 56, height: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 24, fontWeight: '800', color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.xs },
-  subtitle: { fontSize: 12, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing['2xl'], letterSpacing: 2 },
-  error: { color: colors.danger, fontSize: 13, textAlign: 'center', marginBottom: spacing.lg },
-  inputWrapper: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
-    borderRadius: radius.sm, borderWidth: 1, borderColor: colors.surfaceBorder,
-    marginBottom: spacing.lg, paddingHorizontal: spacing.md,
+  logoCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.full,
+    backgroundColor: colors.brandPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  inputFocused: { borderColor: 'rgba(99,102,241,0.5)' },
-  inputIcon: { marginRight: spacing.sm },
-  input: { flex: 1, padding: spacing.lg, fontSize: 16, color: colors.textPrimary },
-  otpSentLabel: { color: colors.textMuted, fontSize: 13, textAlign: 'center', marginBottom: spacing.lg },
-  digitRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl, justifyContent: 'center' },
+  title: {
+    ...font(700),
+    fontSize: 24,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  subtitle: {
+    ...font(400),
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing['2xl'],
+    letterSpacing: 0.5,
+  },
+  error: {
+    ...font(400),
+    color: colors.error,
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  inputSpacing: { marginBottom: spacing.lg },
+  otpSentLabel: {
+    ...font(400),
+    color: colors.textSecondary,
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  digitRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.xl,
+    justifyContent: 'center',
+  },
   digitBox: {
-    width: 44, height: 56, borderRadius: radius.md, borderWidth: 1,
-    borderColor: colors.surfaceBorder, backgroundColor: colors.surface,
-    justifyContent: 'center', alignItems: 'center',
+    width: 44,
+    height: 56,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.surfaceBorder,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  digitBoxFilled: { borderColor: 'rgba(99,102,241,0.5)' },
-  digitInput: { fontSize: 24, fontWeight: '800', color: colors.textPrimary, width: '100%', height: '100%', textAlign: 'center' },
-  changeLink: { alignItems: 'center', marginTop: spacing.lg },
-  changeLinkText: { color: colors.textSecondary, fontSize: 14 },
-  registerLinkText: { color: colors.success, fontSize: 14, fontWeight: '500' },
+  digitBoxFilled: { borderColor: colors.teal, borderWidth: 1.5 },
+  digitInput: {
+    ...font(700),
+    fontSize: 24,
+    color: colors.textPrimary,
+    width: '100%',
+    height: '100%',
+    textAlign: 'center',
+  },
+  linkRow: { alignItems: 'center', marginTop: spacing.lg },
+  linkText: { ...font(400), color: colors.textSecondary, fontSize: 14 },
+  registerLinkText: { ...font(500), color: colors.teal, fontSize: 14 },
 });

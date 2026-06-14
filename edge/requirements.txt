@@ -1,3 +1,15 @@
 paho-mqtt==1.6.1
 requests==2.31.0
 schedule==1.2.1
+
+# ZKTeco C3-100 access panel — pure-Python, works on Linux/ARM (Raspberry Pi).
+# Required by edge/c3_controller.py (real, non-mock C3 path).
+# NOTE: 0.0.15 does NOT implement writing the user/card table — cards must be
+# provisioned via ZKAccess/ZKBio software. See edge/c3_controller.py.
+zkaccess-c3==0.0.15
+
+# Legacy serial/SPI readers (edge/uhf_reader.py, edge/rfid_reader.py) are NOT
+# used in the C3 architecture (readers wire into the C3 via Wiegand). Install
+# these only if reviving the direct-to-Pi reader path:
+#   pyserial==3.5      # UHF FASTag reader
+#   mfrc522==0.0.7     # RC522 RFID reader

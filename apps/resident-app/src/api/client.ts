@@ -1,8 +1,15 @@
 import axios from 'axios';
 import { z } from 'zod';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE =
   process.env.EXPO_PUBLIC_API_URL || 'https://dwaarai.in/api/v1';
+
+const SERVER_ORIGIN = API_BASE.replace(/\/api\/v1\/?$/, '');
+export function uploadUrl(p?: string | null): string | null {
+  if (!p) return null;
+  return /^https?:\/\//.test(p) ? p : `${SERVER_ORIGIN}${p}`;
+}
 
 const api = axios.create({ baseURL: API_BASE, timeout: 10000 });
 
@@ -154,6 +161,23 @@ export function dueReceiptUrl(paymentId: string) {
   return `${API_BASE}/dues/payments/${paymentId}/receipt`;
 }
 
+// Resident home (aggregate dashboard)
+export const getResidentHome = () => api.get('/resident/home');
+
+// Resident unit (My Unit aggregate)
+export const getResidentUnit = () => api.get('/resident/unit');
+
+// Deliveries (parcels) — resident
+export const getDeliveries = (params?: Record<string, string>) =>
+  api.get('/deliveries', { params });
+
+export const collectDelivery = (id: string) => api.post(`/deliveries/${id}/collect`);
+
+// Pets (My Unit)
+export const getPets = () => api.get('/pets');
+export const createPet = (data: { name: string; species: string; breed?: string; notes?: string }) => api.post('/pets', data);
+export const deletePet = (id: string) => api.delete(`/pets/${id}`);
+
 // Face identity & consent
 export const getFaceIdentity = () => api.get('/face');
 
@@ -169,6 +193,35 @@ export const setFaceConsent = (location: string, enabled: boolean) =>
 export const deleteFaceData = () => api.delete('/face');
 
 export const getFaceAccessLog = () => api.get('/face/access-log');
+
+// Unit documents (vault)
+export const getDocuments = () => api.get('/documents');
+export const deleteDocument = (id: string) => api.delete(`/documents/${id}`);
+export const uploadDocument = (form: FormData) =>
+  api.post('/documents', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+
+// Facility booking (My Unit)
+export const getFacilities = () => api.get('/facilities');
+export const getFacilityAvailability = (id: string, date: string) => api.get(`/facilities/${id}/availability`, { params: { date } });
+export const bookFacility = (id: string, data: { date: string; start: string }) => api.post(`/facilities/${id}/book`, data);
+export const getMyBookings = () => api.get('/facilities/mine');
+export const cancelBooking = (id: string) => api.delete(`/facilities/bookings/${id}`);
+
+// Events
+export const getEvents = (scope: 'upcoming' | 'past' = 'upcoming') => api.get('/community-events', { params: { scope } });
+export const createEvent = (data: { title: string; description?: string; location?: string; category?: string; startsAt: string; endsAt?: string }) => api.post('/community-events', data);
+export const rsvpEvent = (id: string, status: 'going' | 'maybe' | 'no') => api.post(`/community-events/${id}/rsvp`, { status });
+
+// Community
+export const getCommunityFeed = () => api.get('/community/feed');
+export const getIssues = () => api.get('/issues');
+export const createIssue = (data: { title: string; body: string; category?: string }) => api.post('/issues', data);
+export const upvoteIssue = (id: string) => api.post(`/issues/${id}/upvote`);
+export const getPolls = () => api.get('/polls');
+export const createPoll = (data: { question: string; options: string[]; closesAt?: string; targetBlockId?: string | null }) => api.post('/polls', data);
+export const votePoll = (id: string, optionId: string) => api.post(`/polls/${id}/vote`, { optionId });
+export const closePoll = (id: string) => api.post(`/polls/${id}/close`);
+export const getBlocks = () => api.get('/blocks');
 
 // 401 interceptor — auto-refresh token on expiry
 let isRefreshing = false;
@@ -189,7 +242,6 @@ api.interceptors.response.use(
       if (!isRefreshing) {
         isRefreshing = true;
         try {
-          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
           const raw = await AsyncStorage.getItem('communitygate_resident_auth');
           if (raw) {
             const { refreshToken } = JSON.parse(raw);

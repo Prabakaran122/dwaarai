@@ -1,12 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity, Switch, Modal, ActivityIndicator } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, Text, ScrollView, StyleSheet, Alert, Switch, Modal, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
-import GlowCard from '../components/GlowCard';
-import GradientButton from '../components/GradientButton';
-import AnimatedEntry from '../components/AnimatedEntry';
+import { type } from '../theme/typography';
+import { AppBar, Card, Button, SectionHeader } from '../components/ui';
 import { useFaceStore, ConsentLocation } from '../store/faceStore';
 
 const LOCATION_META: Record<ConsentLocation, { label: string; icon: string; desc: string }> = {
@@ -92,100 +90,87 @@ export default function FaceIdentityScreen({ onClose }: { onClose: () => void })
   };
 
   return (
-    <LinearGradient colors={colors.gradientBg} style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onClose} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <MaterialCommunityIcons name="chevron-left" size={28} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Face & Identity</Text>
-        <View style={{ width: 28 }} />
-      </View>
+    <View style={styles.container}>
+      <AppBar title="Face ID & consent" onBack={onClose} />
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Status */}
-        <AnimatedEntry direction="fade">
-          <GlowCard style={styles.statusCard}>
-            <View style={styles.statusRow}>
-              <View style={[styles.statusIcon, { backgroundColor: colors.surface }]}>
-                <MaterialCommunityIcons name={sm.icon as any} size={26} color={sm.color} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.statusLabel}>Facial recognition</Text>
-                <Text style={[styles.statusValue, { color: sm.color }]}>{sm.label}</Text>
-              </View>
+        {/* Enrollment status */}
+        <Card style={styles.statusCard}>
+          <View style={styles.statusRow}>
+            <View style={[styles.statusIcon, { backgroundColor: colors.mist }]}>
+              <MaterialCommunityIcons name={sm.icon as any} size={26} color={sm.color} />
             </View>
-            <Text style={styles.tagline}>One face, every access point — like DigiYatra for your home. Opt-in, and yours to delete anytime.</Text>
-          </GlowCard>
-        </AnimatedEntry>
-
-        {/* What we collect (plain language) */}
-        <AnimatedEntry direction="up" delay={80}>
-          <GlowCard style={styles.infoCard}>
-            <Text style={styles.sectionTitle}>How your face data is handled</Text>
-            {[
-              ['shield-lock', 'We store a math vector, never your photo. The scan is converted and the image is discarded.'],
-              ['tune', 'You choose where it works — gate, pool, clubhouse, gym — and can change each anytime.'],
-              ['delete-forever', 'Delete it whenever you like. Removal is immediate and access falls back to OTP.'],
-              ['history', 'Every face access is logged below so you can see exactly when it was used.'],
-            ].map(([icon, text]) => (
-              <View key={text} style={styles.infoRow}>
-                <MaterialCommunityIcons name={icon as any} size={16} color={colors.info} />
-                <Text style={styles.infoText}>{text}</Text>
-              </View>
-            ))}
-          </GlowCard>
-        </AnimatedEntry>
-
-        {/* Per-location consent */}
-        <AnimatedEntry direction="up" delay={160}>
-          <GlowCard style={styles.infoCard}>
-            <Text style={styles.sectionTitle}>Where facial access is allowed</Text>
-            {locations.map((loc) => {
-              const meta = LOCATION_META[loc as ConsentLocation];
-              if (!meta) return null;
-              return (
-                <View key={loc} style={styles.consentRow}>
-                  <MaterialCommunityIcons name={meta.icon as any} size={20} color={colors.textSecondary} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.consentLabel}>{meta.label}</Text>
-                    <Text style={styles.consentDesc}>{meta.desc}</Text>
-                  </View>
-                  <Switch
-                    value={consents[loc as ConsentLocation]}
-                    onValueChange={(v) => toggleConsent(loc as ConsentLocation, v)}
-                    trackColor={{ false: colors.surfaceBorder, true: colors.success }}
-                  />
-                </View>
-              );
-            })}
-            {!isEnrolled ? (
-              <Text style={styles.hint}>Enroll your face to activate access at the locations you've enabled.</Text>
-            ) : null}
-          </GlowCard>
-        </AnimatedEntry>
-
-        {/* Actions */}
-        <AnimatedEntry direction="up" delay={240}>
-          <View style={styles.actions}>
-            {busy ? (
-              <ActivityIndicator color={colors.info} />
-            ) : status === 'active' ? (
-              <GradientButton title="Re-enroll face" icon="face-recognition" variant="primary" onPress={() => setShowConsent(true)} />
-            ) : (
-              <GradientButton title="Enroll my face" icon="face-recognition" variant="success" onPress={() => setShowConsent(true)} />
-            )}
-            {isEnrolled ? (
-              <View style={{ marginTop: spacing.md }}>
-                <GradientButton title="Delete my face data" icon="delete-forever" variant="danger" onPress={confirmDelete} />
-              </View>
-            ) : null}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.statusLabel}>Facial recognition</Text>
+              <Text style={[styles.statusValue, { color: sm.color }]}>{sm.label}</Text>
+            </View>
           </View>
-        </AnimatedEntry>
+          <Text style={styles.tagline}>One face, every access point — like DigiYatra for your home. Opt-in, and yours to delete anytime.</Text>
+        </Card>
+
+        {/* DPDP info / how your face data is handled */}
+        <Card style={styles.infoCard}>
+          <SectionHeader title="How your face data is handled" />
+          {[
+            ['shield-lock', 'We store a math vector, never your photo. The scan is converted and the image is discarded.'],
+            ['tune', 'You choose where it works — gate, pool, clubhouse, gym — and can change each anytime.'],
+            ['delete-forever', 'Delete it whenever you like. Removal is immediate and access falls back to OTP.'],
+            ['history', 'Every face access is logged below so you can see exactly when it was used.'],
+          ].map(([icon, text]) => (
+            <View key={text as string} style={styles.infoRow}>
+              <MaterialCommunityIcons name={icon as any} size={16} color={colors.info} />
+              <Text style={styles.infoText}>{text}</Text>
+            </View>
+          ))}
+        </Card>
+
+        {/* Per-location consent toggles */}
+        <Card style={styles.infoCard}>
+          <SectionHeader title="Where facial access is allowed" />
+          {locations.map((loc) => {
+            const meta = LOCATION_META[loc as ConsentLocation];
+            if (!meta) return null;
+            return (
+              <View key={loc} style={styles.consentRow}>
+                <MaterialCommunityIcons name={meta.icon as any} size={20} color={colors.textSecondary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.consentLabel}>{meta.label}</Text>
+                  <Text style={styles.consentDesc}>{meta.desc}</Text>
+                </View>
+                <Switch
+                  value={consents[loc as ConsentLocation]}
+                  onValueChange={(v) => toggleConsent(loc as ConsentLocation, v)}
+                  trackColor={{ false: colors.surfaceBorder, true: colors.success }}
+                  thumbColor={colors.white}
+                />
+              </View>
+            );
+          })}
+          {!isEnrolled ? (
+            <Text style={styles.hint}>Enroll your face to activate access at the locations you've enabled.</Text>
+          ) : null}
+        </Card>
+
+        {/* Enroll / re-enroll + delete actions */}
+        <View style={styles.actions}>
+          {busy ? (
+            <ActivityIndicator color={colors.info} />
+          ) : status === 'active' ? (
+            <Button title="Re-enroll face" icon="face-recognition" variant="primary" onPress={() => setShowConsent(true)} />
+          ) : (
+            <Button title="Enroll my face" icon="face-recognition" variant="primary" onPress={() => setShowConsent(true)} />
+          )}
+          {isEnrolled ? (
+            <View style={{ marginTop: spacing.md }}>
+              <Button title="Delete my face data" icon="delete-forever" variant="destructive" onPress={confirmDelete} />
+            </View>
+          ) : null}
+        </View>
 
         {/* Access log */}
         {accessLog.length > 0 ? (
-          <AnimatedEntry direction="up" delay={320}>
-            <Text style={styles.logTitle}>Recent facial access</Text>
+          <>
+            <SectionHeader title="Recent facial access" />
             {accessLog.slice(0, 20).map((e, i) => {
               const granted = e.decision === 'granted';
               return (
@@ -203,14 +188,14 @@ export default function FaceIdentityScreen({ onClose }: { onClose: () => void })
                 </View>
               );
             })}
-          </AnimatedEntry>
+          </>
         ) : null}
       </ScrollView>
 
-      {/* Consent modal */}
+      {/* Consent / enroll modal */}
       <Modal visible={showConsent} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <GlowCard style={styles.modalCard}>
+          <Card style={styles.modalCard}>
             <Text style={styles.modalTitle}>Enroll your face</Text>
             <Text style={styles.modalBody}>
               We'll capture a short face scan and convert it into a secure vector. Your photo is never stored.
@@ -224,48 +209,43 @@ export default function FaceIdentityScreen({ onClose }: { onClose: () => void })
             ) : null}
             <View style={styles.modalButtons}>
               <View style={{ flex: 1 }}>
-                <GradientButton title="Cancel" variant="danger" onPress={() => setShowConsent(false)} />
+                <Button title="Cancel" variant="ghost" onPress={() => setShowConsent(false)} />
               </View>
               <View style={{ flex: 1 }}>
-                <GradientButton title="I agree & enroll" variant="success" icon="check-circle" onPress={doEnroll} />
+                <Button title="I agree & enroll" variant="primary" icon="check-circle" onPress={doEnroll} />
               </View>
             </View>
-          </GlowCard>
+          </Card>
         </View>
       </Modal>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: spacing['3xl'], paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
-  backBtn: { width: 28, alignItems: 'flex-start' },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
+  container: { flex: 1, backgroundColor: colors.bgPrimary },
   scroll: { padding: spacing.lg, paddingBottom: spacing['5xl'] },
   statusCard: { marginBottom: spacing.lg },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.md },
   statusIcon: { width: 48, height: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
-  statusLabel: { fontSize: 13, color: colors.textMuted },
-  statusValue: { fontSize: 18, fontWeight: '800', marginTop: 2 },
-  tagline: { fontSize: 13, color: colors.textMuted, lineHeight: 19 },
+  statusLabel: { ...type.caption, textTransform: 'uppercase', letterSpacing: 0.5 },
+  statusValue: { ...type.h2, marginTop: 2 },
+  tagline: { ...type.bodySecondary, lineHeight: 19 },
   infoCard: { marginBottom: spacing.lg },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.md },
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginBottom: spacing.sm },
-  infoText: { flex: 1, fontSize: 13, color: colors.textMuted, lineHeight: 19 },
+  infoText: { flex: 1, ...type.bodySecondary, lineHeight: 19 },
   consentRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm },
-  consentLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
-  consentDesc: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
-  hint: { fontSize: 12, color: colors.warning, marginTop: spacing.sm },
+  consentLabel: { ...type.body, fontFamily: 'DMSans_500Medium' },
+  consentDesc: { ...type.micro, marginTop: 1 },
+  hint: { ...type.micro, color: colors.warning, marginTop: spacing.sm },
   actions: { marginBottom: spacing.lg },
-  logTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.sm, marginBottom: spacing.md },
-  logRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.surfaceBorder },
-  logText: { flex: 1, fontSize: 13, color: colors.textSecondary },
-  logTime: { fontSize: 11, color: colors.textMuted },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
-  modalCard: { width: '88%', maxWidth: 380 },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, marginBottom: spacing.md },
-  modalBody: { fontSize: 14, color: colors.textMuted, lineHeight: 20, marginBottom: spacing.md },
-  modalNote: { fontSize: 12, color: colors.warning, lineHeight: 18, marginBottom: spacing.md },
+  logRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.surfaceBorder },
+  logText: { flex: 1, ...type.bodySecondary },
+  logTime: { ...type.micro },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
+  modalCard: { width: '100%', maxWidth: 380, gap: spacing.md },
+  modalTitle: { ...type.h1 },
+  modalBody: { ...type.bodySecondary, lineHeight: 20 },
+  modalNote: { ...type.micro, color: colors.warning, lineHeight: 18 },
   modalButtons: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
 });
