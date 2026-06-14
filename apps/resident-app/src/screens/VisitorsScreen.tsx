@@ -1,12 +1,21 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TextInput, StyleSheet, Modal, TouchableOpacity, Switch } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  Modal,
+  TouchableOpacity,
+  Switch,
+} from 'react-native';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
-import GlowCard from '../components/GlowCard';
-import GradientButton from '../components/GradientButton';
-import AnimatedEntry from '../components/AnimatedEntry';
+import { type } from '../theme/typography';
+import AppBar from '../components/ui/AppBar';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
+import SectionHeader from '../components/ui/SectionHeader';
 import VisitorPassCard, { PassData } from '../components/VisitorPassCard';
 import RecurringPassCard, { RecurringPassData } from '../components/RecurringPassCard';
 import * as api from '../api/client';
@@ -122,272 +131,367 @@ export default function VisitorsScreen({ onClose }: { onClose?: () => void } = {
   };
 
   const toggleDay = (day: number) => {
-    setRDays((prev) => prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort());
+    setRDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort(),
+    );
   };
 
   const activePasses = passes.filter((p) => p.status === 'active');
   const otherPasses = passes.filter((p) => p.status !== 'active');
 
   return (
-    <LinearGradient colors={colors.gradientBg} style={styles.container}>
-      {onClose && (
-        <TouchableOpacity onPress={onClose} style={{ padding: spacing.lg, paddingBottom: 0 }}>
-          <MaterialCommunityIcons name="chevron-left" size={26} color={colors.textPrimary} />
-        </TouchableOpacity>
-      )}
-      {/* Quick Share Bar */}
-      <TouchableOpacity onPress={() => setShowForm(true)} activeOpacity={0.8} style={styles.shareBarWrap}>
-        <LinearGradient colors={colors.gradientAccent as [string, string]} style={styles.shareBar}>
-          <MaterialCommunityIcons name="share-variant" size={20} color={colors.white} />
-          <Text style={styles.shareBarText}>Share Visitor Pass</Text>
-        </LinearGradient>
-      </TouchableOpacity>
+    <View style={styles.container}>
+      <AppBar title="Visitors" onBack={onClose} />
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.list}>
-        {/* Recurring Visitors Section */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recurring Visitors ({recurringPasses.length})</Text>
-        </View>
-
-        {recurringPasses.map((pass) => (
-          <RecurringPassCard
-            key={pass.id}
-            pass={pass}
-            onPause={handlePause}
-            onResume={handleResume}
-            onCancel={handleCancelRecurring}
-          />
-        ))}
-
-        <TouchableOpacity onPress={() => setShowRecurringForm(true)} style={styles.addButton}>
-          <MaterialCommunityIcons name="plus-circle" size={20} color={colors.info} />
-          <Text style={styles.addButtonText}>Add Recurring Visitor</Text>
-        </TouchableOpacity>
-
         {/* Visitor Passes Section */}
-        <View style={[styles.sectionHeader, { marginTop: spacing.xl }]}>
-          <Text style={styles.sectionTitle}>Visitor Passes ({passes.length})</Text>
-        </View>
+        <SectionHeader
+          title={`Visitor passes (${passes.length})`}
+          actionLabel="+ Invite"
+          onAction={() => setShowForm(true)}
+        />
 
         {passes.length === 0 ? (
-          <View style={styles.emptyState}>
+          <Card style={styles.emptyCard}>
             <Text style={styles.emptyText}>No visitor passes</Text>
-          </View>
+            <Text style={[type.bodySecondary, { textAlign: 'center' }]}>
+              Tap &quot;Invite&quot; above to create a one-time visitor pass.
+            </Text>
+          </Card>
         ) : (
-          [...activePasses, ...otherPasses].map((item, index) => (
-            <AnimatedEntry key={item.id} direction="left" delay={index * 80}>
-              <VisitorPassCard
-                pass={item}
-                residentName={user?.name || 'Resident'}
-                unitNumber={user?.unitNumber ? `Unit ${user.unitNumber}` : ''}
-                communityName={user?.communityName}
-                onRevoke={handleRevoke}
-              />
-            </AnimatedEntry>
+          [...activePasses, ...otherPasses].map((item) => (
+            <VisitorPassCard
+              key={item.id}
+              pass={item}
+              residentName={user?.name || 'Resident'}
+              unitNumber={user?.unitNumber ? `Unit ${user.unitNumber}` : ''}
+              communityName={user?.communityName}
+              onRevoke={handleRevoke}
+            />
+          ))
+        )}
+
+        {/* Recurring Passes Section */}
+        <View style={styles.sectionSpacer} />
+        <SectionHeader
+          title={`Pre-approved (recurring) (${recurringPasses.length})`}
+          actionLabel="+ Add"
+          onAction={() => setShowRecurringForm(true)}
+        />
+
+        {recurringPasses.length === 0 ? (
+          <Card style={styles.emptyCard}>
+            <Text style={styles.emptyText}>No recurring passes</Text>
+            <Text style={[type.bodySecondary, { textAlign: 'center' }]}>
+              Tap &quot;Add&quot; above to pre-approve a recurring visitor.
+            </Text>
+          </Card>
+        ) : (
+          recurringPasses.map((pass) => (
+            <RecurringPassCard
+              key={pass.id}
+              pass={pass}
+              onPause={handlePause}
+              onResume={handleResume}
+              onCancel={handleCancelRecurring}
+            />
           ))
         )}
       </ScrollView>
 
-      {/* Create Pass Modal */}
+      {/* Create One-Time Pass Modal */}
       <Modal visible={showForm} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <GlowCard style={styles.modalCard}>
+          <Card style={styles.modalCard}>
             <Text style={styles.modalTitle}>Create Visitor Pass</Text>
-            <TextInput
-              style={styles.input}
+
+            <Input
               placeholder="Visitor name"
-              placeholderTextColor={colors.textMuted}
               value={name}
               onChangeText={setName}
+              style={styles.inputSpacing}
             />
+
             {!byCab && (
-              <TextInput
-                style={styles.input}
+              <Input
                 placeholder="Vehicle number (optional)"
-                placeholderTextColor={colors.textMuted}
                 value={vehicle}
                 onChangeText={setVehicle}
                 autoCapitalize="characters"
+                style={styles.inputSpacing}
               />
             )}
+
             <View style={styles.cabRow}>
-              <Text style={styles.cabLabel}>Coming by cab</Text>
+              <Text style={type.body}>Coming by cab</Text>
               <Switch
                 value={byCab}
                 onValueChange={setByCab}
-                trackColor={{ false: colors.surface, true: colors.successBg }}
-                thumbColor={byCab ? colors.success : colors.textMuted}
+                trackColor={{ false: colors.surfaceBorder, true: colors.teal }}
+                thumbColor={byCab ? colors.brandPrimary : colors.textTertiary}
               />
             </View>
 
-            <Text style={styles.durationLabel}>TIME WINDOW</Text>
-            <View style={styles.durationChips}>
+            <Text style={styles.fieldLabel}>TIME WINDOW</Text>
+            <View style={styles.chips}>
               {DURATION_OPTIONS.map((opt, i) => (
-                <TouchableOpacity key={i} onPress={() => setSelectedDuration(i)}>
-                  {selectedDuration === i ? (
-                    <LinearGradient colors={colors.gradientAccent as [string, string]} style={styles.durationChip}>
-                      <Text style={styles.durationChipTextActive}>{opt.label}</Text>
-                    </LinearGradient>
-                  ) : (
-                    <View style={styles.durationChipInactive}>
-                      <Text style={styles.durationChipText}>{opt.label}</Text>
-                    </View>
-                  )}
+                <TouchableOpacity
+                  key={i}
+                  onPress={() => setSelectedDuration(i)}
+                  style={[
+                    styles.chip,
+                    selectedDuration === i ? styles.chipActive : styles.chipInactive,
+                  ]}
+                >
+                  <Text
+                    style={selectedDuration === i ? styles.chipTextActive : styles.chipText}
+                  >
+                    {opt.label}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
+
             <View style={styles.modalButtons}>
               <View style={{ flex: 1 }}>
-                <GradientButton title="Cancel" variant="danger" onPress={() => setShowForm(false)} />
+                <Button
+                  title="Cancel"
+                  variant="ghost"
+                  onPress={() => setShowForm(false)}
+                />
               </View>
               <View style={{ flex: 1 }}>
-                <GradientButton title="Create" variant="success" icon="ticket-account" onPress={handleCreate} disabled={!name.trim()} />
+                <Button
+                  title="Create"
+                  variant="primary"
+                  icon="ticket-account"
+                  onPress={handleCreate}
+                  disabled={!name.trim()}
+                />
               </View>
             </View>
-          </GlowCard>
+          </Card>
         </View>
       </Modal>
 
-      {/* Recurring Visitor Form Modal */}
+      {/* Add Recurring Visitor Modal */}
       <Modal visible={showRecurringForm} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <GlowCard style={styles.modalCard}>
+          <Card style={styles.modalCard}>
             <Text style={styles.modalTitle}>Add Recurring Visitor</Text>
-            <TextInput
-              style={styles.input}
+
+            <Input
               placeholder="Visitor name"
-              placeholderTextColor={colors.textMuted}
               value={rName}
               onChangeText={setRName}
+              style={styles.inputSpacing}
             />
 
-            <Text style={styles.durationLabel}>ROLE</Text>
-            <View style={styles.durationChips}>
+            <Text style={styles.fieldLabel}>ROLE</Text>
+            <View style={styles.chips}>
               {['maid', 'cook', 'driver', 'tutor', 'newspaper', 'other'].map((role) => (
-                <TouchableOpacity key={role} onPress={() => setRRole(role)}>
-                  {rRole === role ? (
-                    <LinearGradient colors={colors.gradientAccent as [string, string]} style={styles.durationChip}>
-                      <Text style={styles.durationChipTextActive}>{role}</Text>
-                    </LinearGradient>
-                  ) : (
-                    <View style={styles.durationChipInactive}>
-                      <Text style={styles.durationChipText}>{role}</Text>
-                    </View>
-                  )}
+                <TouchableOpacity
+                  key={role}
+                  onPress={() => setRRole(role)}
+                  style={[
+                    styles.chip,
+                    rRole === role ? styles.chipActive : styles.chipInactive,
+                  ]}
+                >
+                  <Text style={rRole === role ? styles.chipTextActive : styles.chipText}>
+                    {role}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            <Text style={styles.durationLabel}>SCHEDULE</Text>
-            <View style={styles.durationChips}>
-              {['daily', 'weekday', 'weekly', 'custom'].map((type) => (
-                <TouchableOpacity key={type} onPress={() => setRScheduleType(type)}>
-                  {rScheduleType === type ? (
-                    <LinearGradient colors={colors.gradientAccent as [string, string]} style={styles.durationChip}>
-                      <Text style={styles.durationChipTextActive}>{type}</Text>
-                    </LinearGradient>
-                  ) : (
-                    <View style={styles.durationChipInactive}>
-                      <Text style={styles.durationChipText}>{type}</Text>
-                    </View>
-                  )}
+            <Text style={styles.fieldLabel}>SCHEDULE</Text>
+            <View style={styles.chips}>
+              {['daily', 'weekday', 'weekly', 'custom'].map((schedType) => (
+                <TouchableOpacity
+                  key={schedType}
+                  onPress={() => setRScheduleType(schedType)}
+                  style={[
+                    styles.chip,
+                    rScheduleType === schedType ? styles.chipActive : styles.chipInactive,
+                  ]}
+                >
+                  <Text
+                    style={
+                      rScheduleType === schedType ? styles.chipTextActive : styles.chipText
+                    }
+                  >
+                    {schedType}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
             {(rScheduleType === 'weekly' || rScheduleType === 'custom') && (
               <>
-                <Text style={styles.durationLabel}>DAYS</Text>
-                <View style={styles.durationChips}>
+                <Text style={styles.fieldLabel}>DAYS</Text>
+                <View style={styles.chips}>
                   {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => (
-                    <TouchableOpacity key={i} onPress={() => toggleDay(i)}>
-                      {rDays.includes(i) ? (
-                        <LinearGradient colors={colors.gradientPrimary as [string, string]} style={styles.dayChip}>
-                          <Text style={styles.durationChipTextActive}>{label}</Text>
-                        </LinearGradient>
-                      ) : (
-                        <View style={styles.dayChipInactive}>
-                          <Text style={styles.durationChipText}>{label}</Text>
-                        </View>
-                      )}
+                    <TouchableOpacity
+                      key={i}
+                      onPress={() => toggleDay(i)}
+                      style={[
+                        styles.dayChip,
+                        rDays.includes(i) ? styles.dayChipActive : styles.dayChipInactive,
+                      ]}
+                    >
+                      <Text
+                        style={
+                          rDays.includes(i) ? styles.chipTextActive : styles.chipText
+                        }
+                      >
+                        {label}
+                      </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
               </>
             )}
 
-            <Text style={styles.durationLabel}>TIME WINDOW</Text>
+            <Text style={styles.fieldLabel}>TIME WINDOW</Text>
             <View style={styles.timeRow}>
-              <TextInput
-                style={[styles.input, styles.timeInput]}
+              <Input
                 value={rTimeFrom}
                 onChangeText={setRTimeFrom}
                 placeholder="06:00"
-                placeholderTextColor={colors.textMuted}
+                style={styles.timeInput}
               />
-              <Text style={styles.timeSep}>to</Text>
-              <TextInput
-                style={[styles.input, styles.timeInput]}
+              <Text style={[type.body, styles.timeSep]}>to</Text>
+              <Input
                 value={rTimeUntil}
                 onChangeText={setRTimeUntil}
                 placeholder="09:00"
-                placeholderTextColor={colors.textMuted}
+                style={styles.timeInput}
               />
             </View>
 
             <View style={styles.modalButtons}>
               <View style={{ flex: 1 }}>
-                <GradientButton title="Cancel" variant="danger" onPress={() => setShowRecurringForm(false)} />
+                <Button
+                  title="Cancel"
+                  variant="ghost"
+                  onPress={() => setShowRecurringForm(false)}
+                />
               </View>
               <View style={{ flex: 1 }}>
-                <GradientButton title="Save" variant="success" icon="check" onPress={handleCreateRecurring} disabled={!rName.trim()} />
+                <Button
+                  title="Save"
+                  variant="primary"
+                  icon="check"
+                  onPress={handleCreateRecurring}
+                  disabled={!rName.trim()}
+                />
               </View>
             </View>
-          </GlowCard>
+          </Card>
         </View>
       </Modal>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  shareBarWrap: { marginHorizontal: spacing.lg, marginTop: spacing.md },
-  shareBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-    padding: spacing.md, borderRadius: radius.lg,
-  },
-  shareBarText: { color: colors.white, fontSize: 16, fontWeight: '700' },
+  container: { flex: 1, backgroundColor: colors.mist },
   list: { padding: spacing.lg, paddingBottom: 100 },
-  emptyState: { alignItems: 'center', gap: spacing.sm, marginTop: spacing['5xl'] },
-  emptyText: { color: colors.textMuted, fontSize: 16, fontWeight: '600' },
-  emptySubtext: { color: colors.textMuted, fontSize: 13 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
-  modalCard: { width: '85%', maxWidth: 360 },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, marginBottom: spacing.lg },
-  input: {
-    backgroundColor: colors.surface, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.surfaceBorder,
-    padding: spacing.md, fontSize: 16, color: colors.textPrimary, marginBottom: spacing.md,
+  sectionSpacer: { height: spacing.xl },
+
+  // Empty state
+  emptyCard: { alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  emptyText: {
+    fontFamily: 'DMSans_500Medium',
+    fontSize: 15,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
-  cabRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.lg },
-  cabLabel: { color: colors.textPrimary, fontSize: 14 },
-  durationLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, letterSpacing: 1, marginBottom: spacing.sm },
-  durationChips: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl },
-  durationChip: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.pill },
-  durationChipInactive: {
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.pill,
-    borderWidth: 1, borderColor: colors.surfaceBorder, backgroundColor: colors.surface,
+
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  durationChipText: { color: colors.textMuted, fontSize: 14, fontWeight: '500' },
-  durationChipTextActive: { color: colors.white, fontSize: 14, fontWeight: '600' },
-  modalButtons: { flexDirection: 'row', gap: spacing.md },
-  sectionHeader: { marginBottom: spacing.sm },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
-  addButton: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md },
-  addButtonText: { fontSize: 14, color: colors.info, fontWeight: '600' },
-  timeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
-  timeInput: { flex: 1, textAlign: 'center', marginBottom: 0 },
-  timeSep: { color: colors.textMuted, fontSize: 14 },
-  dayChip: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  dayChipInactive: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.surfaceBorder, backgroundColor: colors.surface },
+  modalCard: { width: '88%', maxWidth: 380 },
+  modalTitle: {
+    fontFamily: 'DMSans_700Bold',
+    fontSize: 20,
+    color: colors.textPrimary,
+    marginBottom: spacing.lg,
+  },
+  inputSpacing: { marginBottom: spacing.sm },
+
+  // Cab toggle row
+  cabRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginVertical: spacing.md,
+  },
+
+  // Field label (caps)
+  fieldLabel: {
+    fontFamily: 'DMSans_700Bold',
+    fontSize: 11,
+    color: colors.textTertiary,
+    letterSpacing: 1,
+    marginBottom: spacing.sm,
+    marginTop: spacing.xs,
+  },
+
+  // Chip row
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
+  chip: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+  },
+  chipActive: { backgroundColor: colors.teal },
+  chipInactive: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.surfaceBorder,
+  },
+  chipText: {
+    fontFamily: 'DMSans_500Medium',
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  chipTextActive: {
+    fontFamily: 'DMSans_500Medium',
+    fontSize: 13,
+    color: colors.white,
+  },
+
+  // Day chips (round)
+  dayChip: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayChipActive: { backgroundColor: colors.brandPrimary },
+  dayChipInactive: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.surfaceBorder,
+  },
+
+  // Time row
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  timeInput: { flex: 1, textAlign: 'center' },
+  timeSep: { color: colors.textSecondary },
+
+  // Modal action buttons
+  modalButtons: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
 });
