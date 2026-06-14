@@ -1,10 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Linking, Alert } from 'react-native';
+import { View, Text, StyleSheet, Linking, Alert } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
-import GlowCard from './GlowCard';
+import { font, type as type_ } from '../theme/typography';
+import Card from './ui/Card';
+import Button from './ui/Button';
+import StatusBadge from './ui/StatusBadge';
+import type { BadgePreset } from './ui/StatusBadge';
 
 export interface PassData {
   id: string;
@@ -19,12 +22,25 @@ export interface PassData {
   max_uses: number;
 }
 
-const statusConfig: Record<string, { color: string; bg: string; label: string }> = {
-  active: { color: colors.success, bg: colors.successBg, label: 'Active' },
-  used: { color: colors.info, bg: colors.infoBg, label: 'Used' },
-  expired: { color: colors.textMuted, bg: colors.surface, label: 'Expired' },
-  revoked: { color: colors.danger, bg: colors.dangerBg, label: 'Revoked' },
-};
+/** Map pass status → StatusBadge preset */
+function statusPreset(status: PassData['status']): BadgePreset {
+  switch (status) {
+    case 'active':  return 'granted';
+    case 'used':    return 'info';
+    case 'expired': return 'pending';
+    case 'revoked': return 'denied';
+  }
+}
+
+/** Map status → Card accent colour */
+function accentColor(status: PassData['status']): string {
+  switch (status) {
+    case 'active':  return colors.success;
+    case 'used':    return colors.info;
+    case 'expired': return colors.textTertiary;
+    case 'revoked': return colors.error;
+  }
+}
 
 interface Props {
   pass: PassData;
@@ -35,8 +51,6 @@ interface Props {
 }
 
 export default function VisitorPassCard({ pass, residentName, unitNumber, communityName, onRevoke }: Props) {
-  const status = statusConfig[pass.status] || statusConfig.expired;
-  const variant = pass.status === 'active' ? 'success' : pass.status === 'revoked' ? 'danger' : 'default';
   const validUntil = new Date(pass.valid_until).toLocaleString([], {
     month: 'short',
     day: 'numeric',
@@ -78,7 +92,8 @@ export default function VisitorPassCard({ pass, residentName, unitNumber, commun
   };
 
   return (
-    <GlowCard variant={variant} style={styles.card}>
+    <Card accent={accentColor(pass.status)} style={styles.card}>
+      {/* Header row */}
       <View style={styles.header}>
         <View style={styles.info}>
           <Text style={styles.name}>{pass.visitor_name}</Text>
@@ -87,76 +102,65 @@ export default function VisitorPassCard({ pass, residentName, unitNumber, commun
           ) : null}
           <Text style={styles.validity}>Valid until {validUntil} · {usesText}</Text>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
-          <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
-        </View>
+        <StatusBadge preset={statusPreset(pass.status)} size="sm" />
       </View>
 
+      {/* OTP + actions — only when pass is active */}
       {pass.status === 'active' && (
         <View style={styles.activeSection}>
+          {/* OTP box */}
           <View style={styles.otpBox}>
-            <MaterialCommunityIcons name="qrcode" size={20} color={colors.info} />
+            <MaterialCommunityIcons name="qrcode" size={20} color={colors.teal} />
             <Text style={styles.otpCode}>{pass.otp}</Text>
           </View>
+
+          {/* Action row */}
           <View style={styles.actions}>
-            <TouchableOpacity onPress={shareWhatsApp} style={styles.shareButton}>
-              <LinearGradient
-                colors={colors.gradientSuccess as [string, string]}
-                style={styles.shareGradient}
-              >
-                <MaterialCommunityIcons name="whatsapp" size={18} color={colors.white} />
-                <Text style={styles.shareText}>Share</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleRevoke} style={styles.revokeButton}>
-              <MaterialCommunityIcons name="close-circle-outline" size={18} color={colors.danger} />
-            </TouchableOpacity>
+            <Button
+              title="Share"
+              icon="whatsapp"
+              variant="primary"
+              onPress={shareWhatsApp}
+              style={styles.shareBtn}
+            />
+            <Button
+              title="Revoke"
+              icon="close-circle-outline"
+              variant="destructive"
+              onPress={handleRevoke}
+              style={styles.revokeBtn}
+            />
           </View>
         </View>
       )}
-    </GlowCard>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { marginBottom: spacing.md },
+  card: { marginBottom: spacing.md, gap: spacing.sm },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  info: { flex: 1, gap: 2 },
-  name: { fontSize: 16, fontWeight: '600', color: colors.textPrimary },
-  vehicle: { fontSize: 13, fontFamily: 'monospace', color: colors.info, letterSpacing: 1 },
-  validity: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill },
-  statusText: { fontSize: 11, fontWeight: '700' },
-  activeSection: { marginTop: spacing.md },
+  info: { flex: 1, gap: 2, paddingRight: spacing.sm },
+  name: { ...font(500), fontSize: 16, color: colors.textPrimary },
+  vehicle: { ...font(400), fontSize: 13, fontFamily: 'monospace', color: colors.textInfo, letterSpacing: 1 },
+  validity: { ...font(400), fontSize: 12, color: colors.textTertiary, marginTop: 2 },
+  activeSection: { gap: spacing.sm },
   otpBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.infoBg,
+    backgroundColor: colors.tintInfo,
     borderRadius: radius.md,
     padding: spacing.md,
   },
   otpCode: {
     fontSize: 22,
     fontWeight: '800',
-    color: colors.info,
+    color: colors.textInfo,
     letterSpacing: 4,
     fontFamily: 'monospace',
   },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },
-  shareButton: { flex: 1 },
-  shareGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-  },
-  shareText: { color: colors.white, fontSize: 14, fontWeight: '600' },
-  revokeButton: {
-    padding: spacing.sm,
-    borderRadius: radius.md,
-    backgroundColor: colors.dangerBg,
-  },
+  actions: { flexDirection: 'row', gap: spacing.sm },
+  shareBtn: { flex: 1, minWidth: 0 },
+  revokeBtn: { minWidth: 0 },
 });
