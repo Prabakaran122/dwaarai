@@ -1,14 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { View, Text, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
-import GlowCard from '../components/GlowCard';
-import GradientButton from '../components/GradientButton';
-import AnimatedEntry from '../components/AnimatedEntry';
+import { type } from '../theme/typography';
+import { AppBar, Card, Button, SectionHeader } from '../components/ui';
 import { useDueStore, Due } from '../store/dueStore';
 import { useAuthStore } from '../store/authStore';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 // Razorpay checkout is a native module that must be added to a dev/production build.
 // We load it optionally so the rest of the app runs in Expo Go without it.
@@ -63,7 +61,7 @@ export default function DuesScreen({ onClose }: { onClose: () => void }) {
           'Checkout not available in this build',
           order.testMode
             ? 'Payments are in test mode — add Razorpay keys and the react-native-razorpay module to take live payments. Your due is unchanged.'
-            : 'The payment module isn’t bundled in this build yet.',
+            : "The payment module isn’t bundled in this build yet.",
         );
         return;
       }
@@ -93,81 +91,72 @@ export default function DuesScreen({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <LinearGradient colors={colors.gradientBg} style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onClose} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <MaterialCommunityIcons name="chevron-left" size={28} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Maintenance</Text>
-        <View style={{ width: 28 }} />
-      </View>
+    <View style={styles.container}>
+      <AppBar title="Maintenance dues" onBack={onClose} />
 
       <ScrollView contentContainerStyle={styles.scroll} refreshControl={undefined}>
-        {/* Outstanding summary */}
-        <AnimatedEntry direction="fade">
-          <GlowCard style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Total outstanding</Text>
-            <Text style={styles.summaryAmount}>{inr(outstanding)}</Text>
-            {outstanding === 0 ? (
-              <View style={styles.clearRow}>
-                <MaterialCommunityIcons name="check-circle" size={16} color={colors.success} />
-                <Text style={styles.clearText}>You're all paid up.</Text>
-              </View>
-            ) : (
-              <Text style={styles.summaryHint}>{dues.length} pending {dues.length === 1 ? 'item' : 'items'}</Text>
-            )}
-          </GlowCard>
-        </AnimatedEntry>
+        {/* Outstanding summary hero card */}
+        <Card variant="hero" style={styles.summaryCard}>
+          <Text style={styles.summaryLabel}>Total outstanding</Text>
+          <Text style={styles.summaryAmount}>{inr(outstanding)}</Text>
+          {outstanding === 0 ? (
+            <View style={styles.clearRow}>
+              <MaterialCommunityIcons name="check-circle" size={16} color={colors.success} />
+              <Text style={styles.clearText}>You're all paid up.</Text>
+            </View>
+          ) : (
+            <Text style={styles.summaryHint}>{dues.length} pending {dues.length === 1 ? 'item' : 'items'}</Text>
+          )}
+        </Card>
 
         {loading && dues.length === 0 ? (
           <ActivityIndicator color={colors.info} style={{ marginTop: spacing.xl }} />
         ) : null}
 
         {/* Pending dues */}
-        {dues.map((due, i) => (
-          <AnimatedEntry key={due.id} direction="up" delay={100 + i * 80}>
-            <GlowCard style={styles.dueCard}>
-              <View style={styles.dueTop}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.duePeriod}>{due.description || 'Maintenance'} · {due.period}</Text>
-                  {due.dueDate ? (
-                    <Text style={[styles.dueDate, due.isOverdue && styles.overdue]}>
-                      {due.isOverdue ? 'Overdue · ' : 'Due '}{new Date(due.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                    </Text>
-                  ) : null}
-                </View>
-                <Text style={styles.dueTotal}>{inr(due.totalAmount)}</Text>
-              </View>
-
-              <View style={styles.breakdown}>
-                <View style={styles.breakdownRow}>
-                  <Text style={styles.breakdownLabel}>Base amount</Text>
-                  <Text style={styles.breakdownVal}>{inr(due.baseAmount)}</Text>
-                </View>
-                {due.penaltyAmount > 0 ? (
-                  <View style={styles.breakdownRow}>
-                    <Text style={[styles.breakdownLabel, styles.overdue]}>Late penalty</Text>
-                    <Text style={[styles.breakdownVal, styles.overdue]}>{inr(due.penaltyAmount)}</Text>
-                  </View>
+        {dues.map((due) => (
+          <Card key={due.id} style={styles.dueCard}>
+            <View style={styles.dueTop}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.duePeriod}>{due.description || 'Maintenance'} · {due.period}</Text>
+                {due.dueDate ? (
+                  <Text style={[styles.dueDate, due.isOverdue && styles.overdue]}>
+                    {due.isOverdue ? 'Overdue · ' : 'Due '}{new Date(due.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                  </Text>
                 ) : null}
               </View>
+              <Text style={styles.dueTotal}>{inr(due.totalAmount)}</Text>
+            </View>
 
-              <GradientButton
-                title={paying === due.id ? 'Starting…' : 'Pay now'}
-                icon="credit-card"
-                variant="success"
-                onPress={() => handlePay(due)}
-              />
-            </GlowCard>
-          </AnimatedEntry>
+            <View style={styles.breakdown}>
+              <View style={styles.breakdownRow}>
+                <Text style={styles.breakdownLabel}>Base amount</Text>
+                <Text style={styles.breakdownVal}>{inr(due.baseAmount)}</Text>
+              </View>
+              {due.penaltyAmount > 0 ? (
+                <View style={styles.breakdownRow}>
+                  <Text style={[styles.breakdownLabel, styles.overdue]}>Late penalty</Text>
+                  <Text style={[styles.breakdownVal, styles.overdue]}>{inr(due.penaltyAmount)}</Text>
+                </View>
+              ) : null}
+            </View>
+
+            <Button
+              title={paying === due.id ? 'Starting…' : 'Pay now'}
+              icon="credit-card"
+              variant="primary"
+              onPress={() => handlePay(due)}
+              loading={paying === due.id}
+            />
+          </Card>
         ))}
 
         {/* Payment history */}
         {history.length > 0 ? (
           <>
-            <Text style={styles.sectionTitle}>Payment history</Text>
+            <SectionHeader title="History" />
             {history.map((p) => (
-              <GlowCard key={p.id} style={styles.historyCard}>
+              <Card key={p.id} style={styles.historyCard}>
                 <View style={styles.historyRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.historyPeriod}>{p.description || 'Maintenance'} · {p.period}</Text>
@@ -179,41 +168,37 @@ export default function DuesScreen({ onClose }: { onClose: () => void }) {
                   </View>
                   <Text style={styles.historyAmount}>{inr(p.amount)}</Text>
                 </View>
-              </GlowCard>
+              </Card>
             ))}
           </>
         ) : null}
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: spacing['3xl'], paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
-  backBtn: { width: 28, alignItems: 'flex-start' },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
+  container: { flex: 1, backgroundColor: colors.bgPrimary },
   scroll: { padding: spacing.lg, paddingBottom: spacing['5xl'] },
   summaryCard: { marginBottom: spacing.lg, alignItems: 'center', paddingVertical: spacing.xl },
-  summaryLabel: { fontSize: 12, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1 },
-  summaryAmount: { fontSize: 40, fontWeight: '800', color: colors.textPrimary, marginVertical: spacing.xs },
-  summaryHint: { fontSize: 13, color: colors.textMuted },
+  summaryLabel: { ...type.caption, color: colors.textInverse, textTransform: 'uppercase', letterSpacing: 1 },
+  summaryAmount: { fontSize: 40, fontFamily: 'DMSans_700Bold', color: colors.textInverse, marginVertical: spacing.xs },
+  summaryHint: { ...type.bodySecondary, color: colors.overlayLight },
   clearRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  clearText: { fontSize: 13, color: colors.success, fontWeight: '600' },
+  clearText: { ...type.bodySecondary, color: colors.success, fontFamily: 'DMSans_500Medium' },
   dueCard: { marginBottom: spacing.md },
   dueTop: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.md },
-  duePeriod: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
-  dueDate: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  duePeriod: { ...type.h3, fontFamily: 'DMSans_700Bold' },
+  dueDate: { ...type.micro, marginTop: 2 },
   overdue: { color: colors.danger },
-  dueTotal: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
-  breakdown: { backgroundColor: colors.surface, borderRadius: radius.sm, padding: spacing.md, marginBottom: spacing.md, gap: spacing.xs },
+  dueTotal: { fontSize: 20, fontFamily: 'DMSans_700Bold', color: colors.textPrimary },
+  breakdown: { backgroundColor: colors.mist, borderRadius: radius.sm, padding: spacing.md, marginBottom: spacing.md, gap: spacing.xs },
   breakdownRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  breakdownLabel: { fontSize: 13, color: colors.textMuted },
-  breakdownVal: { fontSize: 13, color: colors.textPrimary, fontWeight: '600' },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.lg, marginBottom: spacing.md },
+  breakdownLabel: { ...type.bodySecondary },
+  breakdownVal: { ...type.bodySecondary, fontFamily: 'DMSans_500Medium', color: colors.textPrimary },
   historyCard: { marginBottom: spacing.sm },
   historyRow: { flexDirection: 'row', alignItems: 'center' },
-  historyPeriod: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
-  historyMeta: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
-  historyAmount: { fontSize: 15, fontWeight: '700', color: colors.success },
+  historyPeriod: { ...type.body, fontFamily: 'DMSans_500Medium' },
+  historyMeta: { ...type.micro, marginTop: 2 },
+  historyAmount: { fontSize: 15, fontFamily: 'DMSans_700Bold', color: colors.success },
 });
