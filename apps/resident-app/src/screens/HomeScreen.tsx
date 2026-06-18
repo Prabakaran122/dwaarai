@@ -14,6 +14,7 @@ import { useAuthStore } from '../store/authStore';
 import ParcelsScreen from './ParcelsScreen';
 import DuesScreen from './DuesScreen';
 import VisitorsScreen from './VisitorsScreen';
+import ActivityScreen from './ActivityScreen';
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -22,7 +23,7 @@ function getGreeting(): string {
   return 'Good evening';
 }
 
-type Overlay = 'parcels' | 'dues' | 'visitors' | null;
+type Overlay = 'parcels' | 'dues' | 'visitors' | 'activity' | null;
 
 interface Props {
   onNavigate?: (tab: 'home' | 'myunit' | 'community' | 'events' | 'profile') => void;
@@ -46,6 +47,7 @@ export default function HomeScreen({ onNavigate }: Props) {
   if (overlay === 'parcels') return <ParcelsScreen onBack={() => { setOverlay(null); load(); }} />;
   if (overlay === 'dues') return <DuesScreen onClose={() => { setOverlay(null); load(); }} />;
   if (overlay === 'visitors') return <VisitorsScreen onClose={() => { setOverlay(null); load(); }} />;
+  if (overlay === 'activity') return <ActivityScreen onClose={() => { setOverlay(null); load(); }} />;
 
   const firstName = user?.name?.split(' ')[0] || 'Resident';
   const glance = summary?.gateGlance ?? {
@@ -83,7 +85,7 @@ export default function HomeScreen({ onNavigate }: Props) {
         </View>
 
         <View style={styles.block}>
-          <SectionHeader title="Recent at the gate" actionLabel="See all" onAction={() => onNavigate?.('myunit')} />
+          <SectionHeader title="Recent at the gate" actionLabel="See all" onAction={() => setOverlay('activity')} />
           {activity.length === 0 ? (
             <Card><Text style={type.bodySecondary}>{error ? 'Could not load activity. Pull to refresh.' : 'No recent activity'}</Text></Card>
           ) : (

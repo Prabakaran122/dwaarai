@@ -9,6 +9,7 @@ import AnnouncementCard from '../components/AnnouncementCard';
 import IssueCard from '../components/IssueCard';
 import PollCard from '../components/PollCard';
 import ComposeSheet from './ComposeSheet';
+import NoticeBoardScreen from './NoticeBoardScreen';
 import { useCommunityStore } from '../store/communityStore';
 import * as api from '../api/client';
 
@@ -16,6 +17,7 @@ export default function CommunityScreen() {
   const { feed, error, fetch, applyUpvote } = useCommunityStore();
   const [refreshing, setRefreshing] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [noticesOpen, setNoticesOpen] = useState(false);
 
   const load = useCallback(async () => { await fetch(); }, [fetch]);
   useEffect(() => { load(); }, [load]);
@@ -38,10 +40,23 @@ export default function CommunityScreen() {
   const issues = feed?.issues ?? [];
   const polls = feed?.polls ?? [];
 
+  if (noticesOpen) return <NoticeBoardScreen onClose={() => setNoticesOpen(false)} />;
+
   return (
     <View style={styles.container}>
       <AppBar title="Community" />
       <ScrollView contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.teal} />}>
+        <Card style={styles.item} onPress={() => setNoticesOpen(true)}>
+          <View style={styles.noticeLink}>
+            <MaterialCommunityIcons name="bulletin-board" size={24} color={colors.brandPrimary} />
+            <View style={styles.noticeLinkText}>
+              <Text style={type.h3}>Notice board</Text>
+              <Text style={type.micro}>Discussions & official notices</Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textTertiary} />
+          </View>
+        </Card>
+
         {announcements.map((a) => <View key={a.id} style={styles.item}><AnnouncementCard announcement={a} /></View>)}
 
         <View style={styles.block}>
@@ -72,5 +87,7 @@ const styles = StyleSheet.create({
   scroll: { padding: spacing.lg, paddingBottom: spacing['5xl'] },
   block: { marginTop: spacing.md },
   item: { marginTop: spacing.sm },
+  noticeLink: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  noticeLinkText: { flex: 1, gap: 2 },
   fab: { position: 'absolute', right: spacing.lg, bottom: spacing.xl, width: 56, height: 56, borderRadius: 28, backgroundColor: colors.actionPrimary, alignItems: 'center', justifyContent: 'center' },
 });
