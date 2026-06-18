@@ -2,7 +2,7 @@
   "expo": {
     "name": "CommunityGate",
     "slug": "communitygate-resident",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "orientation": "portrait",
     "platforms": [
       "android",
@@ -11,7 +11,7 @@
     ],
     "android": {
       "package": "com.communitygate.resident",
-      "versionCode": 2
+      "versionCode": 3
     },
     "ios": {
       "bundleIdentifier": "com.communitygate.resident"
