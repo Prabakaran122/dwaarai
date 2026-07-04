@@ -14,11 +14,16 @@ logging.basicConfig(level=logging.INFO,
     handlers=[logging.StreamHandler()])
 log = logging.getLogger("gate")
 
-# ── C3 controller: mock or real ──────────────────────────────────────
+# ── C3 controller: mock / push / pull ────────────────────────────────
 if cfg.USE_C3_MOCK:
     from edge.emulators.c3_mock import C3Mock as C3Impl
     log.warning("C3 MOCK active")
+elif cfg.USE_C3_PUSH:
+    # PUSH protocol: panel dials into a server we host; supports card writes.
+    from edge.c3_push_controller import C3PushController as C3Impl
+    log.info(f"C3 PUSH protocol active (server on {cfg.C3_PUSH_BIND}:{cfg.C3_PUSH_PORT})")
 else:
+    # Legacy PULL (zkaccess-c3): TCP:4370 polling; cannot write cards.
     from edge.c3_controller import C3Controller as C3Impl
 
 from edge.anpr_receiver import ANPRReceiver
@@ -125,9 +130,14 @@ def _process_c3_event(event: dict):
 def _c3_poll_loop():
     """Continuously poll C3 for new events, reconnecting if the link drops."""
     reconnect_backoff = 1.0
+    last_alert = 0.0
+    alerted = False
     while True:
         try:
             if _c3 and _c3.is_connected():
+                if alerted:
+                    log.warning("C3 panel back in contact — clearing alert")
+                    alerted = False
                 events = _c3.poll_events()
                 for event in events:
                     _process_c3_event(event)
@@ -136,6 +146,20 @@ def _c3_poll_loop():
                 # re-establish with capped exponential backoff so the gate
                 # recovers on its own instead of going dead until restart.
                 log.warning("C3 not connected — attempting reconnect")
+                # Alert (throttled) if the panel has been silent too long — it
+                # may be wedged or the network is down. The C3 still makes local
+                # decisions during the gap, but server sync/commands are stalled.
+                silent = _c3.seconds_since_contact() if hasattr(_c3, "seconds_since_contact") else 0
+                now = time.time()
+                if silent >= cfg.C3_ALERT_SECONDS and (now - last_alert) > 60:
+                    log.error(f"C3 PANEL UNREACHABLE for {silent:.0f}s "
+                              f"(gate={cfg.GATE_ID}) — check panel power/network")
+                    last_alert = now
+                    alerted = True
+                    _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
+                                 "detection_method": "system", "raw_value": "c3_unreachable",
+                                 "access_decision": "alert", "deny_reason": f"panel_silent_{int(silent)}s",
+                                 "is_offline_event": not _online, "event_ts": now})
                 if _c3.connect():
                     log.info("C3 reconnected")
                     reconnect_backoff = 1.0
@@ -320,10 +344,16 @@ def main():
         start_sync()
     else:
         # Entry gate: C3 controller + ANPR
-        _c3 = C3Impl(ip=cfg.C3_IP, port=cfg.C3_PORT,
-                      serial_number=cfg.C3_SERIAL,
-                      door_number=cfg.C3_DOOR_NUMBER,
-                      open_duration=cfg.C3_OPEN_DURATION)
+        c3_kwargs = dict(ip=cfg.C3_IP, port=cfg.C3_PORT,
+                         serial_number=cfg.C3_SERIAL,
+                         door_number=cfg.C3_DOOR_NUMBER,
+                         open_duration=cfg.C3_OPEN_DURATION)
+        if cfg.USE_C3_PUSH and not cfg.USE_C3_MOCK:
+            # Push controller also needs where to bind its server for the panel,
+            # plus the bulk-sync throttle so a big roster can't hang the panel.
+            c3_kwargs.update(listen_host=cfg.C3_PUSH_BIND, listen_port=cfg.C3_PUSH_PORT,
+                             sync_chunk=cfg.C3_SYNC_CHUNK, sync_pause=cfg.C3_SYNC_PAUSE)
+        _c3 = C3Impl(**c3_kwargs)
         if not _c3.connect():
             log.error("C3 connection failed — running in degraded mode (ANPR only)")
 

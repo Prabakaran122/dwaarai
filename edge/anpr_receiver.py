@@ -27,6 +27,51 @@ def normalize_plate(raw):
     return _PLATE_RE.sub('', raw).upper()
 
 
+# Plate/confidence field names across camera vendors (ZKTeco LPRC, Hikvision,
+# Dahua, and the "AlarmInfoPlate" family common to LPR cameras). Searched
+# recursively, so nested shapes like
+#   {"AlarmInfoPlate": {"result": {"PlateResult": {"license": "KA05..."}}}}
+# resolve without hard-coding the path.
+_PLATE_KEYS = ["plate", "plateNumber", "plate_number", "PlateNumber", "licensePlate",
+               "LicensePlate", "license", "carLicense", "car_license", "plateNo",
+               "plate_no", "number", "plateResult"]
+_CONF_KEYS = ["confidence", "Confidence", "conf", "reliability"]
+
+
+def _deep_find(obj, keys):
+    """First non-empty value for any key in `keys`, searched depth-first."""
+    if isinstance(obj, dict):
+        for k in keys:
+            v = obj.get(k)
+            if isinstance(v, str) and v.strip():
+                return v
+            if isinstance(v, (int, float)):
+                return v
+        for v in obj.values():
+            r = _deep_find(v, keys)
+            if r is not None:
+                return r
+    elif isinstance(obj, list):
+        for v in obj:
+            r = _deep_find(v, keys)
+            if r is not None:
+                return r
+    return None
+
+
+def extract_plate_json(data):
+    """Pull (plate, confidence) from a parsed JSON body of any known shape."""
+    plate = _deep_find(data, _PLATE_KEYS)
+    if isinstance(plate, dict):                      # e.g. plateResult:{number:..}
+        plate = _deep_find(plate, _PLATE_KEYS)
+    conf = _deep_find(data, _CONF_KEYS)
+    if isinstance(conf, (int, float)) and conf > 1:  # 0-100 -> 0-1
+        conf = conf / 100.0
+    elif not isinstance(conf, (int, float)):
+        conf = None
+    return (plate if isinstance(plate, str) else None), conf
+
+
 class ANPREventHandler(BaseHTTPRequestHandler):
     """HTTP handler for ANPR camera plate events."""
 
@@ -58,7 +103,11 @@ class ANPREventHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "ok", "plate": plate}).encode())
             else:
-                log.warning(f"ANPR event with no plate: {body[:200]}")
+                # Couldn't extract a plate — log the RAW payload so we can add a
+                # parser for this camera's format (how we onboard a new LPRC300).
+                log.warning("ANPR event, no plate extracted — RAW for format "
+                            f"discovery: content_type={content_type!r} "
+                            f"body={body[:1000]!r}")
                 self.send_response(200)
                 self.end_headers()
                 self.wfile.write(b'{"status": "no_plate"}')
@@ -85,29 +134,9 @@ class ANPREventHandler(BaseHTTPRequestHandler):
         pass
 
     def _parse_json(self, body):
-        """Parse JSON plate event. Supports multiple camera formats."""
-        data = json.loads(body)
-
-        # Generic format: {"plate": "...", "confidence": 0.98}
-        plate = data.get('plate') or data.get('plateNumber') or data.get('plate_number')
-
-        # Dahua format: {"PlateNumber": "...", "Confidence": 98}
-        if not plate:
-            plate = data.get('PlateNumber') or data.get('plateResult', {}).get('number')
-
-        # Hikvision JSON format (some models)
-        if not plate:
-            plate = data.get('licensePlate') or data.get('ANPR', {}).get('licensePlate')
-
-        # Confidence
-        confidence = data.get('confidence') or data.get('Confidence')
-        if confidence and isinstance(confidence, (int, float)):
-            if confidence > 1:
-                confidence = confidence / 100.0  # Dahua sends 0-100
-        else:
-            confidence = None
-
-        return plate, confidence
+        """Parse a JSON plate event from any known camera shape (ZKTeco LPRC,
+        Hikvision, Dahua, AlarmInfoPlate, generic). Field search is recursive."""
+        return extract_plate_json(json.loads(body))
 
     def _parse_hikvision_xml(self, body):
         """Parse Hikvision ISAPI XML plate event."""

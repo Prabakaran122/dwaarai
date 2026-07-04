@@ -20,6 +20,19 @@ class Config:
     C3_DOOR_NUMBER:  int   = int(os.getenv("C3_DOOR_NUMBER", "1"))
     C3_OPEN_DURATION: int  = int(os.getenv("C3_OPEN_DURATION_SECONDS", "5"))
     USE_C3_MOCK:     bool  = os.getenv("USE_C3_MOCK", "true").lower()=="true"
+    # PUSH protocol (ADMS) — the panel dials into a server WE host on the edge.
+    # Enables card WRITES (which the PULL zkaccess-c3 path cannot do). When true,
+    # the edge runs a push server on C3_PUSH_PORT and the panel's Cloud Server
+    # setting must point at this edge's IP:C3_PUSH_PORT. See edge/c3_push_controller.py.
+    USE_C3_PUSH:     bool  = os.getenv("USE_C3_PUSH", "false").lower()=="true"
+    C3_PUSH_PORT:    int   = int(os.getenv("C3_PUSH_PORT", "8080"))
+    C3_PUSH_BIND:    str   = os.getenv("C3_PUSH_BIND", "0.0.0.0")
+    # Alert if the panel hasn't contacted the push server in this many seconds
+    # (panel wedged / network down). Local C3 decisions continue during a gap.
+    C3_ALERT_SECONDS: int  = int(os.getenv("C3_ALERT_SECONDS", "90"))
+    # Bulk card-sync throttle (avoids overwhelming the panel's flash on a big roster).
+    C3_SYNC_CHUNK:   int   = int(os.getenv("C3_SYNC_CHUNK", "50"))
+    C3_SYNC_PAUSE:   float = float(os.getenv("C3_SYNC_PAUSE_SECONDS", "1.5"))
 
     # MQTT
     MQTT_BROKER:    str  = os.getenv("MQTT_BROKER", "localhost")
