@@ -193,56 +193,73 @@ def handle_anpr_detection(plate: str, confidence: float = None):
     log.info(f"ANPR detection: plate={plate} conf={confidence}")
     now = time.time()
 
-    # Check for pending unknown FASTag within correlation window.
-    # Snapshot under lock; the poll thread may mutate _pending_unknown concurrently.
+    # Unknown FASTag(s) still inside the correlation window, snapshotted under
+    # lock (the poll thread mutates _pending_unknown concurrently).
     with _lock:
-        pending_items = list(_pending_unknown.items())
-    for card_number, pending in pending_items:
-        if (now - pending["ts"]) < cfg.FASTAG_CORRELATION_WINDOW:
-            # Correlate: unknown FASTag + ANPR result
-            if is_blacklisted_local(cfg.OFFLINE_DB_PATH, "anpr", plate):
-                log.info(f"DENIED (plate blacklisted during correlation)")
-                _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
-                              "detection_method": "anpr", "raw_value": plate,
-                              "access_decision": "deny", "deny_reason": "blacklisted",
-                              "anpr_confidence": confidence, "is_offline_event": not _online,
-                              "event_ts": time.time()})
+        candidates = [(cn, p) for cn, p in _pending_unknown.items()
+                      if (now - p["ts"]) < cfg.FASTAG_CORRELATION_WINDOW]
+    if candidates:
+        # Pair with the tag read CLOSEST in time to this plate. If MORE THAN ONE
+        # tag is pending the pairing is AMBIGUOUS (e.g. two cars tail-gating with
+        # one plate read) — we still OPEN for a known resident plate, but we do
+        # NOT auto-pair (a wrong tag↔plate bond would persist to the roster + C3)
+        # and we LEAVE the tags pending for their own plate / to expire. A wrong
+        # open is recoverable; a wrong pairing poisons the roster.
+        ambiguous = len(candidates) > 1
+        card_number, _pend = min(candidates, key=lambda c: now - c[1]["ts"])
+
+        if is_blacklisted_local(cfg.OFFLINE_DB_PATH, "anpr", plate):
+            log.info("DENIED (plate blacklisted during correlation)")
+            _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
+                          "detection_method": "anpr", "raw_value": plate,
+                          "access_decision": "deny", "deny_reason": "blacklisted",
+                          "anpr_confidence": confidence, "is_offline_event": not _online,
+                          "event_ts": time.time()})
+            if not ambiguous:
                 with _lock:
                     _pending_unknown.pop(card_number, None)
-                return
+            return
 
-            plate_result = None
-            if _online:
-                plate_result = _cloud_check("anpr", plate, confidence)
-            if not plate_result or plate_result.get("decision") != "allow":
-                plate_result = _local_check("anpr", plate)
+        plate_result = None
+        if _online:
+            plate_result = _cloud_check("anpr", plate, confidence)
+        if not plate_result or plate_result.get("decision") != "allow":
+            plate_result = _local_check("anpr", plate)
 
-            if plate_result and plate_result["decision"] == "allow":
-                # Remote unlock C3 — record whether the barrier actually opened
-                opened = _open_gate()
-                log.info(f"GRANTED (ANPR correlated) → {plate_result.get('unit_number')} gate_opened={opened}")
-                # Auto-pair in background
-                if _online:
+        if plate_result and plate_result["decision"] == "allow":
+            opened = _open_gate()  # record whether the barrier actually moved
+            if ambiguous:
+                log.warning(f"GRANTED (ANPR) {plate} → {plate_result.get('unit_number')} "
+                            f"but {len(candidates)} tags pending — NOT auto-pairing "
+                            f"(ambiguous; would corrupt roster). gate_opened={opened}")
+            else:
+                log.info(f"GRANTED (ANPR correlated) → {plate_result.get('unit_number')} "
+                         f"gate_opened={opened}")
+                if _online:  # unambiguous single tag — safe to auto-pair
                     threading.Thread(target=_try_auto_pair,
                                      args=(card_number, plate), daemon=True).start()
-                _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
-                              "detection_method": "anpr", "raw_value": plate,
-                              "access_decision": "allow", "anpr_confidence": confidence,
-                              "gate_opened": opened,
-                              "is_offline_event": not _online, "event_ts": time.time()})
+            _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
+                          "detection_method": "anpr", "raw_value": plate,
+                          "access_decision": "allow", "anpr_confidence": confidence,
+                          "gate_opened": opened, "auto_paired": not ambiguous,
+                          "ambiguous_correlation": ambiguous,
+                          "is_offline_event": not _online, "event_ts": time.time()})
+            if not ambiguous:
                 with _lock:
                     _pending_unknown.pop(card_number, None)
-                return
-            else:
-                log.info(f"GUARD REVIEW — unknown FASTag + unknown plate {plate}")
-                _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
-                              "detection_method": "anpr", "raw_value": plate,
-                              "access_decision": "guard_review", "deny_reason": "not_recognized",
-                              "anpr_confidence": confidence, "is_offline_event": not _online,
-                              "event_ts": time.time()})
+            return
+        else:
+            log.info(f"GUARD REVIEW — unknown FASTag + unknown plate {plate}"
+                     + (f" ({len(candidates)} tags pending)" if ambiguous else ""))
+            _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
+                          "detection_method": "anpr", "raw_value": plate,
+                          "access_decision": "guard_review", "deny_reason": "not_recognized",
+                          "anpr_confidence": confidence, "is_offline_event": not _online,
+                          "event_ts": time.time()})
+            if not ambiguous:
                 with _lock:
                     _pending_unknown.pop(card_number, None)
-                return
+            return
 
     # No pending FASTag — standard ANPR-only access check
     if is_blacklisted_local(cfg.OFFLINE_DB_PATH, "anpr", plate):
