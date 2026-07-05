@@ -31,4 +31,5 @@ def test_holiday_and_firstcard():
 
 def test_normal_open_and_restore():
     assert format_normal_open_cmd(9, 1).endswith("CONTROL DEVICE 01010100")   # hold open
-    assert format_restore_cmd(9, 2).endswith("CONTROL DEVICE 01020000")        # controlled
+    # restore = a valid short timed open (the all-zero operand is rejected -13)
+    assert format_restore_cmd(9, 2).endswith("CONTROL DEVICE 01020101")
