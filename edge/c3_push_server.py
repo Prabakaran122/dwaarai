@@ -479,9 +479,12 @@ def format_normal_open_cmd(cmd_id: int, door: int) -> str:
 
 
 def format_restore_cmd(cmd_id: int, door: int) -> str:
-    """Return a normally-open door to controlled mode (end rush-hour / lockdown).
-    Best-effort operand — confirm against the panel before relying on it."""
-    return f"C:{cmd_id}:CONTROL DEVICE 01{door:02X}0000"
+    """End normally-open by giving the door a finite (1s) open, after which it
+    returns to controlled mode. NOTE: on the C3-200 Plus the all-zero operand
+    (…0000) is rejected (Return=-13); a short timed open is a valid command. If
+    normal-open persists on your firmware, ending it reliably needs a panel
+    reboot or the web-UI door mode — verify on your unit."""
+    return f"C:{cmd_id}:CONTROL DEVICE 01{door:02X}0101"
 
 
 # ZKTeco access event codes (event=NN in rtlog). Codes seen/known to be an
