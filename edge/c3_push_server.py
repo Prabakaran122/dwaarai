@@ -72,6 +72,7 @@ class C3PushServer:
         self.relay_log = collections.deque(maxlen=50)    # relay state transitions
         self.ack_log = collections.deque(maxlen=100)     # command ACKs
         self.data_upload = collections.deque(maxlen=2000)  # DATA QUERY uploads (table rows)
+        self.last_device_time = ""  # panel clock, from the time= field it uploads
         self.getreq_batch = 1  # commands handed per getrequest poll (1 = safe default)
         self._events: list[dict] = []
         self._devices: dict[str, _DeviceState] = {}
@@ -267,6 +268,15 @@ class C3PushServer:
     def _handle_cdata_post(self, sn: str, table: str, body: str) -> bytes:
         with self._lock:
             dev = self._touch(sn)
+        # Capture the panel's own clock from any record it uploads (time=...).
+        for _line in body.splitlines():
+            for _tok in _line.split("\t"):
+                if _tok.startswith("time="):
+                    self.last_device_time = _tok[5:].strip()
+                    break
+            else:
+                continue
+            break
         t = table.lower()
         if t == "rtlog":
             parsed = []
