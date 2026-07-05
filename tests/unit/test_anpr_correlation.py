@@ -47,3 +47,15 @@ def test_two_tags_open_but_do_not_pair(monkeypatch):
     assert paired == []                               # AMBIGUOUS → no auto-pair
     # both tags left pending (not wrongly consumed)
     assert "TAG_A" in gc._pending_unknown and "TAG_B" in gc._pending_unknown
+
+
+def test_visitor_pass_opens_but_does_not_pair(monkeypatch):
+    # a plate that resolves to a VISITOR pass: open the gate, but never bond the
+    # visitor's (unknown) tag — that would grant permanent access past expiry.
+    paired = _arm(monkeypatch, ["TAG_V"])
+    visitor = {"decision": "allow", "unit_number": "A1", "kind": "visitor_pass"}
+    monkeypatch.setattr(gc, "_cloud_check", lambda *a, **k: visitor)
+    monkeypatch.setattr(gc, "_local_check", lambda *a, **k: visitor)
+    gc.handle_anpr_detection("KA05VIS1", 0.9)
+    time.sleep(0.15)
+    assert paired == []            # visitor -> NOT auto-paired

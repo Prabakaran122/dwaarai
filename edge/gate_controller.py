@@ -228,21 +228,30 @@ def handle_anpr_detection(plate: str, confidence: float = None):
 
         if plate_result and plate_result["decision"] == "allow":
             opened = _open_gate()  # record whether the barrier actually moved
+            # Only bond a tag to a plate for a PERMANENT resident vehicle. A
+            # visitor pass is temporary + plate-only — pairing the visitor's tag
+            # would grant them permanent access and bypass the pass expiry. And
+            # an ambiguous read (2+ tags) can't be paired safely at all.
+            is_visitor = plate_result.get("kind") == "visitor_pass"
+            do_pair = (not ambiguous) and (not is_visitor) and _online
             if ambiguous:
                 log.warning(f"GRANTED (ANPR) {plate} → {plate_result.get('unit_number')} "
                             f"but {len(candidates)} tags pending — NOT auto-pairing "
                             f"(ambiguous; would corrupt roster). gate_opened={opened}")
+            elif is_visitor:
+                log.info(f"GRANTED (visitor pass) {plate} → {plate_result.get('unit_number')} "
+                         f"— NOT auto-pairing (temporary). gate_opened={opened}")
             else:
                 log.info(f"GRANTED (ANPR correlated) → {plate_result.get('unit_number')} "
                          f"gate_opened={opened}")
-                if _online:  # unambiguous single tag — safe to auto-pair
+                if do_pair:
                     threading.Thread(target=_try_auto_pair,
                                      args=(card_number, plate), daemon=True).start()
             _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
                           "detection_method": "anpr", "raw_value": plate,
                           "access_decision": "allow", "anpr_confidence": confidence,
-                          "gate_opened": opened, "auto_paired": not ambiguous,
-                          "ambiguous_correlation": ambiguous,
+                          "gate_opened": opened, "auto_paired": do_pair,
+                          "ambiguous_correlation": ambiguous, "pass_kind": plate_result.get("kind"),
                           "is_offline_event": not _online, "event_ts": time.time()})
             if not ambiguous:
                 with _lock:
