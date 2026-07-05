@@ -28,6 +28,8 @@ const heartbeatSchema = z.object({
   queue_depth: z.number().int().min(0),
   uptime_s: z.number().min(0),
   ts: z.number(),
+  // Optional C3 panel telemetry (door/relay/alarm) for the live gate dashboard.
+  panel: z.object({}).passthrough().optional(),
 });
 
 const eventSyncItemSchema = z.object({
@@ -174,7 +176,7 @@ router.post('/heartbeat', authenticateDevice, async (req, res) => {
       return error(res, 'Validation error', 400, parsed.error.issues);
     }
 
-    const { gate_id, community_id, status } = parsed.data;
+    const { gate_id, community_id, status, panel } = parsed.data;
 
     // Verify device token matches the claimed gate/community
     if (gate_id !== req.device.gate_id || community_id !== req.device.community_id) {
@@ -194,6 +196,7 @@ router.post('/heartbeat', authenticateDevice, async (req, res) => {
       gateId: gate_id,
       gateName: gate?.name || null,
       status,
+      panel: panel || null,          // live door/relay/alarm for the dashboard
       lastSeen: new Date().toISOString(),
       ts: new Date().toISOString(),
     });

@@ -18,6 +18,8 @@ impls are — see edge/config.py.
 import time, logging
 from edge.c3_push_server import (
     C3PushServer, format_control_cmd, format_user_cmd, format_user_delete_cmd,
+    format_timezone_cmd, format_userauthorize_cmd, format_holiday_cmd,
+    format_firstcard_cmd, format_normal_open_cmd, format_restore_cmd,
 )
 
 log = logging.getLogger("c3_push_controller")
@@ -125,11 +127,62 @@ class C3PushController:
         log.info("C3 clear_cards: reconcile via sync_cards(desired_set) in push mode")
         return False
 
-    def add_card(self, card_number: str) -> bool:
+    def add_card(self, card_number: str, valid_from="0", valid_until="0", name="") -> bool:
+        """Add/update a card. valid_from/valid_until (YYYYMMDD or datetime, 0 =
+        none) make it a time-limited pass — visitor or staff-hours access,
+        enforced locally on the panel."""
         if not self._started:
             return False
-        self._send(lambda cid: format_user_cmd(cid, card_number))
-        log.info(f"C3 queued add_card {card_number[:12]}...")
+        self._send(lambda cid: format_user_cmd(cid, card_number, valid_from=valid_from,
+                                               valid_until=valid_until, name=name))
+        window = f" [{valid_from}..{valid_until}]" if str(valid_from) != "0" else ""
+        log.info(f"C3 queued add_card {card_number[:12]}...{window}")
+        return True
+
+    # ── access model (staff hours, visitor windows, holidays, first-card) ─
+    def set_timezone(self, tz_id: int, seg1="0000", seg2="2359") -> bool:
+        """Define an allowed-time window (e.g. staff shift 09:00–18:00)."""
+        if not self._started:
+            return False
+        self._send(lambda cid: format_timezone_cmd(cid, tz_id, seg1, seg2))
+        return True
+
+    def set_access_level(self, pin: str, tz_id: int = 1, door: int = 1) -> bool:
+        """Grant a user access to a door within a time zone."""
+        if not self._started:
+            return False
+        self._send(lambda cid: format_userauthorize_cmd(cid, pin, tz_id, door))
+        return True
+
+    def set_holiday(self, uid: int, date_yyyymmdd: str, htype: int = 1) -> bool:
+        if not self._started:
+            return False
+        self._send(lambda cid: format_holiday_cmd(cid, uid, date_yyyymmdd, htype))
+        return True
+
+    def set_first_card(self, pin: str, door: int = 1, tz_id: int = 1) -> bool:
+        if not self._started:
+            return False
+        self._send(lambda cid: format_firstcard_cmd(cid, pin, door, tz_id))
+        return True
+
+    # ── emergency / scheduled modes (evacuation open, lockdown, rush-hour) ─
+    def hold_open(self, door: int = None) -> bool:
+        """Hold a door (or all doors) normally-open — evacuation / rush-hour."""
+        if not self._started:
+            return False
+        for d in ([door] if door else [1, 2]):
+            self._send(lambda cid, dd=d: format_normal_open_cmd(cid, dd))
+        log.warning(f"C3 HOLD-OPEN door(s) {'all' if not door else door}")
+        return True
+
+    def restore_door(self, door: int = None) -> bool:
+        """End normally-open / lockdown — return door(s) to controlled mode."""
+        if not self._started:
+            return False
+        for d in ([door] if door else [1, 2]):
+            self._send(lambda cid, dd=d: format_restore_cmd(cid, dd))
+        log.warning(f"C3 RESTORE door(s) {'all' if not door else door}")
         return True
 
     def remove_card(self, card_number: str) -> bool:
