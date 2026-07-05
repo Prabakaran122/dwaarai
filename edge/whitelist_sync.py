@@ -1,6 +1,22 @@
-import sqlite3, requests, time, threading, logging, schedule
+import sqlite3, requests, time, threading, logging, schedule, re
 from edge.config import cfg
 log = logging.getLogger("whitelist_sync")
+
+_PLATE_RE = re.compile(r'[^A-Za-z0-9]')
+
+def _norm_plate(p):
+    """Match the ANPR receiver's normalization (strip non-alnum, uppercase)."""
+    return _PLATE_RE.sub('', p or '').upper()
+
+def _iso_ts(s):
+    """ISO-8601 string (or None) -> epoch seconds (or None)."""
+    if not s:
+        return None
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(str(s).replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return None
 
 def _init_db():
     with sqlite3.connect(cfg.OFFLINE_DB_PATH) as c:
@@ -18,6 +34,13 @@ def _init_db():
             uid_hash TEXT, card_type TEXT, unit_id TEXT,
             unit_number TEXT, expires_at REAL)""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_rcc_uid ON rfid_cards_cache(uid_hash)")
+        # Plate-based VISITOR passes: temporary, plate-only, with a validity
+        # window. Separate from the (permanent) resident `whitelist` so expiry is
+        # enforced locally/offline and these are never auto-paired.
+        c.execute("""CREATE TABLE IF NOT EXISTS plate_passes_cache(
+            plate TEXT, unit_id TEXT, unit_number TEXT, holder_name TEXT,
+            valid_from REAL, expires_at REAL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ppc_p ON plate_passes_cache(plate)")
 
 def sync_from_cloud():
     try:
@@ -43,32 +66,57 @@ def sync_from_cloud():
                 c.execute("INSERT INTO rfid_cards_cache VALUES(?,?,?,?,?)",
                     (card["uid_hash"], card.get("card_type"),
                      card.get("unit_id"), card.get("unit_number"), exp_ts))
+            # Plate-based visitor passes (plate + validity window).
+            c.execute("DELETE FROM plate_passes_cache")
+            for vp in d.get("visitor_passes", []):
+                c.execute("INSERT INTO plate_passes_cache VALUES(?,?,?,?,?,?)",
+                    (_norm_plate(vp.get("plate")), vp.get("unit_id"), vp.get("unit_number"),
+                     vp.get("holder_name") or vp.get("visitor_name"),
+                     _iso_ts(vp.get("valid_from")), _iso_ts(vp.get("expires_at"))))
             c.execute("UPDATE sync_meta SET last_sync=? WHERE id=1",(time.time(),))
-        log.info(f"Synced {len(d['vehicles'])} vehicles, {len(d.get('blacklist',[]))} blacklisted, {len(d.get('rfid_cards',[]))} rfid cards")
+        log.info(f"Synced {len(d['vehicles'])} vehicles, {len(d.get('blacklist',[]))} blacklisted, "
+                 f"{len(d.get('rfid_cards',[]))} rfid cards, {len(d.get('visitor_passes',[]))} visitor passes")
     except Exception as e:
         log.warning(f"Sync failed, using cache: {e}")
 
 def load_local(db, method, value):
     if method == "anpr":
-        col = "plate"
+        col = "plate"; value = _norm_plate(value)
     elif method == "fastag":
         col = "fastag_tid_hash"
     else:
         col = "rfid_uid_hash"
     with sqlite3.connect(db) as c:
         row = c.execute(f"SELECT unit_id,unit_number,resident_name FROM whitelist WHERE {col}=?",(value,)).fetchone()
-    if row: return {"unit_id":row[0],"unit_number":row[1],"resident_name":row[2]}
-    # Fallback: check rfid_cards_cache for standalone RFID/FASTag cards
+    if row:
+        # Permanent resident record. For a plate this is a resident VEHICLE —
+        # pairable (auto-pair) and no expiry.
+        kind = "resident_vehicle" if method == "anpr" else "resident"
+        return {"unit_id":row[0],"unit_number":row[1],"resident_name":row[2],"kind":kind}
+    now = time.time()
+    # Plate VISITOR pass: temporary, plate-only, validity-windowed, NOT pairable.
+    # Enforced here so it expires correctly even OFFLINE (no cloud needed).
+    if method == "anpr":
+        with sqlite3.connect(db) as c:
+            p = c.execute("SELECT unit_id,unit_number,holder_name,valid_from,expires_at "
+                          "FROM plate_passes_cache WHERE plate=?", (value,)).fetchone()
+        if p:
+            valid_from, expires_at = p[3], p[4]
+            if (valid_from is None or valid_from <= now) and (expires_at is None or expires_at > now):
+                return {"unit_id":p[0],"unit_number":p[1],"resident_name":p[2] or "Visitor",
+                        "kind":"visitor_pass","valid_from":valid_from,"expires_at":expires_at}
+            # window not active -> not a match (denied/guard-review, even offline)
+    # Fallback: standalone RFID/FASTag cards with their own expiry.
     if method in ("rfid", "fastag"):
-        import time as _time
         with sqlite3.connect(db) as c:
             card = c.execute(
                 "SELECT unit_id,unit_number,card_type,expires_at FROM rfid_cards_cache WHERE uid_hash=?",
                 (value,)).fetchone()
         if card:
             expires_at = card[3]
-            if expires_at is None or expires_at > _time.time():
-                return {"unit_id":card[0],"unit_number":card[1],"resident_name":card[1] or "Card holder","card_type":card[2]}
+            if expires_at is None or expires_at > now:
+                return {"unit_id":card[0],"unit_number":card[1],"resident_name":card[1] or "Card holder",
+                        "card_type":card[2],"kind":"rfid_card"}
     return None
 
 def is_blacklisted_local(db, method, value) -> bool:

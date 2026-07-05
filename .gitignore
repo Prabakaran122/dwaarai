@@ -42,3 +42,12 @@ apk-builds/
 
 # Playwright MCP scratch
 .playwright-mcp/
+
+# C3 push-migration — local build/test artifacts (not committed)
+.venv-test/
+dist_setup/
+*.out
+c3_test_report*.json
+c3_push_capture*.log
+panel_backup_*.json
+edge/tools/PANEL_ORIGINAL_CONFIG.txt

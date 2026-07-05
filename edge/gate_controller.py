@@ -14,11 +14,16 @@ logging.basicConfig(level=logging.INFO,
     handlers=[logging.StreamHandler()])
 log = logging.getLogger("gate")
 
-# ── C3 controller: mock or real ──────────────────────────────────────
+# ── C3 controller: mock / push / pull ────────────────────────────────
 if cfg.USE_C3_MOCK:
     from edge.emulators.c3_mock import C3Mock as C3Impl
     log.warning("C3 MOCK active")
+elif cfg.USE_C3_PUSH:
+    # PUSH protocol: panel dials into a server we host; supports card writes.
+    from edge.c3_push_controller import C3PushController as C3Impl
+    log.info(f"C3 PUSH protocol active (server on {cfg.C3_PUSH_BIND}:{cfg.C3_PUSH_PORT})")
 else:
+    # Legacy PULL (zkaccess-c3): TCP:4370 polling; cannot write cards.
     from edge.c3_controller import C3Controller as C3Impl
 
 from edge.anpr_receiver import ANPRReceiver
@@ -125,9 +130,14 @@ def _process_c3_event(event: dict):
 def _c3_poll_loop():
     """Continuously poll C3 for new events, reconnecting if the link drops."""
     reconnect_backoff = 1.0
+    last_alert = 0.0
+    alerted = False
     while True:
         try:
             if _c3 and _c3.is_connected():
+                if alerted:
+                    log.warning("C3 panel back in contact — clearing alert")
+                    alerted = False
                 events = _c3.poll_events()
                 for event in events:
                     _process_c3_event(event)
@@ -136,6 +146,20 @@ def _c3_poll_loop():
                 # re-establish with capped exponential backoff so the gate
                 # recovers on its own instead of going dead until restart.
                 log.warning("C3 not connected — attempting reconnect")
+                # Alert (throttled) if the panel has been silent too long — it
+                # may be wedged or the network is down. The C3 still makes local
+                # decisions during the gap, but server sync/commands are stalled.
+                silent = _c3.seconds_since_contact() if hasattr(_c3, "seconds_since_contact") else 0
+                now = time.time()
+                if silent >= cfg.C3_ALERT_SECONDS and (now - last_alert) > 60:
+                    log.error(f"C3 PANEL UNREACHABLE for {silent:.0f}s "
+                              f"(gate={cfg.GATE_ID}) — check panel power/network")
+                    last_alert = now
+                    alerted = True
+                    _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
+                                 "detection_method": "system", "raw_value": "c3_unreachable",
+                                 "access_decision": "alert", "deny_reason": f"panel_silent_{int(silent)}s",
+                                 "is_offline_event": not _online, "event_ts": now})
                 if _c3.connect():
                     log.info("C3 reconnected")
                     reconnect_backoff = 1.0
@@ -169,56 +193,82 @@ def handle_anpr_detection(plate: str, confidence: float = None):
     log.info(f"ANPR detection: plate={plate} conf={confidence}")
     now = time.time()
 
-    # Check for pending unknown FASTag within correlation window.
-    # Snapshot under lock; the poll thread may mutate _pending_unknown concurrently.
+    # Unknown FASTag(s) still inside the correlation window, snapshotted under
+    # lock (the poll thread mutates _pending_unknown concurrently).
     with _lock:
-        pending_items = list(_pending_unknown.items())
-    for card_number, pending in pending_items:
-        if (now - pending["ts"]) < cfg.FASTAG_CORRELATION_WINDOW:
-            # Correlate: unknown FASTag + ANPR result
-            if is_blacklisted_local(cfg.OFFLINE_DB_PATH, "anpr", plate):
-                log.info(f"DENIED (plate blacklisted during correlation)")
-                _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
-                              "detection_method": "anpr", "raw_value": plate,
-                              "access_decision": "deny", "deny_reason": "blacklisted",
-                              "anpr_confidence": confidence, "is_offline_event": not _online,
-                              "event_ts": time.time()})
+        candidates = [(cn, p) for cn, p in _pending_unknown.items()
+                      if (now - p["ts"]) < cfg.FASTAG_CORRELATION_WINDOW]
+    if candidates:
+        # Pair with the tag read CLOSEST in time to this plate. If MORE THAN ONE
+        # tag is pending the pairing is AMBIGUOUS (e.g. two cars tail-gating with
+        # one plate read) — we still OPEN for a known resident plate, but we do
+        # NOT auto-pair (a wrong tag↔plate bond would persist to the roster + C3)
+        # and we LEAVE the tags pending for their own plate / to expire. A wrong
+        # open is recoverable; a wrong pairing poisons the roster.
+        ambiguous = len(candidates) > 1
+        card_number, _pend = min(candidates, key=lambda c: now - c[1]["ts"])
+
+        if is_blacklisted_local(cfg.OFFLINE_DB_PATH, "anpr", plate):
+            log.info("DENIED (plate blacklisted during correlation)")
+            _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
+                          "detection_method": "anpr", "raw_value": plate,
+                          "access_decision": "deny", "deny_reason": "blacklisted",
+                          "anpr_confidence": confidence, "is_offline_event": not _online,
+                          "event_ts": time.time()})
+            if not ambiguous:
                 with _lock:
                     _pending_unknown.pop(card_number, None)
-                return
+            return
 
-            plate_result = None
-            if _online:
-                plate_result = _cloud_check("anpr", plate, confidence)
-            if not plate_result or plate_result.get("decision") != "allow":
-                plate_result = _local_check("anpr", plate)
+        plate_result = None
+        if _online:
+            plate_result = _cloud_check("anpr", plate, confidence)
+        if not plate_result or plate_result.get("decision") != "allow":
+            plate_result = _local_check("anpr", plate)
 
-            if plate_result and plate_result["decision"] == "allow":
-                # Remote unlock C3 — record whether the barrier actually opened
-                opened = _open_gate()
-                log.info(f"GRANTED (ANPR correlated) → {plate_result.get('unit_number')} gate_opened={opened}")
-                # Auto-pair in background
-                if _online:
+        if plate_result and plate_result["decision"] == "allow":
+            opened = _open_gate()  # record whether the barrier actually moved
+            # Only bond a tag to a plate for a PERMANENT resident vehicle. A
+            # visitor pass is temporary + plate-only — pairing the visitor's tag
+            # would grant them permanent access and bypass the pass expiry. And
+            # an ambiguous read (2+ tags) can't be paired safely at all.
+            is_visitor = plate_result.get("kind") == "visitor_pass"
+            do_pair = (not ambiguous) and (not is_visitor) and _online
+            if ambiguous:
+                log.warning(f"GRANTED (ANPR) {plate} → {plate_result.get('unit_number')} "
+                            f"but {len(candidates)} tags pending — NOT auto-pairing "
+                            f"(ambiguous; would corrupt roster). gate_opened={opened}")
+            elif is_visitor:
+                log.info(f"GRANTED (visitor pass) {plate} → {plate_result.get('unit_number')} "
+                         f"— NOT auto-pairing (temporary). gate_opened={opened}")
+            else:
+                log.info(f"GRANTED (ANPR correlated) → {plate_result.get('unit_number')} "
+                         f"gate_opened={opened}")
+                if do_pair:
                     threading.Thread(target=_try_auto_pair,
                                      args=(card_number, plate), daemon=True).start()
-                _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
-                              "detection_method": "anpr", "raw_value": plate,
-                              "access_decision": "allow", "anpr_confidence": confidence,
-                              "gate_opened": opened,
-                              "is_offline_event": not _online, "event_ts": time.time()})
+            _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
+                          "detection_method": "anpr", "raw_value": plate,
+                          "access_decision": "allow", "anpr_confidence": confidence,
+                          "gate_opened": opened, "auto_paired": do_pair,
+                          "ambiguous_correlation": ambiguous, "pass_kind": plate_result.get("kind"),
+                          "is_offline_event": not _online, "event_ts": time.time()})
+            if not ambiguous:
                 with _lock:
                     _pending_unknown.pop(card_number, None)
-                return
-            else:
-                log.info(f"GUARD REVIEW — unknown FASTag + unknown plate {plate}")
-                _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
-                              "detection_method": "anpr", "raw_value": plate,
-                              "access_decision": "guard_review", "deny_reason": "not_recognized",
-                              "anpr_confidence": confidence, "is_offline_event": not _online,
-                              "event_ts": time.time()})
+            return
+        else:
+            log.info(f"GUARD REVIEW — unknown FASTag + unknown plate {plate}"
+                     + (f" ({len(candidates)} tags pending)" if ambiguous else ""))
+            _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
+                          "detection_method": "anpr", "raw_value": plate,
+                          "access_decision": "guard_review", "deny_reason": "not_recognized",
+                          "anpr_confidence": confidence, "is_offline_event": not _online,
+                          "event_ts": time.time()})
+            if not ambiguous:
                 with _lock:
                     _pending_unknown.pop(card_number, None)
-                return
+            return
 
     # No pending FASTag — standard ANPR-only access check
     if is_blacklisted_local(cfg.OFFLINE_DB_PATH, "anpr", plate):
@@ -320,10 +370,16 @@ def main():
         start_sync()
     else:
         # Entry gate: C3 controller + ANPR
-        _c3 = C3Impl(ip=cfg.C3_IP, port=cfg.C3_PORT,
-                      serial_number=cfg.C3_SERIAL,
-                      door_number=cfg.C3_DOOR_NUMBER,
-                      open_duration=cfg.C3_OPEN_DURATION)
+        c3_kwargs = dict(ip=cfg.C3_IP, port=cfg.C3_PORT,
+                         serial_number=cfg.C3_SERIAL,
+                         door_number=cfg.C3_DOOR_NUMBER,
+                         open_duration=cfg.C3_OPEN_DURATION)
+        if cfg.USE_C3_PUSH and not cfg.USE_C3_MOCK:
+            # Push controller also needs where to bind its server for the panel,
+            # plus the bulk-sync throttle so a big roster can't hang the panel.
+            c3_kwargs.update(listen_host=cfg.C3_PUSH_BIND, listen_port=cfg.C3_PUSH_PORT,
+                             sync_chunk=cfg.C3_SYNC_CHUNK, sync_pause=cfg.C3_SYNC_PAUSE)
+        _c3 = C3Impl(**c3_kwargs)
         if not _c3.connect():
             log.error("C3 connection failed — running in degraded mode (ANPR only)")
 
