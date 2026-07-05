@@ -15,6 +15,9 @@ interface RFIDCard {
   expires_at: string | null;
   unit_number: string | null;
   community_name: string | null;
+  holder_name: string | null;
+  access_start: string | null;
+  access_end: string | null;
 }
 
 interface Community {
@@ -43,6 +46,9 @@ export default function RFIDCardsPage() {
   const [formUnit, setFormUnit] = useState('');
   const [formType, setFormType] = useState('resident');
   const [formExpires, setFormExpires] = useState('');
+  const [formHolder, setFormHolder] = useState('');
+  const [formStart, setFormStart] = useState('');   // daily window (staff)
+  const [formEnd, setFormEnd] = useState('');
 
   const fetchCards = async () => {
     try {
@@ -83,6 +89,7 @@ export default function RFIDCardsPage() {
     setFormUnit('');
     setFormType('resident');
     setFormExpires('');
+    setFormHolder(''); setFormStart(''); setFormEnd('');
     setShowForm(true);
     if (communities[0]?.id) fetchUnits(communities[0].id);
   };
@@ -95,18 +102,26 @@ export default function RFIDCardsPage() {
     setFormUnit(card.issued_to_unit || '');
     setFormType(card.card_type);
     setFormExpires(card.expires_at ? card.expires_at.slice(0, 16) : '');
+    setFormHolder(card.holder_name || '');
+    setFormStart(card.access_start ? card.access_start.slice(0, 5) : '');
+    setFormEnd(card.access_end ? card.access_end.slice(0, 5) : '');
     setShowForm(true);
     fetchUnits(card.community_id);
   };
 
   const handleSubmit = async () => {
     try {
+      // Daily window only applies to staff cards.
+      const staff = formType === 'staff';
       if (editCard) {
         await apiPut(`/admin/rfid-cards/${editCard.id}`, {
           card_number: formCardNumber.trim() || undefined,
           issued_to_unit: formUnit || null,
           card_type: formType,
           expires_at: formExpires ? new Date(formExpires).toISOString() : null,
+          holder_name: formHolder.trim() || null,
+          access_start: staff && formStart ? formStart : null,
+          access_end: staff && formEnd ? formEnd : null,
         });
       } else {
         if (!formUidHash.trim() || formUidHash.trim().length !== 64) {
@@ -120,6 +135,9 @@ export default function RFIDCardsPage() {
           issued_to_unit: formUnit || undefined,
           card_type: formType,
           expires_at: formExpires ? new Date(formExpires).toISOString() : undefined,
+          holder_name: formHolder.trim() || undefined,
+          access_start: staff && formStart ? formStart : undefined,
+          access_end: staff && formEnd ? formEnd : undefined,
         });
       }
       setShowForm(false);
@@ -208,6 +226,7 @@ export default function RFIDCardsPage() {
                 <th className="text-left text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold px-4 py-3">Unit</th>
                 <th className="text-left text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold px-4 py-3">Status</th>
                 <th className="text-left text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold px-4 py-3">Expires</th>
+                <th className="text-left text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold px-4 py-3">Window</th>
                 <th className="text-right text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold px-4 py-3">Actions</th>
               </tr>
             </thead>
@@ -231,6 +250,11 @@ export default function RFIDCardsPage() {
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-400">
                     {card.expires_at ? new Date(card.expires_at).toLocaleDateString() : 'Never'}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-gray-500">
+                    {card.access_start && card.access_end
+                      ? `${card.access_start.slice(0, 5)}–${card.access_end.slice(0, 5)}`
+                      : card.card_type === 'staff' ? 'All day' : '—'}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
@@ -321,6 +345,43 @@ export default function RFIDCardsPage() {
                   <option value="master">Master</option>
                 </select>
               </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold mb-1.5">
+                  Holder Name{formType === 'staff' ? ' *' : ''}
+                </label>
+                <input
+                  className="input-glow w-full px-4 py-3 text-sm"
+                  placeholder="e.g. Lakshmi (maid), Kumar (driver)"
+                  value={formHolder}
+                  onChange={(e) => setFormHolder(e.target.value)}
+                />
+              </div>
+              {/* Staff daily access window — out-of-hours taps denied on the panel */}
+              {formType === 'staff' && (
+                <div>
+                  <label className="block text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold mb-1.5">
+                    Daily Access Window
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="time"
+                      className="input-glow flex-1 px-4 py-3 text-sm"
+                      value={formStart}
+                      onChange={(e) => setFormStart(e.target.value)}
+                    />
+                    <span className="text-gray-400 text-sm">to</span>
+                    <input
+                      type="time"
+                      className="input-glow flex-1 px-4 py-3 text-sm"
+                      value={formEnd}
+                      onChange={(e) => setFormEnd(e.target.value)}
+                    />
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    Leave blank for all-day access. Enforced locally on the controller, even offline.
+                  </p>
+                </div>
+              )}
               <div>
                 <label className="block text-[10px] uppercase tracking-[0.15em] text-gray-400 font-bold mb-1.5">Assign to Unit</label>
                 <select

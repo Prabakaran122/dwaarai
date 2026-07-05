@@ -151,6 +151,11 @@ export const translations: Dict = {
   open: { en: 'Open', hi: 'खोलें', kn: 'ತೆರೆಯಿರಿ' },
   close: { en: 'Close', hi: 'बंद करें', kn: 'ಮುಚ್ಚಿ' },
   language: { en: 'Language', hi: 'भाषा', kn: 'ಭಾಷೆ' },
+  emergency: { en: 'EMERGENCY', hi: 'आपातकाल', kn: 'ತುರ್ತು' },
+  evacuate: { en: 'Evacuate', hi: 'निकासी', kn: 'ಸ್ಥಳಾಂತರ' },
+  restore: { en: 'Restore', hi: 'पुनर्स्थापित', kn: 'ಮರುಸ್ಥಾಪಿಸಿ' },
+  evacuateConfirm: { en: 'Hold the barrier fully open for evacuation?', hi: 'निकासी के लिए बैरियर को पूरा खुला रखें?', kn: 'ಸ್ಥಳಾಂತರಕ್ಕಾಗಿ ಬ್ಯಾರಿಯರ್ ಅನ್ನು ಸಂಪೂರ್ಣ ತೆರೆದಿಡಬೇಕೆ?' },
+  restoreConfirm: { en: 'Return the barrier to normal controlled mode?', hi: 'बैरियर को सामान्य नियंत्रित मोड में लौटाएं?', kn: 'ಬ್ಯಾರಿಯರ್ ಅನ್ನು ಸಾಮಾನ್ಯ ನಿಯಂತ್ರಿತ ಮೋಡ್‌ಗೆ ಹಿಂತಿರುಗಿಸಬೇಕೆ?' },
 };
 
 export function translate(key: string, lang: Lang): string {
