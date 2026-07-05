@@ -153,3 +153,23 @@ class TestRemoteUnlock:
         ctrl.open_door()
         assert wait_until(lambda: len(device.door_open_events) > before)
         assert device.door_open_events[-1] == 254
+
+
+class TestAccessModelAndEmergency:
+    def test_time_limited_card_reaches_panel(self, rig):
+        ctrl, device = rig
+        ctrl.add_card("visitor77", valid_from="20260101", valid_until="20260201")
+        assert wait_until(lambda: "visitor77" in device.users)
+
+    def test_hold_open_holds_both_doors(self, rig):
+        ctrl, device = rig
+        before = len(device.door_open_events)
+        assert ctrl.hold_open() is True          # no door arg -> both doors
+        assert wait_until(lambda: len(device.door_open_events) >= before + 2)
+
+    def test_access_level_and_timezone_accepted(self, rig):
+        ctrl, device = rig
+        # mock acks any command; assert they don't error and the panel stays online
+        assert ctrl.set_timezone(2, "0900", "1800") is True
+        assert ctrl.set_access_level("visitor77", tz_id=2, door=1) is True
+        assert wait_until(ctrl.is_connected)

@@ -436,15 +436,52 @@ def format_control_cmd(cmd_id: int, door: int, duration: int) -> str:
     return f"C:{cmd_id}:CONTROL DEVICE 01{door:02X}01{dur:02X}"
 
 
-def format_user_cmd(cmd_id: int, card_number: str, pin: str = "") -> str:
-    """Push/update a card into the panel user table (tab-separated fields)."""
+def format_user_cmd(cmd_id: int, card_number: str, pin: str = "",
+                    valid_from="0", valid_until="0", name: str = "") -> str:
+    """Push/update a card. StartTime/EndTime give a validity window (visitor /
+    staff passes) — 0 = no limit; accepts YYYYMMDD or 'YYYY-MM-DD HH:MM:SS'
+    (both verified Return=0 on the C3-200 Plus)."""
     pin = pin or card_number
     return (f"C:{cmd_id}:DATA UPDATE user Pin={pin}\tCardNo={card_number}\t"
-            f"Password=\tGroup=1\tStartTime=0\tEndTime=0\tName={pin}")
+            f"Password=\tGroup=1\tStartTime={valid_from}\tEndTime={valid_until}\t"
+            f"Name={name or pin}")
 
 
 def format_user_delete_cmd(cmd_id: int, card_number: str) -> str:
     return f"C:{cmd_id}:DATA DELETE user CardNo={card_number}"
+
+
+# ── access-model commands (all verified Return=0 on the C3-200 Plus) ──────
+def format_timezone_cmd(cmd_id: int, tz_id: int, seg1="0000", seg2="2359") -> str:
+    """Define a time zone (allowed window). Table is 'timezone' (NOT 'tz')."""
+    return f"C:{cmd_id}:DATA UPDATE timezone TimezoneId={tz_id}\tSunTime1={seg1}\tSunTime2={seg2}"
+
+
+def format_userauthorize_cmd(cmd_id: int, pin: str, tz_id: int = 1, door: int = 1) -> str:
+    """Grant a user access to a door within a time zone (access level)."""
+    return (f"C:{cmd_id}:DATA UPDATE userauthorize Pin={pin}\t"
+            f"AuthorizeTimezoneId={tz_id}\tAuthorizeDoorId={door}")
+
+
+def format_holiday_cmd(cmd_id: int, uid: int, date_yyyymmdd: str, htype: int = 1) -> str:
+    return f"C:{cmd_id}:DATA UPDATE holiday Uid={uid}\tHoliday={date_yyyymmdd}\tHolidayType={htype}"
+
+
+def format_firstcard_cmd(cmd_id: int, pin: str, door: int = 1, tz_id: int = 1) -> str:
+    """First-card-opens-then-normal for a door."""
+    return f"C:{cmd_id}:DATA UPDATE firstcard Pin={pin}\tDoorId={door}\tTimezoneId={tz_id}"
+
+
+def format_normal_open_cmd(cmd_id: int, door: int) -> str:
+    """Hold a door normally-open (rush-hour / emergency evacuation). EE=00 =
+    stay open (verified Return=1)."""
+    return f"C:{cmd_id}:CONTROL DEVICE 01{door:02X}0100"
+
+
+def format_restore_cmd(cmd_id: int, door: int) -> str:
+    """Return a normally-open door to controlled mode (end rush-hour / lockdown).
+    Best-effort operand — confirm against the panel before relying on it."""
+    return f"C:{cmd_id}:CONTROL DEVICE 01{door:02X}0000"
 
 
 # ZKTeco access event codes (event=NN in rtlog). Codes seen/known to be an

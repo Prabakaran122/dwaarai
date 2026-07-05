@@ -196,6 +196,36 @@ def _offline_sync_loop():
             log.error(f"Offline sync error: {e}")
         time.sleep(max(10, cfg.HEARTBEAT_INTERVAL))
 
+_START_TS = time.time()
+
+def _heartbeat_loop():
+    """Report gate liveness + C3 panel state (door/relay/alarm) to the cloud,
+    driving the live gate-health dashboard and alerting on a silent/wedged panel."""
+    while True:
+        try:
+            panel = _c3.panel_state() if (_c3 and hasattr(_c3, "panel_state")) else {}
+            connected = bool(_c3 and _c3.is_connected())
+            if not _online:
+                status = "offline"
+            elif cfg.GATE_TYPE != "exit" and not connected:
+                status = "degraded"          # cloud up but the panel is silent
+            else:
+                status = "online"
+            requests.post(f"{cfg.CLOUD_API_URL}/heartbeat",
+                json={"gate_id": cfg.GATE_ID, "community_id": cfg.COMMUNITY_ID,
+                      "status": status, "is_open": bool(panel.get("relay_active")),
+                      "queue_depth": _oq.pending_count(),
+                      "uptime_s": round(time.time() - _START_TS, 1), "ts": time.time(),
+                      "panel": {"online": connected, "door": panel.get("door"),
+                                "relay": panel.get("relay"), "alarm": panel.get("alarm"),
+                                "alarm_active": panel.get("alarm_active"),
+                                "silent_s": round(_c3.seconds_since_contact(), 1)
+                                if (_c3 and hasattr(_c3, "seconds_since_contact")) else None}},
+                headers={"X-Device-Token": cfg.DEVICE_TOKEN}, timeout=5)
+        except Exception as e:
+            log.debug(f"Heartbeat failed: {e}")
+        time.sleep(max(30, cfg.HEARTBEAT_INTERVAL))
+
 # ── ANPR handler (correlates with pending unknown FASTag) ─────────────
 def handle_anpr_detection(plate: str, confidence: float = None):
     if not plate:
@@ -330,13 +360,27 @@ def _on_command(client, userdata, msg):
                 log.warning(f"Duplicate command {eid} ignored"); return
             _seen_ids[eid] = now
             for k in [k for k,v in list(_seen_ids.items()) if v < now-60]: del _seen_ids[k]
-        if cmd.get("action") == "open":
-            opened = _open_gate()
-            if client:
-                client.publish(f"cg/{cfg.COMMUNITY_ID}/gates/{cfg.GATE_ID}/ack",
-                               json.dumps({"event_id":eid,
-                                           "status":"opened" if opened else "open_failed",
-                                           "gate_id":cfg.GATE_ID,"ts":time.time()}), qos=1)
+        action = cmd.get("action")
+        status = None
+        if action == "open":
+            status = "opened" if _open_gate() else "open_failed"
+        elif action in ("hold_open", "evacuate"):
+            # Evacuation / rush-hour: hold the barrier(s) normally-open.
+            if _c3 and hasattr(_c3, "hold_open"):
+                _c3.hold_open(cmd.get("door")); status = "held_open"
+            else:
+                status = "unsupported"
+        elif action in ("restore", "lockdown"):
+            # End evacuation / rush-hour — return door(s) to controlled mode.
+            if _c3 and hasattr(_c3, "restore_door"):
+                _c3.restore_door(cmd.get("door")); status = "restored"
+            else:
+                status = "unsupported"
+        if status and client:
+            client.publish(f"cg/{cfg.COMMUNITY_ID}/gates/{cfg.GATE_ID}/ack",
+                           json.dumps({"event_id": eid, "status": status,
+                                       "action": action, "gate_id": cfg.GATE_ID,
+                                       "ts": time.time()}), qos=1)
     except Exception as e:
         log.error(f"Command error: {e}")
 
@@ -370,6 +414,8 @@ def main():
     # Drain queued events to the cloud in the background (online only).
     threading.Thread(target=_offline_sync_loop, daemon=True).start()
     log.info(f"Offline event sync started (interval={max(10, cfg.HEARTBEAT_INTERVAL)}s)")
+    threading.Thread(target=_heartbeat_loop, daemon=True).start()
+    log.info(f"Gate health heartbeat started (interval={max(30, cfg.HEARTBEAT_INTERVAL)}s)")
 
     # Start ANPR camera event receiver (listens for HTTP POST from any ANPR camera)
     anpr = ANPRReceiver(port=cfg.ANPR_RECEIVER_PORT, on_plate_callback=_handle_anpr_event)
