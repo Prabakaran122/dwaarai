@@ -29,6 +29,8 @@ const createAdminSchema = z.object({
   community_id: z.string().uuid(),
 });
 
+const _time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/, 'HH:MM');
+
 const createCardSchema = z.object({
   community_id: z.string().uuid(),
   uid_hash: z.string().length(64),
@@ -36,6 +38,9 @@ const createCardSchema = z.object({
   issued_to_unit: z.string().uuid().optional(),
   card_type: z.enum(['resident', 'visitor', 'staff', 'master']).default('resident'),
   expires_at: z.string().datetime().optional(),
+  holder_name: z.string().max(200).optional(),
+  access_start: _time.optional(),   // daily window (staff), e.g. "09:00"
+  access_end: _time.optional(),
 });
 
 const updateCardSchema = z.object({
@@ -44,6 +49,9 @@ const updateCardSchema = z.object({
   card_type: z.enum(['resident', 'visitor', 'staff', 'master']).optional(),
   is_active: z.boolean().optional(),
   expires_at: z.string().datetime().nullable().optional(),
+  holder_name: z.string().max(200).nullable().optional(),
+  access_start: _time.nullable().optional(),
+  access_end: _time.nullable().optional(),
 });
 
 // -- GET /admin/communities ---------------------------------------------------
@@ -247,7 +255,8 @@ router.post('/admin/rfid-cards', superOnly, async (req, res) => {
     if (!parsed.success) {
       return error(res, 'Validation error', 400, parsed.error.issues);
     }
-    const { community_id, uid_hash, card_number, issued_to_unit, card_type, expires_at } = parsed.data;
+    const { community_id, uid_hash, card_number, issued_to_unit, card_type,
+            expires_at, holder_name, access_start, access_end } = parsed.data;
 
     // Check uniqueness
     const existing = await queryOne('SELECT id FROM rfid_cards WHERE uid_hash = $1', [uid_hash]);
@@ -258,10 +267,12 @@ router.post('/admin/rfid-cards', superOnly, async (req, res) => {
     if (!community) return error(res, 'Community not found', 404);
 
     const card = await queryOne(
-      `INSERT INTO rfid_cards (community_id, uid_hash, card_number, issued_to_unit, card_type, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO rfid_cards (community_id, uid_hash, card_number, issued_to_unit, card_type,
+                               expires_at, holder_name, access_start, access_end)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [community_id, uid_hash, card_number || null, issued_to_unit || null, card_type, expires_at || null]
+      [community_id, uid_hash, card_number || null, issued_to_unit || null, card_type,
+       expires_at || null, holder_name || null, access_start || null, access_end || null]
     );
     return success(res, { card }, 201);
   } catch (err) {

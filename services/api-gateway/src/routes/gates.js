@@ -12,7 +12,10 @@ const router = Router();
 // -- Zod schemas -------------------------------------------------------------
 
 const commandSchema = z.object({
-  action: z.enum(['open', 'close']),
+  // open/close = single-cycle; evacuate/hold_open hold the barrier normally-open
+  // (fire drill / rush hour); restore/lockdown return it to controlled mode.
+  action: z.enum(['open', 'close', 'hold_open', 'evacuate', 'restore', 'lockdown']),
+  door: z.number().int().min(1).max(2).optional(),   // omit = all doors (emergency)
   plate: z.string().max(20).optional(),
   rfid_hash: z.string().max(128).optional(),
   unit_id: z.string().uuid().optional(),
@@ -135,6 +138,7 @@ router.post('/gates/:id/command', authenticateJWT(['admin']), async (req, res) =
       await publishGateCommand(communityId, gateId, {
         event_id: eventId,
         action: parsed.data.action,
+        door: parsed.data.door || null,     // null = all doors (emergency modes)
         plate: parsed.data.plate || null,
         unit_number: parsed.data.unit_number || null,
         resident_name: parsed.data.resident_name || null,

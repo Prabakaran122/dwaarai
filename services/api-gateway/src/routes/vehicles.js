@@ -353,7 +353,8 @@ router.get('/whitelist/sync', authenticateDevice, async (req, res) => {
     // Active, non-expired RFID cards for offline cache
     const rfidCards = await queryRows(
       `SELECT rc.uid_hash, rc.card_type, rc.issued_to_unit AS unit_id,
-              u.unit_number, rc.expires_at
+              u.unit_number, rc.expires_at, rc.holder_name,
+              rc.access_start, rc.access_end
        FROM rfid_cards rc
        LEFT JOIN units u ON rc.issued_to_unit = u.id
        WHERE rc.community_id = $1 AND rc.is_active = true

@@ -47,6 +47,22 @@ export default function ToolsPanel() {
     }
   };
 
+  const handleEmergency = (action: 'evacuate' | 'restore') => {
+    if (!gateId) return;
+    Alert.alert(
+      t(action),
+      action === 'evacuate' ? t('evacuateConfirm') : t('restoreConfirm'),
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t(action),
+          style: action === 'evacuate' ? 'destructive' : 'default',
+          onPress: () => handleManualGate(action),
+        },
+      ],
+    );
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <GlowCard style={styles.gateCard}>
@@ -69,6 +85,19 @@ export default function ToolsPanel() {
           </View>
           <View style={{ flex: 1 }}>
             <GradientButton title={t('close')} icon="gate" variant="danger" onPress={() => handleManualGate('close')} loading={gateLoading} />
+          </View>
+        </View>
+
+        {/* Emergency: hold the barrier open for evacuation, or restore control */}
+        <View style={styles.emergencyRow}>
+          <Text style={styles.emergencyLabel}>{t('emergency')}</Text>
+          <View style={styles.gateButtons}>
+            <View style={{ flex: 1 }}>
+              <GradientButton title={t('evacuate')} icon="run-fast" variant="danger" onPress={() => handleEmergency('evacuate')} loading={gateLoading} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <GradientButton title={t('restore')} icon="lock-reset" variant="primary" onPress={() => handleEmergency('restore')} loading={gateLoading} />
+            </View>
           </View>
         </View>
       </GlowCard>
@@ -96,4 +125,6 @@ const styles = StyleSheet.create({
   statusDot: { width: 8, height: 8, borderRadius: 4 },
   gateLabel: { fontSize: 10, fontWeight: '700', color: colors.textMuted, letterSpacing: 1.5 },
   gateButtons: { flexDirection: 'row', gap: spacing.sm },
+  emergencyRow: { marginTop: spacing.md, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)', paddingTop: spacing.md, gap: spacing.sm },
+  emergencyLabel: { fontSize: 10, fontWeight: '700', color: colors.danger, letterSpacing: 1.5 },
 });
