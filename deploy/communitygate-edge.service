@@ -1,0 +1,34 @@
+[Unit]
+# CommunityGate edge — runs the gate controller (C3 push server + ANPR receiver
+# + MQTT + offline queue) as an auto-restarting service so a gate survives power
+# loss and crashes. Linux / Raspberry Pi.
+#
+# Install:
+#   sudo cp deploy/communitygate-edge.service /etc/systemd/system/
+#   sudo mkdir -p /etc/communitygate && sudo cp .env /etc/communitygate/env
+#   sudo mkdir -p /var/lib/communitygate && sudo chown communitygate /var/lib/communitygate
+#   sudo systemctl daemon-reload && sudo systemctl enable --now communitygate-edge
+#   journalctl -u communitygate-edge -f
+Description=CommunityGate edge gate controller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=communitygate
+WorkingDirectory=/opt/communitygate/dwaarai
+EnvironmentFile=/etc/communitygate/env
+ExecStart=/opt/communitygate/venv/bin/python -m edge.gate_controller
+Restart=always
+RestartSec=5
+# Don't hammer the panel on a crash-loop (its reconnect backoff grows with churn).
+StartLimitIntervalSec=120
+StartLimitBurst=6
+# Persistent state (whitelist + offline event queue) lives here.
+StateDirectory=communitygate
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cg-edge
+
+[Install]
+WantedBy=multi-user.target

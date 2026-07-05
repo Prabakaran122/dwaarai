@@ -361,7 +361,21 @@ router.get('/whitelist/sync', authenticateDevice, async (req, res) => {
       [community_id]
     );
 
-    return success(res, { vehicles, blacklist: blacklisted, rfid_cards: rfidCards });
+    // Plate-based visitor passes for the edge offline cache (expiry enforced
+    // locally so a pass stops opening the gate the moment its window ends).
+    const visitorPasses = await queryRows(
+      `SELECT vp.visitor_vehicle AS plate, vp.unit_id, u.unit_number,
+              vp.visitor_name AS holder_name, vp.valid_from, vp.valid_until AS expires_at
+       FROM visitor_passes vp
+       JOIN units u ON vp.unit_id = u.id
+       WHERE vp.community_id = $1 AND vp.status = 'active'
+         AND vp.visitor_vehicle IS NOT NULL AND vp.visitor_vehicle <> ''
+         AND vp.valid_until > NOW()`,
+      [community_id]
+    );
+
+    return success(res, { vehicles, blacklist: blacklisted, rfid_cards: rfidCards,
+                          visitor_passes: visitorPasses });
   } catch (err) {
     console.error('GET /whitelist/sync error:', err);
     return error(res, 'Internal server error', 500);
