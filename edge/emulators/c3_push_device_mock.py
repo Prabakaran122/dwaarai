@@ -23,6 +23,7 @@ class C3PushDeviceMock:
         self.poll_interval = poll_interval
         self.users: set[str] = set()          # cards the panel would now accept
         self.door_open_events: list[int] = []  # durations it was told to open for
+        self._tap_index = 0                    # monotonic event id, like a real panel
         self._running = False
         self._thread: threading.Thread | None = None
 
@@ -109,9 +110,10 @@ class C3PushDeviceMock:
         # Real C3-200 Plus rtlog shape: tab-separated key=value. event=0 is a
         # normal verify-open (allow); a non-allow code marks a denied read.
         event = 0 if verified else 27
+        self._tap_index += 1
         record = (f"time={ts}\tpin=1\tcardno={card_number}\tsitecode=0\tlinkid=0\t"
                   f"eventaddr=1\tevent={event}\tinoutstatus=2\tverifytype=1\t"
-                  f"index=1\tsn={self.sn}")
+                  f"index={self._tap_index}\tsn={self.sn}")
         requests.post(f"{self.base}/iclock/cdata",
                       params={"SN": self.sn, "table": "rtlog"},
                       data=record, timeout=2)

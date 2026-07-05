@@ -84,6 +84,12 @@ class C3PushController:
             return float("inf")
         return self._server.seconds_since_seen(self.serial_number)
 
+    def panel_state(self) -> dict:
+        """Latest decoded door/relay/alarm/sensor state — for a health heartbeat."""
+        if not self._started:
+            return {}
+        return self._server.panel_state(self.serial_number)
+
     # ── card table writes (now actually supported, unlike PULL) ───────
     def sync_cards(self, cards: list[str]) -> int:
         """Push the full card set to the panel, THROTTLED. One UPDATE per card,

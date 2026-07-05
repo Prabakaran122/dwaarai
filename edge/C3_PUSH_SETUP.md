@@ -54,6 +54,22 @@ the resident/vehicle roster → `whitelist_sync` auto-pushes all cards to the C3
 Edge shows panel online → tap a resident tag → gate opens → the event appears on
 the community **Events** page (filter method = RFID).
 
+## Run the edge as a service (survives reboots)
+The gate must come back on its own after power loss.
+
+**Linux / Raspberry Pi (systemd):** use `deploy/communitygate-edge.service` — see the
+install steps in that file's header (`systemctl enable --now communitygate-edge`).
+
+**Windows (mini-PC):** run it as an auto-start service with NSSM:
+```
+nssm install CommunityGateEdge "C:\path\to\venv\Scripts\python.exe" "-m edge.gate_controller"
+nssm set CommunityGateEdge AppDirectory "C:\path\to\dwaarai"
+nssm set CommunityGateEdge AppEnvironmentExtra USE_C3_PUSH=true C3_PUSH_PORT=8080 C3_SERIAL=<sn> GATE_ID=<id> COMMUNITY_ID=<id> DEVICE_TOKEN=<jwt> CLOUD_API_URL=<url> MQTT_BROKER=<host> OFFLINE_DB_PATH=C:/ProgramData/communitygate/whitelist.db OFFLINE_QUEUE_PATH=C:/ProgramData/communitygate/queue.db
+nssm set CommunityGateEdge AppRestartDelay 5000
+nssm start CommunityGateEdge
+```
+(Or Task Scheduler: "At startup", run the same python `-m edge.gate_controller`, "restart on failure".)
+
 ## Notes / limits (from real-device testing)
 - **One command per poll** — the panel drops multi-command batches. The server
   handles this; provisioning is throttled to ~1 card/poll (fast on backlog).
