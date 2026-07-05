@@ -99,6 +99,16 @@ def _process_c3_event(event: dict):
     card = event["card_number"]
     etype = event["event_type"]
 
+    # Panel alarm (tamper / forced-open / door-held) from rtstate telemetry —
+    # not a card read, so surface it directly as a security event, no dedup.
+    if etype == "alarm":
+        log.warning(f"C3 ALARM: {event.get('alarm')} door={event.get('door')}")
+        _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
+                     "detection_method": "system", "raw_value": "c3_alarm",
+                     "access_decision": "alarm", "deny_reason": f"alarm_{event.get('alarm')}",
+                     "is_offline_event": not _online, "event_ts": time.time()})
+        return
+
     # Deduplicate: skip if same card read within DEDUP_WINDOW seconds.
     # _last_read is shared with no other writer but is touched from this poll
     # thread; guard it under _lock alongside the other shared dicts.

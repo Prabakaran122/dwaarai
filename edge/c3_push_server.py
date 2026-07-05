@@ -37,19 +37,35 @@ log = logging.getLogger("c3_push_server")
 # Seconds without a device check-in after which we consider the panel offline.
 DEVICE_TIMEOUT = 30.0
 
+# Command reliability: re-hand a command if the panel doesn't ACK it within
+# ACK_TIMEOUT; give up (and log a failure) once it's older than CMD_TTL or after
+# MAX_TRIES. A lost 'open' must retry, but a very stale one must not fire late.
+ACK_TIMEOUT = 4.0
+CMD_TTL = 60.0
+MAX_TRIES = 5
+PRIO_CONTROL = 10   # door open / relay — jump ahead of bulk data
+PRIO_DATA = 0       # card writes / roster sync
+
 
 class _DeviceState:
     """Per-serial-number command queue + liveness, owned by the server."""
     def __init__(self, sn: str):
         self.sn = sn
         self.last_seen = 0.0
-        self.cmd_queue: list[tuple[int, str]] = []   # (cmd_id, command line)
+        # Pending commands: each is a dict {id, cmd, enq, tries, prio}. Higher
+        # prio (control/open) is handed out before data (bulk card sync).
+        self.cmd_queue: list[dict] = []
+        # Commands handed to the panel but not yet ACKed — reaped/retried if the
+        # panel drops them (a lost 'open' must not be silently forgotten).
+        self.in_flight: dict[int, dict] = {}
         self.acked: dict[int, str] = {}              # cmd_id -> return code
         self.users: set[str] = set()                 # mirror of pushed card table
         self.registered = False                      # completed the registry handshake
         self.registry_code = ""                      # server-assigned RegistryCode
         self.info: dict[str, str] = {}               # device info from /iclock/registry
         self.last_relay = ""                         # last relay bitmask seen in rtstate
+        self.last_alarm = "0000"                     # last alarm bitmask seen
+        self.state: dict = {}                        # latest decoded rtstate (health)
 
 
 class C3PushServer:
@@ -74,6 +90,11 @@ class C3PushServer:
         self.data_upload = collections.deque(maxlen=2000)  # DATA QUERY uploads (table rows)
         self.last_device_time = ""  # panel clock, from the time= field it uploads
         self.getreq_batch = 1  # commands handed per getrequest poll (1 = safe default)
+        # rtlog de-dup: the panel REPLAYS buffered events on reconnect (and can
+        # repeat a frame within one POST). Skip already-seen events so we never
+        # double-open / double-log. Keyed by SN|index|time|card.
+        self._event_keys = collections.deque(maxlen=5000)
+        self._event_key_set = set()
         self._events: list[dict] = []
         self._devices: dict[str, _DeviceState] = {}
         self._lock = threading.Lock()
@@ -156,10 +177,18 @@ class C3PushServer:
             return time.time() - dev.last_seen
 
     def queue_depth(self, sn: str = "") -> int:
+        """Outstanding work = queued + in-flight (not yet ACKed)."""
         sn = sn or self.serial_number
         with self._lock:
             dev = self._devices.get(sn)
-            return len(dev.cmd_queue) if dev else 0
+            return (len(dev.cmd_queue) + len(dev.in_flight)) if dev else 0
+
+    def panel_state(self, sn: str = "") -> dict:
+        """Latest decoded rtstate (door/relay/alarm/sensor) for health/monitoring."""
+        sn = sn or self.serial_number
+        with self._lock:
+            dev = self._devices.get(sn)
+            return dict(dev.state) if dev else {}
 
     # ── command queue (called by the controller) ──────────────────────
     def next_cmd_id(self) -> int:
@@ -167,11 +196,17 @@ class C3PushServer:
         wire line (C:<id>:...) so the panel's ack correlates to the queue."""
         return next(self._cmd_ids)
 
-    def enqueue_command(self, cmd_id: int, command: str, sn: str = "") -> int:
+    def enqueue_command(self, cmd_id: int, command: str, sn: str = "",
+                        priority: int = None) -> int:
         sn = sn or self.serial_number
+        # Control/open commands outrank bulk data so an urgent open never queues
+        # behind a big roster sync.
+        if priority is None:
+            priority = PRIO_CONTROL if "CONTROL DEVICE" in command else PRIO_DATA
         with self._lock:
             dev = self._ensure_device(sn)   # queue without faking a check-in
-            dev.cmd_queue.append((cmd_id, command))
+            dev.cmd_queue.append({"id": cmd_id, "cmd": command, "enq": time.time(),
+                                  "tries": 0, "prio": priority})
             # Track the intended card roster here (the device ACK doesn't echo
             # CardNo, so this is the reliable source of the pushed-card count).
             if "DATA UPDATE user" in command or "DATA DELETE user" in command:
@@ -181,7 +216,7 @@ class C3PushServer:
                         card = tok.split("=", 1)[1]
                 if card:
                     dev.users.discard(card) if "DELETE" in command else dev.users.add(card)
-        log.debug(f"queued cmd {cmd_id} for {sn}: {command}")
+        log.debug(f"queued cmd {cmd_id} (prio {priority}) for {sn}: {command}")
         return cmd_id
 
     def command_acked(self, cmd_id: int) -> bool:
@@ -256,14 +291,40 @@ class C3PushServer:
         with self._lock:
             self.getreq_count += 1
             dev = self._touch(sn)
+            self._reap_in_flight(dev)          # retry/drop commands the panel lost
             if not dev.cmd_queue:
                 return b"OK\r\n"
-            # Hand back up to getreq_batch commands per poll. Default 1 —
-            # verified safe on the real C3-200 Plus (larger batches dropped
-            # commands). Tunable so the extensive test can probe the real limit.
+            # Priority first (control/open ahead of bulk data), then FIFO. Hand
+            # out up to getreq_batch (default 1 — larger batches drop on real HW).
+            dev.cmd_queue.sort(key=lambda c: (-c["prio"], c["enq"]))
             n = min(max(1, self.getreq_batch), len(dev.cmd_queue))
-            lines = [dev.cmd_queue.pop(0)[1] for _ in range(n)]
+            now = time.time()
+            lines = []
+            for _ in range(n):
+                c = dev.cmd_queue.pop(0)
+                c["sent"] = now
+                dev.in_flight[c["id"]] = c     # await ACK; reaped if it never comes
+                lines.append(c["cmd"])
         return ("\r\n".join(lines) + "\r\n").encode()
+
+    def _reap_in_flight(self, dev):
+        """Retry commands the panel hasn't ACKed within ACK_TIMEOUT; give up on
+        ones past CMD_TTL / MAX_TRIES (marking them failed so waiters unblock).
+        Caller holds self._lock."""
+        now = time.time()
+        for cid, c in list(dev.in_flight.items()):
+            if now - c.get("sent", now) < ACK_TIMEOUT:
+                continue
+            del dev.in_flight[cid]
+            if now - c["enq"] > CMD_TTL or c["tries"] >= MAX_TRIES:
+                log.warning(f"command {cid} FAILED (no ACK, tries={c['tries']}): {c['cmd'][:60]}")
+                dev.acked.setdefault(cid, "-1")   # terminal — unblock any waiter
+                self.ack_log.append({"ts": time.strftime("%H:%M:%S"), "id": cid,
+                                     "return": "TIMEOUT", "cmd": c["cmd"][:40]})
+            else:
+                c["tries"] += 1
+                dev.cmd_queue.append(c)           # re-hand on a future poll
+                log.info(f"command {cid} not ACKed — retry {c['tries']}")
 
     def _handle_cdata_post(self, sn: str, table: str, body: str) -> bytes:
         with self._lock:
@@ -279,36 +340,63 @@ class C3PushServer:
             break
         t = table.lower()
         if t == "rtlog":
-            parsed = []
-            for line in body.splitlines():
-                if not line.strip():
-                    continue
-                evt = parse_rtlog_line(line)
-                if evt:
-                    parsed.append(evt)
-            if parsed:
-                with self._lock:
-                    self._events.extend(parsed)
-                    self.event_log.extend(parsed)  # display buffer (not drained)
-                log.debug(f"buffered {len(parsed)} event(s) from {sn}")
+            fresh = []
+            with self._lock:
+                for line in body.splitlines():
+                    if not line.strip():
+                        continue
+                    evt = parse_rtlog_line(line)
+                    if not evt:
+                        continue
+                    key = f"{sn}|{evt.get('index','')}|{evt['timestamp']}|{evt['card_number']}"
+                    if key in self._event_key_set:
+                        continue                       # duplicate — replayed frame
+                    if len(self._event_keys) == self._event_keys.maxlen:
+                        self._event_key_set.discard(self._event_keys[0])
+                    self._event_keys.append(key)
+                    self._event_key_set.add(key)
+                    fresh.append(evt)
+                if fresh:
+                    self._events.extend(fresh)
+                    self.event_log.extend(fresh)       # display buffer (not drained)
+            if fresh:
+                log.debug(f"buffered {len(fresh)} new event(s) from {sn}")
         elif t == "rtstate":
-            # Device I/O telemetry: relay=<bitmask> reflects the physical relay
-            # outputs. Log transitions — this is how we witness the door relay
-            # actuate on a CONTROL DEVICE command with no barrier attached.
+            # Device I/O telemetry: door / relay / alarm / sensor state. We decode
+            # it into named health fields (dev.state) and surface alarms — the raw
+            # bitmask-to-physical mapping is firmware-specific, so we expose the
+            # raw values plus reliable 'active' booleans rather than guess bits.
             for line in body.splitlines():
                 fields = {}
                 for tok in line.split("\t"):
                     if "=" in tok:
                         k, v = tok.split("=", 1)
                         fields[k] = v.strip()
-                relay = fields.get("relay")
-                if relay is not None and relay != dev.last_relay:
+                if "relay" not in fields and "door" not in fields:
+                    continue
+                relay = fields.get("relay", dev.last_relay or "000000")
+                alarm = fields.get("alarm", "0000")
+                alarm_active = bool(alarm) and set(alarm) != {"0"}
+                dev.state = {"time": fields.get("time", ""), "relay": relay,
+                             "relay_active": relay != "000000", "door": fields.get("door", ""),
+                             "alarm": alarm, "alarm_active": alarm_active,
+                             "sensor": fields.get("sensor", ""), "seen_ts": time.time()}
+                if relay != dev.last_relay:
                     log.info(f"RELAY STATE change SN={sn}: {dev.last_relay or '(init)'} "
                              f"-> {relay}  (door={fields.get('door','?')} "
                              f"time={fields.get('time','?')})")
                     self.relay_log.append({"ts": time.strftime("%H:%M:%S"),
                                            "from": dev.last_relay or "init", "to": relay})
                     dev.last_relay = relay
+                # Alarm transition -> surface as an event for the gate loop / cloud.
+                if alarm_active and alarm != dev.last_alarm:
+                    log.warning(f"C3 ALARM active SN={sn}: alarm={alarm} "
+                                f"door={fields.get('door','?')} sensor={fields.get('sensor','?')}")
+                    self._events.append({"card_number": "0", "event_type": "alarm",
+                                         "event_code": -1, "alarm": alarm,
+                                         "door": fields.get("door", ""),
+                                         "timestamp": fields.get("time", "")})
+                dev.last_alarm = alarm
         else:
             # Any other table (user, userinfo, fp, …) — e.g. the reply to a
             # DATA QUERY. Capture rows so the console can count them.
@@ -330,6 +418,7 @@ class C3PushServer:
         if cmd_id:
             with self._lock:
                 dev = self._touch(sn)
+                dev.in_flight.pop(cmd_id, None)   # ACKed — no longer awaiting/retrying
                 dev.acked[cmd_id] = ret
                 self.ack_log.append({"ts": time.strftime("%H:%M:%S"), "id": cmd_id,
                                      "return": ret, "cmd": fields.get("CMD", "")})
@@ -394,6 +483,7 @@ def parse_rtlog_line(line: str) -> dict | None:
         "event_code": event_code,
         "pin": fields.get("pin", ""),
         "door": door,
+        "index": fields.get("index", ""),   # panel's monotonic event id (for de-dup)
         "timestamp": fields.get("time", time.strftime("%Y-%m-%dT%H:%M:%S")),
     }
 
