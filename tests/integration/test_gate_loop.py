@@ -33,6 +33,10 @@ def db(tmp_path):
             uid_hash TEXT, card_type TEXT, unit_id TEXT,
             unit_number TEXT, expires_at REAL)""")
         c.execute("CREATE INDEX idx_rcc_uid ON rfid_cards_cache(uid_hash)")
+        c.execute("""CREATE TABLE plate_passes_cache(
+            plate TEXT, unit_id TEXT, unit_number TEXT, holder_name TEXT,
+            valid_from REAL, expires_at REAL)""")
+        c.execute("CREATE INDEX idx_ppc_p ON plate_passes_cache(plate)")
         # Staff card — no vehicle, no expiry
         c.execute("INSERT INTO rfid_cards_cache VALUES(?,?,?,?,?)",
                   ("staff_card_hash_64chars_padded_000000000000000000000000000000", "staff", "u-staff", "S-01", None))

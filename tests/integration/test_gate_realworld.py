@@ -44,6 +44,8 @@ def db(tmp_path):
         c.execute("INSERT INTO sync_meta VALUES(1,?)", (time.time(),))
         c.execute("""CREATE TABLE rfid_cards_cache(uid_hash TEXT, card_type TEXT,
             unit_id TEXT, unit_number TEXT, expires_at REAL)""")
+        c.execute("""CREATE TABLE plate_passes_cache(plate TEXT, unit_id TEXT,
+            unit_number TEXT, holder_name TEXT, valid_from REAL, expires_at REAL)""")
     return path
 
 
