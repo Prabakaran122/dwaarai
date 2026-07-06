@@ -1,5 +1,15 @@
-import os
+import os, sys
 from dataclasses import dataclass
+
+# Persistent state dir for the offline whitelist cache + event queue — must
+# survive reboots. Windows: %PROGRAMDATA%\CommunityGate (e.g. C:\ProgramData\...);
+# Linux/CI: /var/lib/communitygate. Override the whole dir with STATE_DIR, or the
+# individual DB files with OFFLINE_DB_PATH / OFFLINE_QUEUE_PATH (dev/tests do this).
+STATE_DIR = os.getenv(
+    "STATE_DIR",
+    os.path.join(os.environ.get("PROGRAMDATA", r"C:\ProgramData"), "CommunityGate")
+    if sys.platform == "win32" else "/var/lib/communitygate",
+)
 
 @dataclass
 class Config:
@@ -42,12 +52,11 @@ class Config:
     MQTT_KEY_PATH:  str  = os.getenv("MQTT_KEY_PATH", "")
     MQTT_CA_PATH:   str  = os.getenv("MQTT_CA_PATH", "")
 
-    # Offline storage — must persist across reboots. /tmp is cleared on a Pi
-    # reboot, which would wipe the offline whitelist cache and queued events,
-    # so default to a persistent dir (provisioning creates it owned by the
-    # service user). Override via env in dev/tests.
-    OFFLINE_DB_PATH:    str = os.getenv("OFFLINE_DB_PATH",    "/var/lib/communitygate/whitelist.db")
-    OFFLINE_QUEUE_PATH: str = os.getenv("OFFLINE_QUEUE_PATH", "/var/lib/communitygate/event_queue.db")
+    # Offline storage — must persist across reboots. Defaults land in STATE_DIR
+    # (%PROGRAMDATA%\CommunityGate on Windows, /var/lib/communitygate on Linux);
+    # the edge creates the dir on startup. Override via env in dev/tests.
+    OFFLINE_DB_PATH:    str = os.getenv("OFFLINE_DB_PATH",    os.path.join(STATE_DIR, "whitelist.db"))
+    OFFLINE_QUEUE_PATH: str = os.getenv("OFFLINE_QUEUE_PATH", os.path.join(STATE_DIR, "event_queue.db"))
     WHITELIST_SYNC_INTERVAL: int = int(os.getenv("WHITELIST_SYNC_INTERVAL_SECONDS","300"))
     HEARTBEAT_INTERVAL: int = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS","60"))
 

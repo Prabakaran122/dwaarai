@@ -1,8 +1,8 @@
 # CommunityGate — C3 push setup for a new apartment
 
 Set up a new gate in ~15 minutes. The ZKTeco C3 panel dials into a push server
-we host on the edge (Windows mini-PC or Raspberry Pi); this enables **card
-writes** the old PULL library couldn't do.
+we host on the edge (a **Windows PC** at the gate); this enables **card writes**
+the old PULL library couldn't do.
 
 ## 0. Hardware (installer)
 - Mount the **C3 access panel**; wire **FASTag/RFID readers → Wiegand**, **relay
@@ -32,7 +32,9 @@ Allow inbound TCP `8080` from the panel's subnet.
 - Windows: `New-NetFirewallRule -DisplayName "C3 Push" -Direction Inbound -LocalPort 8080 -Protocol TCP -Action Allow -RemoteAddress <subnet>/24`
 - Linux: `ufw allow from <subnet>/24 to any port 8080 proto tcp`
 
-## 3. Edge config (`.env`) + auto-start
+## 3. Edge config + auto-start
+Put config in the env file `C:\ProgramData\CommunityGate\edge.env`, one
+`KEY=VALUE` per line:
 ```
 USE_C3_MOCK=false
 USE_C3_PUSH=true
@@ -42,8 +44,9 @@ C3_DOOR_NUMBER=1
 C3_OPEN_DURATION_SECONDS=5
 GATE_ID=…  COMMUNITY_ID=…  DEVICE_TOKEN=…  CLOUD_API_URL=…  MQTT_BROKER=…
 ```
-Run `gate_controller.py` as an auto-start service (Windows Service / Task
-Scheduler, or systemd on Pi) so it survives reboots.
+The offline whitelist + event-queue DBs default into `C:\ProgramData\CommunityGate\`
+(created automatically) — no path config needed. Then install the auto-start
+service so the gate survives reboots (see "Run the edge as a service" below).
 
 ## 4. Cloud onboarding (admin portal)
 Create the community + gate + device (issues `DEVICE_TOKEN` + MQTT topic). Load
@@ -57,18 +60,18 @@ the community **Events** page (filter method = RFID).
 ## Run the edge as a service (survives reboots)
 The gate must come back on its own after power loss.
 
-**Linux / Raspberry Pi (systemd):** use `deploy/communitygate-edge.service` — see the
-install steps in that file's header (`systemctl enable --now communitygate-edge`).
+**Windows (the gate PC):** run the installer once from an **elevated** PowerShell.
+It registers a Scheduled Task that starts the edge at boot as SYSTEM and restarts
+it on crash — no NSSM or other extra software needed:
+```
+.\deploy\install-edge-service.ps1 -PythonExe C:\path\to\venv\Scripts\python.exe
+Start-ScheduledTask -TaskName CommunityGateEdge
+```
+It reads config from `C:\ProgramData\CommunityGate\edge.env` (section 3) and
+creates the state dir. To remove: `Unregister-ScheduledTask -TaskName CommunityGateEdge`.
 
-**Windows (mini-PC):** run it as an auto-start service with NSSM:
-```
-nssm install CommunityGateEdge "C:\path\to\venv\Scripts\python.exe" "-m edge.gate_controller"
-nssm set CommunityGateEdge AppDirectory "C:\path\to\dwaarai"
-nssm set CommunityGateEdge AppEnvironmentExtra USE_C3_PUSH=true C3_PUSH_PORT=8080 C3_SERIAL=<sn> GATE_ID=<id> COMMUNITY_ID=<id> DEVICE_TOKEN=<jwt> CLOUD_API_URL=<url> MQTT_BROKER=<host> OFFLINE_DB_PATH=C:/ProgramData/communitygate/whitelist.db OFFLINE_QUEUE_PATH=C:/ProgramData/communitygate/queue.db
-nssm set CommunityGateEdge AppRestartDelay 5000
-nssm start CommunityGateEdge
-```
-(Or Task Scheduler: "At startup", run the same python `-m edge.gate_controller`, "restart on failure".)
+**Linux / Raspberry Pi (systemd, alternative):** use `deploy/communitygate-edge.service`
+— see the install steps in that file's header (`systemctl enable --now communitygate-edge`).
 
 ## Notes / limits (from real-device testing)
 - **One command per poll** — the panel drops multi-command batches. The server

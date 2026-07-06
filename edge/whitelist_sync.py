@@ -1,4 +1,4 @@
-import sqlite3, requests, time, threading, logging, schedule, re
+import os, sqlite3, requests, time, threading, logging, schedule, re
 from edge.config import cfg
 log = logging.getLogger("whitelist_sync")
 
@@ -19,6 +19,12 @@ def _iso_ts(s):
         return None
 
 def _init_db():
+    # Create the state dir first — on Windows there's no systemd StateDirectory to
+    # make it, so sqlite3.connect() would otherwise fail with "unable to open
+    # database file" on a fresh box. (offline_queue.py does the same for its DB.)
+    d = os.path.dirname(cfg.OFFLINE_DB_PATH)
+    if d:
+        os.makedirs(d, exist_ok=True)
     with sqlite3.connect(cfg.OFFLINE_DB_PATH) as c:
         c.execute("""CREATE TABLE IF NOT EXISTS whitelist(
             plate TEXT, rfid_uid_hash TEXT, fastag_tid_hash TEXT,
