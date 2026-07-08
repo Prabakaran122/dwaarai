@@ -31,7 +31,7 @@ from edge.anpr_receiver import ANPRReceiver
 import paho.mqtt.client as mqtt
 import requests
 from edge.offline_queue import OfflineQueue
-from edge.whitelist_sync import load_local, is_blacklisted_local, start_sync
+from edge.whitelist_sync import load_local, is_blacklisted_local, start_sync, classify_card
 
 # ── Shared state ──────────────────────────────────────────────────────
 _lock        = threading.Lock()
@@ -123,9 +123,14 @@ def _process_c3_event(event: dict):
             del _last_read[k]
 
     if etype == "allow":
-        log.info(f"C3 ALLOWED (local): {card[:12]}...")
+        # The panel can't tell RFID (bike) from FASTag (car) — both are Wiegand
+        # card reads — so resolve method + unit from our own roster. Unknown
+        # (roster lag) logs as "card" with no unit rather than a wrong label.
+        method, unit_id, unit_number = classify_card(cfg.OFFLINE_DB_PATH, card)
+        log.info(f"C3 ALLOWED (local): {card[:12]}... method={method} unit={unit_number}")
         _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
-                      "detection_method": "fastag", "raw_value": card,
+                      "detection_method": method, "raw_value": card,
+                      "unit_id": unit_id, "unit_number": unit_number,
                       "access_decision": "allow", "is_offline_event": not _online,
                       "event_ts": time.time()})
     elif etype == "deny":

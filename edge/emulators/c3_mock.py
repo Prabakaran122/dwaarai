@@ -15,6 +15,7 @@ class C3Mock:
         self.open_duration = open_duration
         self._cards: set[str] = set()
         self._blocked: set[str] = set()
+        self._card_validity: dict[str, str] = {}   # card -> EndTime pushed (for expiry tests)
         self._events: list[dict] = []
         self._poll_cursor = 0
         self._connected = False
@@ -42,9 +43,13 @@ class C3Mock:
         self._cards.clear()
         return True
 
-    def add_card(self, card_number: str) -> bool:
+    def add_card(self, card_number: str, valid_from="0", valid_until="0", name="") -> bool:
+        # Signature mirrors the real C3PushController.add_card so a card can carry
+        # a validity window (visitor / bike / staff pass) enforced by the panel.
         self._cards.add(card_number)
-        log.info(f"[C3 MOCK] Added card {card_number[:12]}...")
+        self._card_validity[card_number] = valid_until
+        window = f" [..{valid_until}]" if str(valid_until) != "0" else ""
+        log.info(f"[C3 MOCK] Added card {card_number[:12]}...{window}")
         return True
 
     def remove_card(self, card_number: str) -> bool:

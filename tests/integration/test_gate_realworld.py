@@ -83,15 +83,22 @@ def gate(db, qdb):
 
 
 # ── Helpers ────────────────────────────────────────────────────────────
-def _add_vehicle(db, plate=None, fastag=None, unit="A-101", name="Asha"):
+def _add_vehicle(db, plate=None, fastag=None, unit="A-101", name="Asha", rfid=None):
     with sqlite3.connect(db) as c:
         c.execute("INSERT INTO whitelist VALUES(?,?,?,?,?,?)",
-                  (plate, None, fastag, "u1", unit, name))
+                  (plate, rfid, fastag, "u1", unit, name))
 
 
-def _add_blacklist(db, plate=None, fastag=None):
+def _add_rfid_card(db, uid, unit="A-101", card_type="bike", expires_at=None):
+    """Standalone RFID card (bike / house-help) in rfid_cards_cache."""
     with sqlite3.connect(db) as c:
-        c.execute("INSERT INTO blacklist_cache VALUES(?,?,?)", (plate, None, fastag))
+        c.execute("INSERT INTO rfid_cards_cache VALUES(?,?,?,?,?)",
+                  (uid, card_type, "u1", unit, expires_at))
+
+
+def _add_blacklist(db, plate=None, fastag=None, rfid=None):
+    with sqlite3.connect(db) as c:
+        c.execute("INSERT INTO blacklist_cache VALUES(?,?,?)", (plate, rfid, fastag))
 
 
 def _last_event(qdb):
@@ -134,14 +141,35 @@ class TestOfflineQueueRobustness:
 class TestC3LocalAllowAndDedup:
     """C3 grants known FASTags locally; we log them and suppress double reads."""
 
-    def test_local_allow_is_queued_and_tagged_offline(self, gate, qdb):
+    def test_local_allow_is_queued_and_tagged_offline(self, gate, db, qdb):
         gate._online = False
+        _add_vehicle(db, plate="KA01AB1", fastag="FT_RES", unit="A-204")
         gate._process_c3_event({"card_number": "FT_RES", "event_type": "allow", "door": 1})
         evt = _last_event(qdb)
         assert evt is not None
         assert evt["access_decision"] == "allow"
         assert evt["detection_method"] == "fastag"
+        assert evt["unit_number"] == "A-204"
         assert evt["is_offline_event"] is True
+
+    def test_local_allow_rfid_bike_is_tagged_rfid(self, gate, db, qdb):
+        """A bike's RFID card opens locally and is logged as method 'rfid' with
+        its unit — not mislabeled 'fastag'."""
+        gate._online = False
+        _add_rfid_card(db, uid="RF_BIKE", unit="B-12")
+        gate._process_c3_event({"card_number": "RF_BIKE", "event_type": "allow", "door": 1})
+        evt = _last_event(qdb)
+        assert evt["detection_method"] == "rfid"
+        assert evt["unit_number"] == "B-12"
+
+    def test_local_allow_unknown_card_is_tagged_card(self, gate, db, qdb):
+        """Roster lag: the panel knows a card our cache doesn't yet — log it as
+        'card' with no unit rather than guessing a method."""
+        gate._online = False
+        gate._process_c3_event({"card_number": "MYSTERY", "event_type": "allow", "door": 1})
+        evt = _last_event(qdb)
+        assert evt["detection_method"] == "card"
+        assert evt["unit_number"] is None
 
     def test_double_tap_within_window_deduped(self, gate, qdb):
         gate._online = False
@@ -208,3 +236,49 @@ class TestCardSyncBlocklist:
 
         c3.simulate_card_tap("FT_BAD")
         assert c3.get_status()["door_open"] is False      # blocked card denied
+
+    def test_rfid_cards_pushed_to_panel(self, db):
+        """Resident RFID + standalone RFID (bike) cards must reach the panel so
+        they match LOCALLY — not fall through to the weak ANPR path."""
+        from edge.emulators.c3_mock import C3Mock
+        from edge.whitelist_sync import push_cards_to_c3
+        _add_vehicle(db, plate="P1", fastag="FT_A")
+        _add_vehicle(db, plate=None, rfid="RF_RES")   # resident RFID on a vehicle row
+        _add_rfid_card(db, uid="RF_BIKE", unit="B-12")  # standalone bike card
+
+        c3 = C3Mock(open_duration=0.1)
+        c3.connect()
+        pushed = push_cards_to_c3(db, c3)
+        assert pushed == 3                            # FT_A + RF_RES + RF_BIKE
+        for card in ("FT_A", "RF_RES", "RF_BIKE"):
+            c3.simulate_card_tap(card)
+            assert c3.get_status()["door_open"] is True   # matched locally -> opens
+
+    def test_expiring_rfid_pushed_with_window_expired_skipped(self, db):
+        """A future-expiry RFID card is pushed WITH an EndTime window (panel
+        enforces expiry offline); an already-expired card is not provisioned."""
+        from edge.emulators.c3_mock import C3Mock
+        from edge.whitelist_sync import push_cards_to_c3
+        _add_rfid_card(db, uid="RF_FUTURE", unit="B-1", expires_at=time.time() + 3600)
+        _add_rfid_card(db, uid="RF_PAST", unit="B-2", expires_at=time.time() - 3600)
+
+        c3 = C3Mock()
+        c3.connect()
+        pushed = push_cards_to_c3(db, c3)
+        assert pushed == 1                            # only RF_FUTURE
+        assert "RF_FUTURE" in c3._cards
+        assert "RF_PAST" not in c3._cards
+        assert c3._card_validity["RF_FUTURE"] != "0"  # carries a real EndTime
+
+    def test_blocked_rfid_removed_from_panel(self, db):
+        """A blacklisted RFID UID is blocked on the panel too, not just FASTag."""
+        from edge.emulators.c3_mock import C3Mock
+        from edge.whitelist_sync import push_cards_to_c3
+        _add_blacklist(db, rfid="RF_BAD")
+
+        c3 = C3Mock()
+        c3.connect()
+        push_cards_to_c3(db, c3)
+        assert c3.get_status()["blocked_count"] == 1
+        c3.simulate_card_tap("RF_BAD")
+        assert c3.get_status()["door_open"] is False

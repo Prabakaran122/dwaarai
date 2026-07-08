@@ -135,22 +135,73 @@ def is_blacklisted_local(db, method, value) -> bool:
     with sqlite3.connect(db) as c:
         return c.execute(f"SELECT 1 FROM blacklist_cache WHERE {col}=?",(value,)).fetchone() is not None
 
+def _fmt_c3_time(epoch):
+    """Epoch seconds -> 'YYYY-MM-DD HH:MM:SS' (local) for the C3 StartTime/EndTime
+    field, so the panel enforces a card's validity window itself — offline."""
+    from datetime import datetime
+    return datetime.fromtimestamp(epoch).strftime("%Y-%m-%d %H:%M:%S")
+
+def classify_card(db, card_number):
+    """Resolve a C3 card number (the hash we pushed) to (method, unit_id,
+    unit_number). method is 'fastag' | 'rfid' | 'card' (unknown / roster lag).
+    A single card can only be one of FASTag or RFID, so first match wins."""
+    with sqlite3.connect(db) as c:
+        row = c.execute("SELECT unit_id, unit_number FROM whitelist WHERE fastag_tid_hash=?",
+                        (card_number,)).fetchone()
+        if row:
+            return ("fastag", row[0], row[1])
+        row = c.execute("SELECT unit_id, unit_number FROM whitelist WHERE rfid_uid_hash=?",
+                        (card_number,)).fetchone()
+        if row:
+            return ("rfid", row[0], row[1])
+        row = c.execute("SELECT unit_id, unit_number FROM rfid_cards_cache WHERE uid_hash=?",
+                        (card_number,)).fetchone()
+        if row:
+            return ("rfid", row[0], row[1])
+    return ("card", None, None)
+
 def push_cards_to_c3(db, c3):
-    """Push all FASTag TID hashes from whitelist to C3 controller."""
+    """Provision every resident credential onto the C3 so it matches LOCALLY
+    (sub-second, works offline): FASTag TIDs + RFID UIDs (resident vehicles) +
+    standalone RFID cards (bikes / house-help). Expiring RFID cards are pushed
+    with a validity window so the panel self-enforces expiry offline (sync_cards
+    only adds/updates — it never removes, so an un-windowed expired card would
+    keep opening). Blacklisted FASTag + RFID hashes are removed from the panel.
+
+    Returns the count of cards provisioned (permanent + still-valid expiring)."""
     if not c3 or not c3.is_connected():
         log.warning("C3 not connected — skipping card push")
         return 0
     with sqlite3.connect(db) as c:
-        rows = c.execute("SELECT fastag_tid_hash FROM whitelist WHERE fastag_tid_hash IS NOT NULL AND fastag_tid_hash != ''").fetchall()
-    cards = [r[0] for r in rows]
-    count = c3.sync_cards(cards)
-    # Also push blocked cards
+        fastag = c.execute("SELECT fastag_tid_hash FROM whitelist "
+                           "WHERE fastag_tid_hash IS NOT NULL AND fastag_tid_hash != ''").fetchall()
+        rfid_res = c.execute("SELECT rfid_uid_hash FROM whitelist "
+                           "WHERE rfid_uid_hash IS NOT NULL AND rfid_uid_hash != ''").fetchall()
+        rfid_perm = c.execute("SELECT uid_hash FROM rfid_cards_cache "
+                           "WHERE uid_hash IS NOT NULL AND uid_hash != '' AND expires_at IS NULL").fetchall()
+        rfid_exp = c.execute("SELECT uid_hash, expires_at FROM rfid_cards_cache "
+                           "WHERE uid_hash IS NOT NULL AND uid_hash != '' AND expires_at IS NOT NULL").fetchall()
+    # Permanent credentials (no validity window) — one deduped bulk push.
+    bulk = {r[0] for r in fastag} | {r[0] for r in rfid_res} | {r[0] for r in rfid_perm}
+    count = c3.sync_cards(sorted(bulk))
+    # Expiring standalone RFID cards — push with EndTime so the panel expires them.
+    now = time.time()
+    expiring = 0
+    for uid, exp in rfid_exp:
+        if exp is None or exp <= now or uid in bulk:
+            continue  # already expired (don't provision) or superseded by a permanent card
+        c3.add_card(uid, valid_until=_fmt_c3_time(exp))
+        expiring += 1
+    # Blacklist — remove FASTag AND RFID hashes from the panel.
     with sqlite3.connect(db) as c:
-        blocked = c.execute("SELECT fastag_tid_hash FROM blacklist_cache WHERE fastag_tid_hash IS NOT NULL AND fastag_tid_hash != ''").fetchall()
-    for b in blocked:
-        c3.block_card(b[0])
-    log.info(f"Pushed {count} cards + {len(blocked)} blocked to C3")
-    return count
+        blocked = c.execute("SELECT fastag_tid_hash, rfid_uid_hash FROM blacklist_cache").fetchall()
+    nblk = 0
+    for tid, uid in blocked:
+        for v in (tid, uid):
+            if v:
+                c3.block_card(v); nblk += 1
+    log.info(f"Pushed {count} permanent + {expiring} expiring card(s), {nblk} blocked to C3")
+    return count + expiring
 
 _c3_ref = None
 
