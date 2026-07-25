@@ -507,43 +507,10 @@ router.post('/admin/set-guard-password', adminOnly, async (req, res) => {
   }
 });
 
-// -- GET /admin/dashboard/stats -----------------------------------------------
-
-router.get('/admin/dashboard/stats', authenticateJWT(['admin']), async (req, res) => {
-  try {
-    const communityId = req.user.community_id;
-    if (!communityId) {
-      return success(res, { totalVehicles: 0, gatesOnline: 0, todayEntries: 0, activePasses: 0 });
-    }
-    const vehicles = await queryOne(
-      'SELECT count(*) as count FROM vehicles WHERE community_id = $1 AND is_active = true',
-      [communityId]
-    );
-    const gates = await queryOne(
-      'SELECT count(*) as count FROM gates WHERE community_id = $1 AND is_active = true',
-      [communityId]
-    );
-    const today = new Date().toISOString().slice(0, 10);
-    const entries = await queryOne(
-      `SELECT count(*) as count FROM gate_events
-       WHERE community_id = $1 AND event_ts >= $2`,
-      [communityId, today]
-    );
-    const passes = await queryOne(
-      `SELECT count(*) as count FROM visitor_passes
-       WHERE community_id = $1 AND status = 'active' AND valid_until > NOW()`,
-      [communityId]
-    );
-    return success(res, {
-      totalVehicles: parseInt(vehicles?.count || '0'),
-      gatesOnline: parseInt(gates?.count || '0'),
-      todayEntries: parseInt(entries?.count || '0'),
-      activePasses: parseInt(passes?.count || '0'),
-    });
-  } catch (err) {
-    console.error('GET /admin/dashboard/stats error:', err);
-    return error(res, 'Internal server error', 500);
-  }
-});
+// NOTE: /admin/dashboard/stats used to be defined here as well as in events.js.
+// events.js mounts first, so this copy was dead code — and the two disagreed:
+// this one counted gates by `is_active` and labelled the result "gatesOnline".
+// Removed rather than left as a trap. The live dashboard uses
+// /admin/dashboard/summary (routes/dashboard.js).
 
 export default router;

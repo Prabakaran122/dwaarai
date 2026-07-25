@@ -5,15 +5,77 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 @layer base {
+  :root {
+    /* ── Dwaar AI design tokens ──────────────────────────────────────────
+       Verbatim from Design_Brief_v1.0_Dwaar_AI.docx §4. The Brief is the
+       single source of truth: "define all colours as tokens — never hardcode
+       HEX values in components" and "must not introduce new primary colours —
+       extend using tints (opacity layers over defined colours)". */
+    --color-brand-primary:  #1B3A4B;   /* Deep Ocean — nav, headers, body text */
+    --color-ocean-dark:     #0D2535;   /* Abyss */
+    --color-brand-teal:     #00BFA6;   /* Gate Teal — "cleared"/verified/active */
+    --color-brand-mist:     #E8F4F8;   /* Mist */
+    --color-action-primary: #F59E0B;   /* Amber Gate — primary CTAs */
+    --color-action-hover:   #D97706;   /* Amber Pressed */
+
+    --color-status-success: #2ECC71;
+    --color-status-error:   #E84C3D;
+    --color-status-warning: #F6C90E;
+    --color-status-info:    #3498DB;
+
+    --color-tint-success:   #EAFAF1;
+    --color-tint-error:     #FDEDEC;
+    --color-tint-warning:   #FEFDE7;
+    --color-tint-info:      #EBF5FB;
+
+    --color-text-primary:   #1B3A4B;
+    --color-text-secondary: #557A8F;
+    --color-text-tertiary:  #8DAFC0;
+    --color-text-inverse:   #FFFFFF;
+
+    --color-text-success:   #1A7A44;
+    --color-text-error:     #922B21;
+    --color-text-warning:   #7D6608;
+    --color-text-info:      #1B5276;
+
+    /* ── Chart roles ─────────────────────────────────────────────────────
+       Charts need marks that survive a colourblind reader and clear 3:1 on
+       white. The Brief's raw hues don't: Gate Teal is 2.33:1, Caution Yellow
+       1.58:1 and outside the lightness band. Rather than invent hues, these
+       are the Brief's own colours composited over Deep Ocean — the extension
+       the Brief sanctions (a tint toward white would lower contrast further,
+       so the layer goes over the dark brand colour instead).
+
+         --viz-allow  = Gate Teal   @80% over Deep Ocean
+         --viz-review = Amber Gate  @75% over Deep Ocean
+         --viz-deny   = the Brief's own error text colour (#922B21)
+
+       Validated with the dataviz palette checker against the white card
+       surface: lightness band, chroma floor, CVD separation, normal-vision
+       floor and contrast ALL PASS, no warnings. (Alert Red #E84C3D was tried
+       first and rejected — against the review amber it measured deutan ΔE 2.9,
+       effectively identical for a red-green colourblind reader.) */
+    --viz-allow:  #05A494;
+    --viz-review: #BF851B;
+    --viz-deny:   #922B21;
+    --viz-magnitude: #05A494;
+
+    --viz-surface: #FFFFFF;
+    --viz-grid: #E4EDF1;
+    --viz-axis: #C5D8E0;
+    --viz-ink: var(--color-text-primary);
+    --viz-ink-muted: var(--color-text-secondary);
+  }
+
   body {
-    background: #f8f9fb;
-    color: #1a2332;
+    background: #F4F8FA;   /* Mist, lightened for a data-dense portal */
+    color: var(--color-text-primary);
     font-family: 'DM Sans', sans-serif;
   }
 
   ::selection {
-    background: rgba(13, 148, 136, 0.2);
-    color: #1a2332;
+    background: rgba(0, 191, 166, 0.22);
+    color: #1B3A4B;
   }
 
   ::-webkit-scrollbar {
@@ -24,18 +86,18 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #d1d5db;
+    background: #C5D8E0;
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #9ca3af;
+    background: var(--color-text-tertiary);
   }
 }
 
 @layer components {
   .glass-panel {
     background: #ffffff;
-    border: 1px solid #e5e7eb;
+    border: 1px solid rgba(27, 58, 75, 0.12);
     border-radius: 14px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   }
@@ -44,7 +106,7 @@
     transition: all 0.2s ease;
   }
   .glass-panel-hover:hover {
-    border-color: #d1d5db;
+    border-color: rgba(27, 58, 75, 0.20);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
   }
 
@@ -58,7 +120,7 @@
     inset: -1px;
     border-radius: 15px;
     padding: 1px;
-    background: linear-gradient(135deg, rgba(13,148,136,0.3), rgba(13,148,136,0.05));
+    background: linear-gradient(135deg, rgba(0,191,166,0.35), rgba(0,191,166,0.05));
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
@@ -67,12 +129,12 @@
   }
 
   .glow-text {
-    color: #0d9488;
+    color: #0C837D;
     font-weight: 700;
   }
 
   .mesh-bg {
-    background: linear-gradient(165deg, #f8f9fb 0%, #f0f2f5 100%);
+    background: linear-gradient(165deg, #F4F8FA 0%, var(--color-brand-mist) 100%);
   }
 
   .stat-glow {
@@ -82,17 +144,60 @@
 
   .input-glow {
     background: #ffffff;
-    border: 1px solid #e5e7eb;
+    border: 1px solid rgba(27, 58, 75, 0.12);
     border-radius: 10px;
-    color: #1a2332;
+    color: var(--color-text-primary);
     transition: all 0.2s ease;
   }
   .input-glow:focus {
     outline: none;
-    border-color: #0d9488;
-    box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+    border-color: #0C837D;
+    box-shadow: 0 0 0 3px rgba(0, 191, 166, 0.18);
   }
   .input-glow::placeholder {
-    color: #9ca3af;
+    color: var(--color-text-tertiary);
+  }
+
+  /* Loading skeletons — a shaped placeholder holds the layout still, so the
+     page doesn't jump when data lands. Replaces a centred "Loading...". */
+  .skeleton {
+    background: linear-gradient(90deg, #E4EDF1 25%, #F2F7F9 37%, #E4EDF1 63%);
+    background-size: 400% 100%;
+    animation: skeleton-sweep 1.4s ease infinite;
+    border-radius: 8px;
+  }
+
+  /* A row that just arrived over the socket. One quiet wash that settles into
+     the page — attention, not decoration. */
+  .row-arrive {
+    animation: row-arrive 2.2s ease-out;
+  }
+
+  .live-dot {
+    box-shadow: 0 0 0 0 rgba(0, 191, 166, 0.5);
+    animation: live-pulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+@keyframes skeleton-sweep {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+@keyframes row-arrive {
+  0% { background-color: rgba(0, 191, 166, 0.18); }
+  100% { background-color: transparent; }
+}
+
+@keyframes live-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(0, 191, 166, 0.5); }
+  70% { box-shadow: 0 0 0 6px rgba(0, 191, 166, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 191, 166, 0); }
+}
+
+/* Respect a reduced-motion preference: keep the colour cues, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton, .row-arrive, .live-dot {
+    animation: none;
   }
 }

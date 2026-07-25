@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+import logo from '@/public/dwaar-ai-logo.png';
 import { useAuth } from '@/lib/auth';
 
 export default function LoginPage() {
@@ -43,8 +45,19 @@ export default function LoginPage() {
     <div className="min-h-screen mesh-bg flex items-center justify-center">
       <div className="glass-panel gradient-border p-8 w-full max-w-md">
         <div className="flex justify-center mb-4">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/dwaar-ai-logo.png" alt="Dwaar AI" className="h-24 w-auto" />
+          {/* STATIC IMPORT, deliberately. This app runs under basePath '/admin':
+              a plain <img src="/…"> isn't prefixed, and neither is next/image
+              with `unoptimized` — both request /dwaar-ai-logo.png and 404. A
+              static import resolves through /_next/static/, which does carry the
+              basePath, and gives us the intrinsic size and a content hash.
+              `unoptimized` then keeps the standalone build off sharp. */}
+          <Image
+            src={logo}
+            alt="Dwaar AI — Open The Right Door"
+            className="h-24 w-auto"
+            priority
+            unoptimized
+          />
         </div>
         <p className="text-xs text-teal-600 text-center uppercase tracking-[0.2em] font-semibold mb-8">Admin Portal</p>
 

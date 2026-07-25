@@ -35,6 +35,7 @@ import pollRoutes from './routes/polls.js';
 import blockRoutes from './routes/blocks.js';
 import communityFeedRoutes from './routes/community-feed.js';
 import communityEventRoutes from './routes/community-events.js';
+import dashboardRoutes from './routes/dashboard.js';
 import { startVisitCron } from './cron/generate-visits.js';
 import { initWebSocket } from './websocket.js';
 
@@ -68,6 +69,7 @@ app.use('/api/v1', vehicleRoutes);
 app.use('/api/v1', passRoutes);
 app.use('/api/v1', gateRoutes);
 app.use('/api/v1', eventRoutes);
+app.use('/api/v1', dashboardRoutes);
 app.use('/api/v1', adminRoutes);
 app.use('/api/v1', notificationRoutes);
 app.use('/api/v1', approvalRoutes);
