@@ -9,15 +9,30 @@ const router = Router();
  * Everything the RWA dashboard renders, in one round trip.
  *
  * The portal used to show four bare counters from /admin/dashboard/stats with
- * no sense of trend, load, or what needs attention. This adds the shape of the
- * day (hourly traffic by decision), a week of history for sparklines, how
- * people are actually getting in (detection methods), live gate health, and an
- * explicit "needs attention" roll-up.
+ * no sense of trend, load, or what needs attention. This returns:
+ *
+ *   kpis         today vs yesterday, so every figure carries a real delta
+ *   hourly       24 buckets split by decision (the shape of the day)
+ *   daily        7 days, feeding the KPI sparklines
+ *   methods      how people actually get in
+ *   denyReasons  why they were turned away
+ *   gates        live health
+ *   attention    the roll-up of everything a manager should act on
+ *   operations   visitors, parcels, complaints, approvals, bookings, handover
+ *   flow         entries/exits/occupancy (see `trustworthy` below)
+ *   finance      dues outstanding
+ *   performance  time-to-open and ANPR confidence
+ *   edge         offline buffer depth and panel health
  *
  * TIME ZONE: "today" is a local-calendar idea, and these are Indian
  * communities. Bucketing on UTC would roll the day over at 05:30 IST and put a
  * whole evening's traffic under tomorrow. Every bucket boundary below is
  * computed in the community's zone (default Asia/Kolkata, override with ?tz=).
+ *
+ * RESILIENCE: each section beyond the core gate_events queries runs through
+ * `optional()`. The dashboard aggregates across a dozen feature areas, each
+ * introduced by its own migration — one un-migrated table must not blank the
+ * whole page.
  */
 
 const DEFAULT_TZ = 'Asia/Kolkata';

@@ -84,7 +84,10 @@ export default function EdgeHealthPanel({ edge }: { edge: Edge }) {
 
       <ul className="space-y-2 pt-1">
         {reporting.map((g) => {
-          const alarm = g.panel && (g.panel as any).alarm;
+          // The C3 rtstate decoder yields these fields as strings, so a healthy
+          // panel can report alarm: "0" — which is truthy. Coerce through
+          // Number so "0" reads as clear instead of raising a false alarm.
+          const alarm = g.panel != null && Number(g.panel.alarm ?? 0) > 0;
           return (
             <li key={g.id} className="flex items-center justify-between gap-3 text-xs">
               <span className="text-gray-700 truncate">{g.name}</span>
