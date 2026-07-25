@@ -5,6 +5,35 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 @layer base {
+  :root {
+    /* Chart roles. Charts are written against these, never raw hex, so the
+       palette moves in one place.
+
+       The decision trio (allow / review / deny) was validated with the dataviz
+       palette checker against the white card surface: lightness band, chroma
+       floor, CVD separation, normal-vision floor and contrast all PASS.
+       Amber sits at 2.17:1, below the 3:1 bar, so every chart using it ships a
+       legend, direct labels AND a table view — that relief is not optional.
+       The portal's badge colors (#059669/#d97706/#dc2626) are NOT reused here:
+       as adjacent stacked fills they failed the normal-vision floor
+       (deny vs review ΔE 14.4, floor 15). Badges use them alone, with a label,
+       which is a different job. */
+    --viz-allow: #0d9488;
+    --viz-review: #eda100;
+    --viz-deny: #c81e1e;
+
+    /* Single-hue magnitude (method bars, sparklines) — identity comes from the
+       row label, so one hue is correct here. */
+    --viz-magnitude: #0d9488;
+
+    /* Chrome & ink — recessive by design; data is the only loud thing. */
+    --viz-surface: #ffffff;
+    --viz-grid: #eef0f3;
+    --viz-axis: #d1d5db;
+    --viz-ink: #1a2332;
+    --viz-ink-muted: #8b95a5;
+  }
+
   body {
     background: #f8f9fb;
     color: #1a2332;
@@ -94,5 +123,48 @@
   }
   .input-glow::placeholder {
     color: #9ca3af;
+  }
+
+  /* Loading skeletons — a shaped placeholder holds the layout still, so the
+     page doesn't jump when data lands. Replaces a centred "Loading...". */
+  .skeleton {
+    background: linear-gradient(90deg, #eef0f3 25%, #f6f7f9 37%, #eef0f3 63%);
+    background-size: 400% 100%;
+    animation: skeleton-sweep 1.4s ease infinite;
+    border-radius: 8px;
+  }
+
+  /* A row that just arrived over the socket. One quiet wash that settles into
+     the page — attention, not decoration. */
+  .row-arrive {
+    animation: row-arrive 2.2s ease-out;
+  }
+
+  .live-dot {
+    box-shadow: 0 0 0 0 rgba(13, 148, 136, 0.5);
+    animation: live-pulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+@keyframes skeleton-sweep {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+@keyframes row-arrive {
+  0% { background-color: rgba(13, 148, 136, 0.13); }
+  100% { background-color: transparent; }
+}
+
+@keyframes live-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(13, 148, 136, 0.5); }
+  70% { box-shadow: 0 0 0 6px rgba(13, 148, 136, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(13, 148, 136, 0); }
+}
+
+/* Respect a reduced-motion preference: keep the colour cues, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton, .row-arrive, .live-dot {
+    animation: none;
   }
 }
