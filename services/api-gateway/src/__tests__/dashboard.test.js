@@ -54,7 +54,12 @@ function seed({ sosThrows = false } = {}) {
     .mockResolvedValueOnce({ guard_name: 'Ramesh', created_at: new Date('2026-07-25T04:00:00Z') })
     .mockResolvedValueOnce({ entries: '190', exits: '141' })           // flow
     .mockResolvedValueOnce({ p50: '420', p95: '1180', sampled: '300',
-                             anpr_avg: '0.88', anpr_low: '9', anpr_total: '120' });
+                             anpr_avg: '0.88', anpr_low: '9', anpr_total: '120' })
+    .mockResolvedValueOnce({ pending: '2' })                            // approvals
+    .mockResolvedValueOnce({ outstanding: '45200.00', unpaid_count: '7' })  // dues
+    .mockResolvedValueOnce({ today: '3' })                              // bookings
+    .mockResolvedValueOnce({ overstayed: '1' })                         // overstay
+    .mockResolvedValueOnce({ paired: '12' });                           // auto-paired
 
   queryRows
     .mockResolvedValueOnce([
@@ -71,6 +76,12 @@ function seed({ sosThrows = false } = {}) {
     .mockResolvedValueOnce([
       { id: 'g1', name: 'Main Gate', status: 'online', type: 'entry', last_seen: new Date('2026-07-25T09:00:00Z') },
       { id: 'g2', name: 'Rear Gate', status: 'offline', type: 'exit', last_seen: null },
+    ])
+    .mockResolvedValueOnce([
+      { id: 'g1', name: 'Main Gate', queue_depth: '4', uptime_s: '86500',
+        panel: { alarm: 0, relay: '000001' }, telemetry_at: new Date('2026-07-25T09:00:00Z') },
+      { id: 'g2', name: 'Rear Gate', queue_depth: null, uptime_s: null,
+        panel: null, telemetry_at: null },
     ])
     .mockResolvedValueOnce([
       { reason: 'not_recognized', count: '8' }, { reason: 'blacklisted', count: '3' },
@@ -119,7 +130,7 @@ describe('GET /admin/dashboard/summary', () => {
     const { json } = await request('GET', '/api/v1/admin/dashboard/summary', auth);
     expect(json.data.attention).toEqual({
       gatesOffline: 1, pendingReviews: 3, activeSos: 1, openIncidents: 2,
-      parcelsWaiting: 3, openIssues: 2,
+      parcelsWaiting: 3, openIssues: 2, pendingApprovals: 2, overstayedPasses: 1,
     });
   });
 
@@ -216,5 +227,36 @@ describe('GET /admin/dashboard/summary — gate operations', () => {
     const { status, json } = await request('GET', '/api/v1/admin/dashboard/summary', auth);
     expect(status).toBe(200);
     expect(json.data.operations.visitorsExpected).toBe(0);
+  });
+});
+
+describe('GET /admin/dashboard/summary — money, approvals and the edge', () => {
+  it('reports outstanding dues and unpaid count', async () => {
+    seed();
+    const { json } = await request('GET', '/api/v1/admin/dashboard/summary', auth);
+    expect(json.data.finance).toEqual({ outstanding: 45200, unpaidCount: 7 });
+  });
+
+  it('reports approvals, bookings and overstayed passes', async () => {
+    seed();
+    const { json } = await request('GET', '/api/v1/admin/dashboard/summary', auth);
+    expect(json.data.operations).toMatchObject({
+      pendingApprovals: 2, bookingsToday: 3, overstayedPasses: 1,
+    });
+    // Both also escalate to the attention strip.
+    expect(json.data.attention).toMatchObject({ pendingApprovals: 2, overstayedPasses: 1 });
+  });
+
+  it('surfaces the offline buffer, which is the edge architecture point', async () => {
+    seed();
+    const { json } = await request('GET', '/api/v1/admin/dashboard/summary', auth);
+    expect(json.data.edge.queuedTotal).toBe(4);
+    expect(json.data.edge.autoPaired30d).toBe(12);
+    expect(json.data.edge.gates[0]).toMatchObject({
+      name: 'Main Gate', queueDepth: 4, uptimeS: 86500,
+    });
+    // A gate that has never sent telemetry keeps nulls rather than fake zeroes,
+    // so the UI can tell "nothing buffered" from "never reported".
+    expect(json.data.edge.gates[1]).toMatchObject({ queueDepth: null, telemetryAt: null });
   });
 });

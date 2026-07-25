@@ -17,6 +17,10 @@ export interface Attention {
   pendingReviews: number;
   activeSos: number;
   openIncidents: number;
+  parcelsWaiting?: number;
+  openIssues?: number;
+  pendingApprovals?: number;
+  overstayedPasses?: number;
 }
 
 type Level = 'critical' | 'warning';
@@ -77,6 +81,26 @@ export default function AttentionStrip({ attention }: { attention: Attention }) 
       label: `${attention.pendingReviews} ${plural(attention.pendingReviews, 'entry', 'entries')} awaiting review`,
       detail: 'Someone got in unrecognised today',
       href: '/events?access_decision=guard_review',
+      icon: ICONS.review,
+    });
+  }
+  if ((attention.overstayedPasses ?? 0) > 0) {
+    const n = attention.overstayedPasses!;
+    items.push({
+      level: 'warning',
+      label: `${n} visitor ${plural(n, 'pass has', 'passes have')} overstayed`,
+      detail: 'Still marked active past their expiry — nobody logged them out',
+      href: '/events',
+      icon: ICONS.review,
+    });
+  }
+  if ((attention.pendingApprovals ?? 0) > 0) {
+    const n = attention.pendingApprovals!;
+    items.push({
+      level: 'warning',
+      label: `${n} ${plural(n, 'visitor is', 'visitors are')} waiting at the gate`,
+      detail: 'A resident has not answered the approval request yet',
+      href: '/activity',
       icon: ICONS.review,
     });
   }

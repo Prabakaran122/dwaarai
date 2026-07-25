@@ -162,16 +162,23 @@ router.post('/heartbeat', authenticateDevice, async (req, res) => {
       return error(res, 'Validation error', 400, parsed.error.issues);
     }
 
-    const { gate_id, community_id, status, panel } = parsed.data;
+    const { gate_id, community_id, status, panel, queue_depth, uptime_s } = parsed.data;
 
     // Verify device token matches the claimed gate/community
     if (gate_id !== req.device.gate_id || community_id !== req.device.community_id) {
       return error(res, 'Device token does not match gate_id/community_id', 403);
     }
 
+    // Persist the telemetry, don't just relay it. queue_depth and panel state
+    // were broadcast and discarded, so they were invisible to anyone who wasn't
+    // already watching the socket when the beat landed.
     await query(
-      'UPDATE gates SET last_seen = NOW(), status = $1 WHERE id = $2 AND community_id = $3',
-      [status, gate_id, community_id]
+      `UPDATE gates
+          SET last_seen = NOW(), status = $1,
+              queue_depth = $4, uptime_s = $5, panel = $6, telemetry_at = NOW()
+        WHERE id = $2 AND community_id = $3`,
+      [status, gate_id, community_id, queue_depth ?? null, uptime_s ?? null,
+       panel ? JSON.stringify(panel) : null]
     );
 
     const gate = await queryOne(

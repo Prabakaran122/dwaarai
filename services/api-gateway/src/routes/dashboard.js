@@ -37,7 +37,8 @@ router.get('/admin/dashboard/summary', authenticateJWT(['admin']), async (req, r
 
     const [
       totals, hourly, daily, methods, gates, vehicles, passes, alerts,
-      visits, parcels, issues, handover, flow, perf, denyReasons,
+      visits, parcels, issues, handover, flow, perf,
+      approvals, dues, bookings, overstay, edgeGates, autoPaired, denyReasons,
     ] = await Promise.all([
       // Today vs yesterday, so every KPI can show a real delta.
       queryOne(
@@ -199,6 +200,52 @@ router.get('/admin/dashboard/summary', authenticateJWT(['admin']), async (req, r
         [communityId]
       ), {}),
 
+      // ── Tier 1 remainder: money, approvals, amenities ──
+      optional(() => queryOne(
+        `SELECT COUNT(*) AS pending FROM approval_requests
+         WHERE community_id = $1 AND status = 'pending'`,
+        [communityId]
+      ), {}),
+
+      optional(() => queryOne(
+        `SELECT COALESCE(SUM(base_amount + penalty_amount), 0) AS outstanding,
+                COUNT(*) AS unpaid_count
+         FROM dues WHERE community_id = $1 AND status = 'pending'`,
+        [communityId]
+      ), {}),
+
+      optional(() => queryOne(
+        `SELECT COUNT(*) AS today FROM facility_bookings
+         WHERE community_id = $1
+           AND booking_date = (NOW() AT TIME ZONE $2)::date
+           AND status <> 'cancelled'`,
+        [communityId, tz]
+      ), {}),
+
+      // Visitor passes that should have expired but are still marked active —
+      // the "overstay" alert every competitor's gate screen has.
+      optional(() => queryOne(
+        `SELECT COUNT(*) AS overstayed FROM visitor_passes
+         WHERE community_id = $1 AND status = 'active' AND valid_until < NOW()`,
+        [communityId]
+      ), {}),
+
+      // ── Tier 4: the edge story nothing has ever shown ──
+      // Offline buffer depth and panel state, straight off the heartbeat.
+      optional(() => queryRows(
+        `SELECT id, name, queue_depth, uptime_s, panel, telemetry_at
+         FROM gates WHERE community_id = $1 AND is_active = true`,
+        [communityId]
+      ), []),
+
+      // Vehicles the platform paired to a FASTag by itself.
+      optional(() => queryOne(
+        `SELECT COUNT(*) AS paired FROM gate_events
+         WHERE community_id = $1 AND auto_paired = TRUE
+           AND event_ts >= NOW() - INTERVAL '30 days'`,
+        [communityId]
+      ), {}),
+
       // Why people are actually being turned away.
       optional(() => queryRows(
         `SELECT COALESCE(deny_reason, 'unspecified') AS reason, COUNT(*) AS count
@@ -248,6 +295,8 @@ router.get('/admin/dashboard/summary', authenticateJWT(['admin']), async (req, r
         openIncidents: alerts.incidents,
         parcelsWaiting: num(parcels?.waiting),
         openIssues: num(issues?.open),
+        pendingApprovals: num(approvals?.pending),
+        overstayedPasses: num(overstay?.overstayed),
       },
 
       // What's happening at the gate right now.
@@ -259,6 +308,30 @@ router.get('/admin/dashboard/summary', authenticateJWT(['admin']), async (req, r
         lastHandover: handover
           ? { guardName: handover.guard_name, at: handover.created_at }
           : null,
+        pendingApprovals: num(approvals?.pending),
+        bookingsToday: num(bookings?.today),
+        overstayedPasses: num(overstay?.overstayed),
+      },
+
+      // Committees care about collection before anything else on this page.
+      finance: {
+        outstanding: Number(dues?.outstanding || 0),
+        unpaidCount: num(dues?.unpaid_count),
+      },
+
+      // Offline buffer + panel health. The edge keeps deciding when the cloud
+      // is unreachable; this is the only place that fact is visible.
+      edge: {
+        gates: (edgeGates || []).map((g) => ({
+          id: g.id,
+          name: g.name,
+          queueDepth: g.queue_depth == null ? null : num(g.queue_depth),
+          uptimeS: g.uptime_s == null ? null : num(g.uptime_s),
+          panel: g.panel || null,
+          telemetryAt: g.telemetry_at,
+        })),
+        queuedTotal: (edgeGates || []).reduce((t, g) => t + num(g.queue_depth), 0),
+        autoPaired30d: num(autoPaired?.paired),
       },
 
       // Entries minus exits today. `inside` is only trustworthy once BOTH an
@@ -339,12 +412,15 @@ function emptySummary(tz) {
     hourly: [], daily: [], methods: [], gates: [], denyReasons: [],
     attention: {
       gatesOffline: 0, pendingReviews: 0, activeSos: 0, openIncidents: 0,
-      parcelsWaiting: 0, openIssues: 0,
+      parcelsWaiting: 0, openIssues: 0, pendingApprovals: 0, overstayedPasses: 0,
     },
     operations: {
       visitorsExpected: 0, visitorsArrived: 0, parcelsWaiting: 0,
-      openIssues: 0, lastHandover: null,
+      openIssues: 0, lastHandover: null, pendingApprovals: 0,
+      bookingsToday: 0, overstayedPasses: 0,
     },
+    finance: { outstanding: 0, unpaidCount: 0 },
+    edge: { gates: [], queuedTotal: 0, autoPaired30d: 0 },
     flow: { entries: 0, exits: 0, inside: 0, trustworthy: false },
     performance: {
       openMsP50: null, openMsP95: null, sampled: 0,

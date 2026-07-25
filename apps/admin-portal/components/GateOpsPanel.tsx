@@ -17,6 +17,14 @@ export interface Operations {
   parcelsWaiting: number;
   openIssues: number;
   lastHandover: { guardName: string | null; at: string } | null;
+  pendingApprovals: number;
+  bookingsToday: number;
+  overstayedPasses: number;
+}
+
+export interface Finance {
+  outstanding: number;
+  unpaidCount: number;
 }
 
 export interface Flow {
@@ -54,7 +62,14 @@ function Cell({ label, value, sub, href, tone = 'default' }: {
   return href ? <Link href={href} className="block h-full">{inner}</Link> : inner;
 }
 
-export default function GateOpsPanel({ ops, flow }: { ops: Operations; flow: Flow }) {
+const money = (n: number) =>
+  n >= 100000 ? `₹${(n / 100000).toFixed(1)}L`
+  : n >= 1000 ? `₹${(n / 1000).toFixed(0)}k`
+  : `₹${n.toFixed(0)}`;
+
+export default function GateOpsPanel({ ops, flow, finance }: {
+  ops: Operations; flow: Flow; finance?: Finance;
+}) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <Cell
@@ -90,6 +105,33 @@ export default function GateOpsPanel({ ops, flow }: { ops: Operations; flow: Flo
           sub="No exit gate reporting yet"
         />
       )}
+
+      <Cell
+        label="Waiting on a resident"
+        value={String(ops.pendingApprovals)}
+        sub={ops.pendingApprovals ? 'Approval not answered' : 'No one waiting'}
+        tone={ops.pendingApprovals > 0 ? 'warn' : 'default'}
+        href="/activity"
+      />
+      <Cell
+        label="Amenity bookings today"
+        value={String(ops.bookingsToday)}
+        sub={ops.bookingsToday ? 'Expect extra visitors' : 'None booked'}
+      />
+      {finance && (
+        <Cell
+          label="Dues outstanding"
+          value={money(finance.outstanding)}
+          sub={finance.unpaidCount ? `${finance.unpaidCount} unpaid` : 'All collected'}
+          tone={finance.outstanding > 0 ? 'warn' : 'default'}
+        />
+      )}
+      <Cell
+        label="Passes overstayed"
+        value={String(ops.overstayedPasses)}
+        sub={ops.overstayedPasses ? 'Past expiry, still active' : 'None overdue'}
+        tone={ops.overstayedPasses > 0 ? 'warn' : 'default'}
+      />
 
       {ops.lastHandover && (
         <div className="col-span-2 lg:col-span-4 flex items-center gap-2 px-1">
