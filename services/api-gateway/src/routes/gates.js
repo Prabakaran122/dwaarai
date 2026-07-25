@@ -229,8 +229,8 @@ router.post('/events/sync', authenticateDevice, async (req, res) => {
             matched_vehicle_id, matched_pass_id, matched_unit_id,
             matched_unit_number, resident_name, access_decision,
             deny_reason, anpr_confidence, snapshot_s3_key,
-            processing_ms, is_offline_event, synced_at, event_ts)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,true,NOW(),$16)`,
+            processing_ms, direction, is_offline_event, synced_at, event_ts)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,true,NOW(),$17)`,
         [
           eventId,
           evt.community_id, evt.gate_id, evt.detection_method,
@@ -240,6 +240,7 @@ router.post('/events/sync', authenticateDevice, async (req, res) => {
           evt.resident_name || null, evt.access_decision,
           evt.deny_reason || null, evt.anpr_confidence ?? null,
           evt.snapshot_s3_key || null, evt.processing_ms ?? null,
+          evt.direction || 'entry',
           evt.event_ts,
         ]
       );

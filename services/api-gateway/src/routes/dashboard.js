@@ -35,7 +35,10 @@ router.get('/admin/dashboard/summary', authenticateJWT(['admin']), async (req, r
       return success(res, emptySummary(tz));
     }
 
-    const [totals, hourly, daily, methods, gates, vehicles, passes, alerts] = await Promise.all([
+    const [
+      totals, hourly, daily, methods, gates, vehicles, passes, alerts,
+      visits, parcels, issues, handover, flow, perf, denyReasons,
+    ] = await Promise.all([
       // Today vs yesterday, so every KPI can show a real delta.
       queryOne(
         `WITH b AS (SELECT date_trunc('day', NOW() AT TIME ZONE $2) AS d0),
@@ -136,6 +139,76 @@ router.get('/admin/dashboard/summary', authenticateJWT(['admin']), async (req, r
       // SOS and incidents arrived in migrations 018/021. A portal shouldn't
       // 500 because a deployment hasn't run them yet.
       countAlerts(communityId),
+
+      // ── Gate operations: what a guard and an RWA manager look at hourly ──
+      // Each is optional — a deployment that hasn't run the migration that
+      // creates the table degrades to zero rather than 500-ing the dashboard.
+      optional(() => queryOne(
+        `SELECT
+           COUNT(*)                                        AS expected,
+           COUNT(*) FILTER (WHERE arrived_at IS NOT NULL)  AS arrived
+         FROM expected_visits
+         WHERE community_id = $1
+           AND visit_date = (NOW() AT TIME ZONE $2)::date`,
+        [communityId, tz]
+      ), {}),
+
+      optional(() => queryOne(
+        `SELECT COUNT(*) AS waiting FROM deliveries
+         WHERE community_id = $1 AND status = 'waiting'`,
+        [communityId]
+      ), {}),
+
+      optional(() => queryOne(
+        `SELECT COUNT(*) AS open FROM issues
+         WHERE community_id = $1 AND status <> 'resolved' AND is_removed = FALSE`,
+        [communityId]
+      ), {}),
+
+      optional(() => queryOne(
+        `SELECT guard_name, created_at FROM shift_handovers
+         WHERE community_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [communityId]
+      ), null),
+
+      // ── Occupancy: only meaningful now that the edge stamps direction ──
+      optional(() => queryOne(
+        `WITH b AS (SELECT date_trunc('day', NOW() AT TIME ZONE $2) AS d0)
+         SELECT
+           COUNT(*) FILTER (WHERE direction = 'entry') AS entries,
+           COUNT(*) FILTER (WHERE direction = 'exit')  AS exits
+         FROM gate_events, b
+         WHERE community_id = $1
+           AND access_decision = 'allow'
+           AND (event_ts AT TIME ZONE $2) >= b.d0`,
+        [communityId, tz]
+      ), {}),
+
+      // ── Gate performance: columns we already write and never read ──
+      optional(() => queryOne(
+        `SELECT
+           percentile_disc(0.5)  WITHIN GROUP (ORDER BY processing_ms) AS p50,
+           percentile_disc(0.95) WITHIN GROUP (ORDER BY processing_ms) AS p95,
+           COUNT(processing_ms)                                        AS sampled,
+           AVG(anpr_confidence) FILTER (WHERE detection_method = 'anpr')      AS anpr_avg,
+           COUNT(*) FILTER (WHERE detection_method = 'anpr'
+                              AND anpr_confidence < 0.80)              AS anpr_low,
+           COUNT(*) FILTER (WHERE detection_method = 'anpr')            AS anpr_total
+         FROM gate_events
+         WHERE community_id = $1 AND event_ts >= NOW() - INTERVAL '24 hours'`,
+        [communityId]
+      ), {}),
+
+      // Why people are actually being turned away.
+      optional(() => queryRows(
+        `SELECT COALESCE(deny_reason, 'unspecified') AS reason, COUNT(*) AS count
+         FROM gate_events
+         WHERE community_id = $1
+           AND access_decision IN ('deny', 'guard_review')
+           AND event_ts >= NOW() - INTERVAL '7 days'
+         GROUP BY 1 ORDER BY count DESC LIMIT 5`,
+        [communityId]
+      ), []),
     ]);
 
     const num = (v) => parseInt(v || 0, 10);
@@ -173,13 +246,67 @@ router.get('/admin/dashboard/summary', authenticateJWT(['admin']), async (req, r
         pendingReviews: num(totals?.today_review),
         activeSos: alerts.sos,
         openIncidents: alerts.incidents,
+        parcelsWaiting: num(parcels?.waiting),
+        openIssues: num(issues?.open),
       },
+
+      // What's happening at the gate right now.
+      operations: {
+        visitorsExpected: num(visits?.expected),
+        visitorsArrived: num(visits?.arrived),
+        parcelsWaiting: num(parcels?.waiting),
+        openIssues: num(issues?.open),
+        lastHandover: handover
+          ? { guardName: handover.guard_name, at: handover.created_at }
+          : null,
+      },
+
+      // Entries minus exits today. `inside` is only trustworthy once BOTH an
+      // entry and an exit node are reporting; `exits` at zero means nothing is
+      // stamping 'exit' yet, so the UI suppresses the figure rather than
+      // showing a headcount that only ever climbs.
+      flow: {
+        entries: num(flow?.entries),
+        exits: num(flow?.exits),
+        inside: Math.max(num(flow?.entries) - num(flow?.exits), 0),
+        trustworthy: num(flow?.exits) > 0,
+      },
+
+      // Columns the platform already writes and has never surfaced.
+      performance: {
+        openMsP50: perf?.p50 == null ? null : num(perf.p50),
+        openMsP95: perf?.p95 == null ? null : num(perf.p95),
+        sampled: num(perf?.sampled),
+        anprAvgConfidence: perf?.anpr_avg == null ? null : Number(perf.anpr_avg),
+        anprLowConfidence: num(perf?.anpr_low),
+        anprTotal: num(perf?.anpr_total),
+      },
+
+      denyReasons: (denyReasons || []).map((r) => ({
+        reason: r.reason, count: num(r.count),
+      })),
     });
   } catch (err) {
     console.error('GET /admin/dashboard/summary error:', err);
     return error(res, 'Internal server error', 500);
   }
 });
+
+/**
+ * Run a query whose table may not exist yet on this deployment.
+ *
+ * The dashboard aggregates across a dozen feature areas, each introduced by its
+ * own migration. One un-migrated table shouldn't blank the whole page, so a
+ * failure degrades that section to `fallback` instead of propagating.
+ */
+async function optional(run, fallback) {
+  try {
+    return (await run()) ?? fallback;
+  } catch (err) {
+    console.warn('dashboard: optional section unavailable —', err.message);
+    return fallback;
+  }
+}
 
 async function countAlerts(communityId) {
   const safeCount = async (sql) => {
@@ -209,8 +336,20 @@ function emptySummary(tz) {
       activePasses: { value: 0 },
       gatesOnline: { value: 0, total: 0 },
     },
-    hourly: [], daily: [], methods: [], gates: [],
-    attention: { gatesOffline: 0, pendingReviews: 0, activeSos: 0, openIncidents: 0 },
+    hourly: [], daily: [], methods: [], gates: [], denyReasons: [],
+    attention: {
+      gatesOffline: 0, pendingReviews: 0, activeSos: 0, openIncidents: 0,
+      parcelsWaiting: 0, openIssues: 0,
+    },
+    operations: {
+      visitorsExpected: 0, visitorsArrived: 0, parcelsWaiting: 0,
+      openIssues: 0, lastHandover: null,
+    },
+    flow: { entries: 0, exits: 0, inside: 0, trustworthy: false },
+    performance: {
+      openMsP50: null, openMsP95: null, sampled: 0,
+      anprAvgConfidence: null, anprLowConfidence: 0, anprTotal: 0,
+    },
   };
 }
 

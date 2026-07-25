@@ -193,31 +193,10 @@ router.get('/reports/daily', authenticateJWT(['admin']), async (req, res) => {
   }
 });
 
-// -- GET /admin/dashboard/stats (JWT admin) ---------------------------------
-
-router.get('/admin/dashboard/stats', authenticateJWT(['admin']), async (req, res) => {
-  try {
-    const communityId = req.user.community_id;
-    const today = new Date().toISOString().slice(0, 10);
-    const dayStart = `${today}T00:00:00.000Z`;
-
-    const [vehicles, gates, todayEvents, passes] = await Promise.all([
-      queryRows('SELECT COUNT(*) AS count FROM vehicles WHERE community_id = $1', [communityId]),
-      queryRows("SELECT COUNT(*) AS count FROM gates WHERE community_id = $1 AND status = 'online'", [communityId]),
-      queryRows('SELECT COUNT(*) AS count FROM gate_events WHERE community_id = $1 AND event_ts >= $2', [communityId, dayStart]),
-      queryRows("SELECT COUNT(*) AS count FROM visitor_passes WHERE community_id = $1 AND status = 'active' AND valid_until > NOW()", [communityId]),
-    ]);
-
-    return success(res, {
-      totalVehicles: parseInt(vehicles[0]?.count || 0),
-      gatesOnline: parseInt(gates[0]?.count || 0),
-      todayEntries: parseInt(todayEvents[0]?.count || 0),
-      activePasses: parseInt(passes[0]?.count || 0),
-    });
-  } catch (err) {
-    console.error('GET /admin/dashboard/stats error:', err);
-    return error(res, 'Internal server error', 500);
-  }
-});
+// NOTE: GET /admin/dashboard/stats lived here and returned four bare counters.
+// It is superseded by /admin/dashboard/summary (routes/dashboard.js), which
+// returns those figures plus trends, hourly buckets and gate operations in one
+// round trip. Nothing referenced it any more — portal, guard app and resident
+// app were all checked — so it was removed rather than left to rot.
 
 export default router;

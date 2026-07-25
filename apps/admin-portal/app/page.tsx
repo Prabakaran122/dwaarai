@@ -7,7 +7,9 @@ import { getSocket } from '@/lib/socket';
 import StatusBadge from '@/components/StatusBadge';
 import StatTile from '@/components/StatTile';
 import AttentionStrip, { Attention } from '@/components/AttentionStrip';
-import { HourlyTraffic, MethodBars, HourBucket } from '@/components/charts/Charts';
+import { HourlyTraffic, MethodBars, ReasonBars, HourBucket } from '@/components/charts/Charts';
+import GateOpsPanel, { Operations, Flow } from '@/components/GateOpsPanel';
+import PerformancePanel, { Performance } from '@/components/PerformancePanel';
 
 interface Kpi { value: number; prev?: number; total?: number }
 
@@ -23,6 +25,10 @@ interface Summary {
   methods: { method: string; count: number }[];
   gates: { id: string; name: string; status: string; type: string; lastSeen: string | null }[];
   attention: Attention;
+  operations: Operations;
+  flow: Flow;
+  performance: Performance;
+  denyReasons: { reason: string; count: number }[];
 }
 
 interface FeedEvent {
@@ -166,6 +172,10 @@ export default function DashboardPage() {
   }
 
   const { kpis, attention, daily, gates } = summary;
+  // Older gateways predate these sections; render nothing rather than crash.
+  const ops = summary.operations;
+  const flow = summary.flow;
+  const perf = summary.performance;
   const sparkTotal = daily.map((d) => d.total);
   const sparkDeny = daily.map((d) => d.deny);
   const sparkReview = daily.map((d) => d.review);
@@ -175,6 +185,8 @@ export default function DashboardPage() {
       <Header live={live} generatedAt={summary.generatedAt} onRefresh={load} />
 
       <AttentionStrip attention={attention} />
+
+      {ops && flow && <GateOpsPanel ops={ops} flow={flow} />}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
         <StatTile
@@ -257,11 +269,33 @@ export default function DashboardPage() {
         </section>
       </div>
 
+      {perf && (
+        <section className="glass-panel p-5">
+          <div className="flex items-baseline justify-between mb-4">
+            <div>
+              <h2 className="text-base font-semibold text-gray-900">Gate performance</h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                How fast the barrier opens and how sure the camera is · last 24 hours
+              </p>
+            </div>
+          </div>
+          <PerformancePanel perf={perf} />
+        </section>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <section className="glass-panel p-5">
           <h2 className="text-base font-semibold text-gray-900">How people get in</h2>
           <p className="text-xs text-gray-400 mt-0.5 mb-4">Last 7 days</p>
           <MethodBars data={summary.methods} />
+
+          {summary.denyReasons?.length > 0 && (
+            <>
+              <h3 className="text-sm font-semibold text-gray-900 mt-6">Why entries were refused</h3>
+              <p className="text-xs text-gray-400 mt-0.5 mb-3">Last 7 days</p>
+              <ReasonBars data={summary.denyReasons} />
+            </>
+          )}
         </section>
 
         <section className="lg:col-span-2 glass-panel p-5">
