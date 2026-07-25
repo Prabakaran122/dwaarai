@@ -34,6 +34,12 @@ next-env.d.ts
 *.pdf
 dwaar-ai-*.html
 
+# ...but app static assets are source, not artifacts. The portal logo is a
+# STATIC IMPORT, so without it `next build` fails outright rather than just
+# rendering a missing image.
+!apps/*/public/**/*.png
+!apps/*/public/**/*.jpg
+
 # Built mobile APKs — distributed via EAS / dwaarai.in/install, not committed
 apk-builds/
 *.apk
