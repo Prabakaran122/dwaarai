@@ -12,6 +12,8 @@ const statusConfig: Record<string, { color: string; bg: string }> = {
   deny: { color: '#dc2626', bg: 'rgba(220,38,38,0.06)' },
   denied: { color: '#dc2626', bg: 'rgba(220,38,38,0.06)' },
   guard_review: { color: '#d97706', bg: 'rgba(217,119,6,0.06)' },
+  alarm: { color: '#dc2626', bg: 'rgba(220,38,38,0.06)' },
+  alert: { color: '#ea580c', bg: 'rgba(234,88,12,0.06)' },
   pending: { color: '#d97706', bg: 'rgba(217,119,6,0.06)' },
   expired: { color: '#9a3412', bg: 'rgba(154,52,18,0.06)' },
   permanent: { color: '#0d9488', bg: 'rgba(13,148,136,0.06)' },
