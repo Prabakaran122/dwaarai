@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import Image from 'next/image';
+import logo from '@/public/dwaar-ai-logo.png';
 import { useAuth } from '@/lib/auth';
 
 const communityNav = [
@@ -41,17 +43,18 @@ export default function Sidebar() {
   return (
     <aside className="w-64 min-h-screen flex flex-col border-r border-gray-200 bg-white">
       <div className="p-6 border-b border-gray-200">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-glow-primary flex items-center justify-center">
-            <span className="text-white text-sm font-extrabold">D</span>
-          </div>
-          <div>
-            <h1 className="text-base font-bold text-gray-900 tracking-tight">Dwaarai</h1>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-teal-600 font-semibold">
-              {isSuperAdmin ? 'Super Admin' : 'Admin Portal'}
-            </p>
-          </div>
-        </div>
+        {/* The real wordmark from dwaarai.com, replacing the "D" placeholder
+            tile. next/image so basePath ('/admin') is applied. */}
+        <Image
+          src={logo}
+          alt="Dwaar AI — Open The Right Door"
+          className="h-9 w-auto"
+          priority
+          unoptimized
+        />
+        <p className="mt-2 text-[10px] uppercase tracking-[0.2em] text-teal-600 font-semibold">
+          {isSuperAdmin ? 'Super Admin' : 'Admin Portal'}
+        </p>
       </div>
       <nav className="flex-1 p-3 space-y-1">
         {isSuperAdmin && showCommunityNav && selectedCommunityId && (
