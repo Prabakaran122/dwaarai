@@ -50,14 +50,18 @@ const heartbeatSchema = z.object({
 const eventSyncItemSchema = z.object({
   community_id: z.string().uuid(),
   gate_id: z.string().uuid(),
-  detection_method: z.string().min(1).max(10),
+  // Mirrors api-gateway's event contract (see services/api-gateway/src/routes/gates.js):
+  // 20 chars for biometric verify methods, and the decisions the edge really emits.
+  detection_method: z.string().min(1).max(20),
   raw_value: z.string().max(100).optional(),
   matched_vehicle_id: z.string().uuid().optional().nullable(),
   matched_pass_id: z.string().uuid().optional().nullable(),
   matched_unit_id: z.string().uuid().optional().nullable(),
   matched_unit_number: z.string().max(30).optional().nullable(),
   resident_name: z.string().max(200).optional().nullable(),
-  access_decision: z.enum(['allow', 'deny', 'override']),
+  access_decision: z.enum([
+    'allow', 'deny', 'override', 'guard_review', 'alarm', 'alert',
+  ]),
   deny_reason: z.string().max(100).optional().nullable(),
   anpr_confidence: z.number().min(0).max(1).optional().nullable(),
   snapshot_s3_key: z.string().optional().nullable(),
