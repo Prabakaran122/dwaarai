@@ -36,37 +36,74 @@ _HEX = set("0123456789abcdefABCDEF")
 class UHFUsbReader:
     """Capture Enter-terminated EPC hex strings the reader types over USB-KB.
 
+    SAFETY — why this is fussy about what it accepts:
+
+    The `keyboard` hook is process-wide: it sees EVERY keystroke on the host,
+    not just the reader's. The original filter accepted any hex-ish run of 8+
+    characters, and digits are hex characters — so an 8-digit PIN, a card number
+    or an account number typed by a guard on the gate PC was captured, treated
+    as a tag, written to the offline queue as `raw_value` and synced to the
+    cloud. Two cheap discriminators close that:
+
+      1. EXACT LENGTH. A FASTag EPC is 24 hex chars (96-bit); some tags are 32
+         (128-bit). Nothing else is a tag. "12345678" is no longer a candidate.
+      2. BURST TIMING. A keyboard-wedge reader emits a whole frame in one
+         machine-speed burst — single-digit milliseconds between characters. A
+         human types two orders of magnitude slower. Any gap longer than
+         `max_gap` starts a new buffer, so hand-typed input can never accumulate
+         into a full-length frame.
+
+    Neither is a substitute for binding to the reader's HID device (VID/PID via
+    hidapi/evdev), which is the real fix and would remove the global hook
+    entirely. These make the interim state safe rather than merely documented.
+
     Args:
         on_epc_callback: called with each fresh EPC (uppercase hex string).
         debounce: seconds to suppress a repeat of the SAME EPC (a tag sitting in
                   the field is read continuously; open the gate once, not 20x).
-        min_len: shortest hex string accepted as an EPC (guards against stray
-                 keystrokes). A FASTag EPC is 24 hex chars (96 bits).
+        epc_lengths: exact hex-character counts accepted as an EPC.
+        max_gap: longest pause (seconds) allowed between characters of one frame.
     """
 
-    def __init__(self, on_epc_callback, debounce: float = 8.0, min_len: int = 8):
+    def __init__(self, on_epc_callback, debounce: float = 8.0,
+                 epc_lengths=(24, 32), max_gap: float = 0.05):
         if not _HAS_KB:
             raise ImportError("keyboard required. Install with: pip install keyboard")
         self.cb = on_epc_callback
         self.debounce = debounce
-        self.min_len = min_len
+        self.epc_lengths = frozenset(epc_lengths)
+        self.max_gap = max_gap
         self._buf: list[str] = []
+        self._last_key_at: float = 0.0
         self._last: dict[str, float] = {}
         self._running = False
         self._lock = threading.Lock()
-        log.info(f"USB UHF reader initialized (debounce={debounce}s, min_len={min_len})")
+        log.info(f"USB UHF reader initialized (debounce={debounce}s, "
+                 f"lengths={sorted(self.epc_lengths)}, max_gap={max_gap}s)")
 
     def _on_key(self, e):
         # Reader types hex characters then Enter. keyboard reports key *names*
         # ('3','a','enter'), lower-case regardless of shift — we upper-case on emit.
         name = e.name or ""
+        now = time.time()
+
         if name == "enter":
             epc = "".join(self._buf).strip()
             self._buf.clear()
-            if len(epc) >= self.min_len and all(c in _HEX for c in epc):
+            if len(epc) in self.epc_lengths and all(c in _HEX for c in epc):
                 self._emit(epc.upper())
+            elif epc:
+                # Deliberately does NOT log the rejected characters — they may be
+                # exactly the PIN this filter exists to keep out of the logs.
+                log.debug(f"ignored {len(epc)}-char input (not an EPC length)")
         elif len(name) == 1 and name in _HEX:
+            # A pause longer than a machine burst means a human is typing, or a
+            # new frame started; either way the previous partial buffer is not
+            # part of this one.
+            if self._buf and (now - self._last_key_at) > self.max_gap:
+                self._buf.clear()
             self._buf.append(name)
+            self._last_key_at = now
         else:
             # Any non-hex key (space, letters g-z, modifiers…) means this isn't a
             # clean tag read — drop the partial buffer so stray input can't merge

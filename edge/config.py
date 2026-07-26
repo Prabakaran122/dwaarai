@@ -50,6 +50,14 @@ class Config:
     # checks the whitelist, and opens the C3 barrier. See uhf_usb_reader.py.
     USE_UHF_USB:      bool  = os.getenv("USE_UHF_USB", "false").lower() == "true"
     UHF_USB_DEBOUNCE: float = float(os.getenv("UHF_USB_DEBOUNCE_SECONDS", "8"))
+    # The keyboard hook is process-wide, so the filter must be strict enough
+    # that human typing on the gate PC can never be mistaken for a tag. Exact
+    # EPC widths (96-bit = 24 hex chars, 128-bit = 32) and a machine-speed
+    # burst window. See edge/uhf_usb_reader.py.
+    UHF_EPC_LENGTHS:  tuple = tuple(
+        int(n) for n in os.getenv("UHF_EPC_LENGTHS", "24,32").split(",") if n.strip()
+    )
+    UHF_MAX_KEY_GAP:  float = float(os.getenv("UHF_MAX_KEY_GAP_SECONDS", "0.05"))
 
     # MQTT
     MQTT_BROKER:    str  = os.getenv("MQTT_BROKER", "localhost")

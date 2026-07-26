@@ -531,7 +531,9 @@ def main():
         try:
             from edge.uhf_usb_reader import UHFUsbReader
             usb_reader = UHFUsbReader(on_epc_callback=_handle_usb_fastag,
-                                      debounce=cfg.UHF_USB_DEBOUNCE)
+                                      debounce=cfg.UHF_USB_DEBOUNCE,
+                                      epc_lengths=cfg.UHF_EPC_LENGTHS,
+                                      max_gap=cfg.UHF_MAX_KEY_GAP)
             usb_reader.start()
             log.info("USB FASTag reader active (edge-side decision, bypasses Wiegand)")
         except Exception as e:
