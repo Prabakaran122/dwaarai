@@ -326,6 +326,19 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.5.0)(jsdom@20.0.3)(lightningcss@1.27.0)(terser@5.46.1)
 
+  services/demo-traffic:
+    dependencies:
+      jsonwebtoken:
+        specifier: ^9.0.2
+        version: 9.0.3
+      pg:
+        specifier: ^8.13.0
+        version: 8.20.0
+    devDependencies:
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@25.5.0)(jsdom@20.0.3)(lightningcss@1.27.0)(terser@5.46.1)
+
   services/gate-command-service:
     dependencies:
       express:
@@ -1308,7 +1321,7 @@ packages:
 
   '@expo/bunyan@4.0.1':
     resolution: {integrity: sha512-+Lla7nYSiHZirgK+U/uYzsLv/X+HaJienbD5AKX1UQZHYfWaP+9uuQluRB4GrEVWF0GZ7vEVp/jzaOT9k/SQlg==}
-    engines: {'0': node >=0.10.0}
+    engines: {node: '>=0.10.0'}
 
   '@expo/cli@0.22.28':
     resolution: {integrity: sha512-lvt72KNitGuixYD2l3SZmRKVu2G4zJpmg5V7WfUBNpmUU5oODBw/6qmiJ6kSLAlfDozscUk+BBGknBBzxUrwrA==}
