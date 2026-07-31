@@ -342,7 +342,8 @@ describe('POST /events/sync', () => {
     const commitCall = mockConn.query.mock.calls[3][0];
     expect(commitCall).toBe('COMMIT');
 
-    // Verify INSERTs have is_offline_event = true
+    // Verify INSERTs reference is_offline_event (value defaults to true at the
+    // parameter level via evt.is_offline_event ?? true, not hardcoded in SQL)
     const insertCall = mockConn.query.mock.calls[1][0];
     expect(insertCall).toContain('is_offline_event');
     expect(insertCall).toContain('synced_at');

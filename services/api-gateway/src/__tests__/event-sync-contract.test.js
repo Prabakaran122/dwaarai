@@ -58,7 +58,7 @@ describe('POST /events/sync contract', () => {
     // passes through with its real value instead of being stripped.
     const parsed = eventSyncItemSchema.parse(fixture.events[0]);
     expect(parsed).not.toHaveProperty('gate_opened');
-    expect(parsed.is_offline_event).toBe(fixture.events[0].is_offline_event);
+    expect(parsed.is_offline_event).toBe(false);
     expect(parsed.detection_method).toBe('anpr');
   });
 
