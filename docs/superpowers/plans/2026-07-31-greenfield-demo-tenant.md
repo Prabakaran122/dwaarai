@@ -1537,7 +1537,17 @@ git commit -m "feat(demo): backfill ten days of gate history so charts are full 
 
 **Interfaces:**
 - Consumes: everything above.
-- Produces: `deviceToken(gateId: string, secret: string): string` (a 24h JWT carrying `community_id` and `gate_id`), `postEvent(payload: object, opts: {apiBase, token, fetchImpl}): Promise<{ok: boolean, status: number}>`, `runOnce(deps): Promise<void>`.
+- Produces: `deviceToken(gateId: string, secret: string): string` (a 24h JWT carrying `community_id` and `gate_id`), `postEvent(payload: object, opts: {apiBase, token, fetchImpl}): Promise<{ok: boolean, status: number}>`, `loadPopulation(client): Promise<{units, residents, vehicles, guards}>`.
+
+> **Amendment (ruling, 31 Jul).** An earlier draft had this task call
+> `buildPopulation(2043)` to reconstruct the society in the generator process.
+> That is wrong: `population.js` mints ids with `randomUUID()`, which ignores the
+> seed, so the generator would reference vehicles and units that do not exist in
+> the seeded rows. `gate_events` declares `matched_vehicle_id` with no
+> `REFERENCES` clause, so this fails **silently** — events insert cleanly and the
+> portal shows dead links. The generator therefore **loads the real ids from the
+> database** via `loadPopulation`, which also means it picks up anything edited
+> in the portal.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1599,12 +1609,41 @@ Expected: FAIL — cannot resolve `../generate.js`.
 import jwt from 'jsonwebtoken';
 import pg from 'pg';
 import { DEMO_COMMUNITY_ID, GATES, assertDemoCommunity, config } from './config.js';
-import { buildPopulation } from './population.js';
 import { buildEvent } from './event.js';
 import { ratePerHour, nextGapMs, mulberry32 } from './rhythm.js';
 
 const TOKEN_TTL_SECONDS = 24 * 3600;
 const TOKEN_REFRESH_MS = 12 * 3600 * 1000;
+
+/**
+ * Read the seeded society back out of the database.
+ *
+ * The generator must reference the ids that actually exist in the rows, so it
+ * queries them rather than regenerating a population whose ids would differ.
+ * Shape matches what buildEvent expects from buildPopulation().
+ */
+export async function loadPopulation(client) {
+  const { rows: units } = await client.query(
+    `SELECT id, unit_number AS "unitNumber" FROM units WHERE community_id = $1`,
+    [DEMO_COMMUNITY_ID]
+  );
+  const { rows: residents } = await client.query(
+    `SELECT id, unit_id AS "unitId", name, type, is_primary AS "isPrimary"
+       FROM residents WHERE community_id = $1`,
+    [DEMO_COMMUNITY_ID]
+  );
+  const { rows: vehicles } = await client.query(
+    `SELECT id, unit_id AS "unitId", resident_id AS "residentId", plate
+       FROM vehicles WHERE community_id = $1 AND is_active = true`,
+    [DEMO_COMMUNITY_ID]
+  );
+  return {
+    units,
+    residents: residents.filter((r) => r.type !== 'guard'),
+    vehicles,
+    guards: residents.filter((r) => r.type === 'guard'),
+  };
+}
 
 export function deviceToken(gateId, secret) {
   return jwt.sign(
@@ -1644,8 +1683,15 @@ async function main() {
   const { apiBase, jwtSecret, databaseUrl, dryRun } = config(process.env);
   assertDemoCommunity(DEMO_COMMUNITY_ID);
 
-  // The population must match what was seeded, so reuse the same seed.
-  const pop = buildPopulation(2043);
+  // Load the society from the database, NOT from buildPopulation(): ids are
+  // minted per-run, so a rebuilt population would reference rows that were
+  // never inserted. See the amendment note in this task.
+  const db = new pg.Client({ connectionString: databaseUrl });
+  await db.connect();
+  const pop = await loadPopulation(db);
+  if (!pop.vehicles.length) {
+    throw new Error('no vehicles found for the demo community — run src/seed.js first');
+  }
   const rand = mulberry32(Date.now() % 2 ** 31);
 
   let tokens = Object.fromEntries(GATES.map((g) => [g.id, deviceToken(g.id, jwtSecret)]));
