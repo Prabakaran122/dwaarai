@@ -56,9 +56,11 @@ describe('buildPopulation', () => {
     for (const g of pop.guards) expect(g.type).toBe('guard');
   });
 
-  it('is deterministic for a given seed', () => {
+  it('reproduces seeded content but not ids across calls', () => {
     const again = buildPopulation(2043);
     expect(again.units.length).toBe(pop.units.length);
     expect(again.vehicles.map((v) => v.plate)).toEqual(pop.vehicles.map((v) => v.plate));
+    // UUIDs are freshly minted on each call and do not use the seed
+    expect(again.units.map((u) => u.id)).not.toEqual(pop.units.map((u) => u.id));
   });
 });

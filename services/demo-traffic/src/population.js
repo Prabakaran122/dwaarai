@@ -43,6 +43,20 @@ function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
+/**
+ * Generate a complete society population for the Greenfield demo.
+ *
+ * All seeded content (plates, names, vehicle types, occupancy status, etc.) is reproducible:
+ * the same seed always produces the same data structure.
+ *
+ * IMPORTANT: Entity IDs (blocks, units, residents, vehicles, guards) are freshly minted
+ * with randomUUID() on every call and are NOT stable across processes or runs. Do not rely
+ * on id values for cross-process referencing. Any consumer needing to reference persisted
+ * rows must read the ids back from the database after insert, not rebuild the population.
+ *
+ * @param {number} seed - Seed for the PRNG controlling all randomness in content generation
+ * @returns {Object} Population object with arrays: blocks, units, residents, vehicles, guards
+ */
 export function buildPopulation(seed) {
   const rand = mulberry32(seed);
 
