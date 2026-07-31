@@ -51,8 +51,6 @@ const config: Config = {
         glow: {
           blue: '#0C837D',
           purple: '#0C837D',
-          pink: '#0C837D',
-          cyan: '#0C837D',
         },
         status: {
           success: '#2ECC71',
@@ -76,25 +74,13 @@ const config: Config = {
         },
       },
       backgroundImage: {
-        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
         'glow-primary': 'linear-gradient(135deg, #1B3A4B, #00BFA6)',
-        'glow-accent': 'linear-gradient(135deg, #00BFA6, #66D9C9)',
         'glow-success': 'linear-gradient(135deg, #1A7A44, #2ECC71)',
         'glow-danger': 'linear-gradient(135deg, #E84C3D, #922B21)',
       },
       fontFamily: {
         sans: ['DM Sans', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
-      },
-      animation: {
-        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        'glow': 'glow 2s ease-in-out infinite alternate',
-      },
-      keyframes: {
-        glow: {
-          '0%': { boxShadow: '0 0 5px rgba(0,191,166,0.18)' },
-          '100%': { boxShadow: '0 0 15px rgba(0,191,166,0.30)' },
-        },
       },
     },
   },

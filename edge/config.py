@@ -44,6 +44,21 @@ class Config:
     C3_SYNC_CHUNK:   int   = int(os.getenv("C3_SYNC_CHUNK", "50"))
     C3_SYNC_PAUSE:   float = float(os.getenv("C3_SYNC_PAUSE_SECONDS", "1.5"))
 
+    # USB FASTag reader (edge-side decision). Fallback for readers that dump the
+    # full 96-bit EPC over Wiegand (which the 32-bit C3 card field can't decode).
+    # Reader in Active + USB-KB mode types the EPC over USB; the edge reads it,
+    # checks the whitelist, and opens the C3 barrier. See uhf_usb_reader.py.
+    USE_UHF_USB:      bool  = os.getenv("USE_UHF_USB", "false").lower() == "true"
+    UHF_USB_DEBOUNCE: float = float(os.getenv("UHF_USB_DEBOUNCE_SECONDS", "8"))
+    # The keyboard hook is process-wide, so the filter must be strict enough
+    # that human typing on the gate PC can never be mistaken for a tag. Exact
+    # EPC widths (96-bit = 24 hex chars, 128-bit = 32) and a machine-speed
+    # burst window. See edge/uhf_usb_reader.py.
+    UHF_EPC_LENGTHS:  tuple = tuple(
+        int(n) for n in os.getenv("UHF_EPC_LENGTHS", "24,32").split(",") if n.strip()
+    )
+    UHF_MAX_KEY_GAP:  float = float(os.getenv("UHF_MAX_KEY_GAP_SECONDS", "0.05"))
+
     # MQTT
     MQTT_BROKER:    str  = os.getenv("MQTT_BROKER", "localhost")
     MQTT_PORT:      int  = int(os.getenv("MQTT_PORT", "1883"))

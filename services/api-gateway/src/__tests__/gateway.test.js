@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 
 // Mock the database module before any route imports
 vi.mock('../../src/db/queries.js', () => ({
@@ -14,10 +14,36 @@ vi.mock('../../src/db/pool.js', () => ({
   },
 }));
 
+// Redis MUST be mocked. /access/check caches its decision for 300s, so against
+// a real cache one test's 'allow' answers the next test's lookup and the suite
+// fails differently depending on which tests ran and what is still cached from
+// the previous run. This passed for a long time only because no Redis was
+// reachable in dev — getCache short-circuits to a miss when disconnected — so
+// simply starting Redis locally broke the suite. Mock it and the tests are
+// hermetic either way.
+vi.mock('../../src/db/redis.js', () => ({
+  getCache: vi.fn().mockResolvedValue(null),
+  setCache: vi.fn().mockResolvedValue(undefined),
+  delCache: vi.fn().mockResolvedValue(undefined),
+  delCachePattern: vi.fn().mockResolvedValue(undefined),
+  getCacheStats: vi.fn().mockReturnValue({ hits: 0, misses: 0, connected: false }),
+  default: { get: vi.fn(), set: vi.fn(), on: vi.fn() },
+}));
+
 // Now import the app and helpers
 const { default: app } = await import('../index.js');
 const { generateTestToken } = await import('../middleware/auth.js');
 const { queryRows, queryOne } = await import('../db/queries.js');
+
+// Every test queues its own responses with mockResolvedValueOnce. Without a
+// reset, values a test queues but never consumes carry into the NEXT test and
+// answer the wrong query — which made results depend on execution order (four
+// failures running this file alone, two as part of the suite). Reset the queue
+// and restore the default resolutions so unqueued calls still behave.
+beforeEach(() => {
+  queryOne.mockReset().mockResolvedValue(null);
+  queryRows.mockReset().mockResolvedValue([]);
+});
 
 // Minimal supertest-like helper using native fetch with the app listening on a random port
 let server;

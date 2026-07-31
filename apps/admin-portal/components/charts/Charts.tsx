@@ -297,6 +297,47 @@ const METHOD_LABELS: Record<string, string> = {
   password: 'PIN', card: 'Card', panel: 'Panel', auto: 'Automatic', biometric: 'Biometric',
 };
 
+// ── Deny-reason breakdown ────────────────────────────────────────────────────
+// Same magnitude-with-direct-labels treatment as the method bars, but this is a
+// problem list, so it takes the deny colour rather than the brand hue.
+
+const REASON_LABELS: Record<string, string> = {
+  not_recognized: 'Not recognised',
+  unknown_plate: 'Unknown plate',
+  blacklisted: 'Blacklisted',
+  verify_failed: 'Verification failed',
+  expired: 'Pass expired',
+  outside_window: 'Outside allowed hours',
+  unspecified: 'Not recorded',
+};
+
+export function ReasonBars({ data }: { data: { reason: string; count: number }[] }) {
+  if (!data.length) {
+    return <p className="text-sm text-gray-400 py-4 text-center">No refusals in the last 7 days</p>;
+  }
+  const max = Math.max(...data.map((d) => d.count), 1);
+  return (
+    <div className="space-y-2.5">
+      {data.map((d) => (
+        <div key={d.reason}>
+          <div className="flex items-baseline justify-between mb-1 gap-2">
+            <span className="text-sm text-gray-700 truncate">
+              {REASON_LABELS[d.reason] || d.reason.replace(/_/g, ' ')}
+            </span>
+            <span className="text-sm font-semibold tabular-nums text-gray-900 flex-shrink-0">
+              {d.count.toLocaleString()}
+            </span>
+          </div>
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--viz-grid)' }}>
+            <div className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${(d.count / max) * 100}%`, background: 'var(--viz-deny)' }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function MethodBars({ data }: { data: { method: string; count: number }[] }) {
   if (!data.length) {
     return <p className="text-sm text-gray-400 py-6 text-center">No entries in the last 7 days</p>;

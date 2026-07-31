@@ -361,6 +361,36 @@ class C3PushServer:
                     self.event_log.extend(fresh)       # display buffer (not drained)
             if fresh:
                 log.debug(f"buffered {len(fresh)} new event(s) from {sn}")
+        elif t == "attlog":
+            # Attendance/access log some biometric terminals (SpeedFace-V5L) push
+            # instead of key=value rtlog. Positional TSV: pin, time, status,
+            # verify, workcode, ... — turn each into a person-verify event.
+            fresh = []
+            with self._lock:
+                for line in body.splitlines():
+                    parts = line.split("\t")
+                    if len(parts) < 2 or not parts[0].strip():
+                        continue
+                    pin = parts[0].strip()
+                    ts = parts[1].strip()
+                    verify = parts[3].strip() if len(parts) > 3 else ""
+                    key = f"{sn}|attlog|{ts}|{pin}"
+                    if key in self._event_key_set:
+                        continue
+                    if len(self._event_keys) == self._event_keys.maxlen:
+                        self._event_key_set.discard(self._event_keys[0])
+                    self._event_keys.append(key); self._event_key_set.add(key)
+                    fresh.append({
+                        "card_number": pin, "user_id": pin, "pin": pin,
+                        "is_biometric": True, "verify_method": _verify_method(verify),
+                        "event_type": "allow", "event_code": 0, "door": 1,
+                        "index": ts, "timestamp": ts or time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    })
+                if fresh:
+                    self._events.extend(fresh)
+                    self.event_log.extend(fresh)
+            if fresh:
+                log.info(f"buffered {len(fresh)} ATTLOG verify(s) from {sn}")
         elif t == "rtstate":
             # Device I/O telemetry: door / relay / alarm / sensor state. We decode
             # it into named health fields (dev.state) and surface alarms — the raw
@@ -492,14 +522,36 @@ def format_restore_cmd(cmd_id: int, door: int) -> str:
 # deny/failed verify. Refined from live captures — extend as needed.
 _ALLOW_EVENT_CODES = {0, 1, 2, 3, 4}  # normal verify-open variants (card/fp/pwd/…)
 
+# ZKTeco verify-mode codes (verifytype / verify field), used by biometric
+# terminals like the SpeedFace-V5L to say HOW the person was identified.
+# Extend from live captures once the device is pushing.
+_VERIFY_METHOD = {
+    "0": "auto", "1": "fingerprint", "2": "fingerprint", "3": "password",
+    "4": "card", "9": "finger_vein", "15": "face", "16": "face",
+    "20": "palm", "25": "face",
+}
+
+
+def _verify_method(raw: str) -> str:
+    """Decode a ZKTeco verify-type into a human method. Biometric terminals send
+    a small number (15=face, 1=fp, 4=card…); the C3 sends a 32-char zero string.
+    Falls back to 'biometric' for an unknown non-zero value."""
+    v = (raw or "").strip()
+    if not v or set(v) == {"0"}:
+        return ""                       # unspecified (e.g. C3's zero-filled field)
+    v = v.lstrip("0") or "0"            # tolerate "015" / zero-padded forms
+    return _VERIFY_METHOD.get(v, "biometric")
+
 
 def parse_rtlog_line(line: str) -> dict | None:
-    """Parse one realtime-log record the panel POSTs (POST /iclock/cdata?table=rtlog).
+    """Parse one realtime-log record a device POSTs (POST /iclock/cdata?table=rtlog).
 
-    REAL C3-200 Plus format (FW 19.0.18) — tab-separated key=value pairs:
+    C3-200 Plus (FW 19.0.18) and SpeedFace-V5L share a tab-separated key=value form:
       time=..  pin=..  cardno=..  sitecode=..  linkid=..  eventaddr=..
       event=NN  inoutstatus=..  verifytype=..  index=..  sn=..
-    A card tap has cardno != 0; door/tamper/status records have cardno=0.
+    - A **card** read (C3 / Wiegand)  → cardno != 0.
+    - A **person** verify (V5L face/fp/pin) → pin != 0, cardno == 0.
+    - cardno==0 AND pin==0 → a door/tamper/status record (ignored).
     """
     fields = {}
     for tok in line.split("\t"):
@@ -507,8 +559,11 @@ def parse_rtlog_line(line: str) -> dict | None:
             k, v = tok.split("=", 1)
             fields[k] = v.strip()
     card = fields.get("cardno", "0")
-    if not card or card == "0":
-        return None  # status/door/tamper record, not a card read
+    pin = fields.get("pin", "0")
+    is_card = bool(card) and card != "0"
+    is_person = bool(pin) and pin != "0"
+    if not is_card and not is_person:
+        return None                     # status/door/tamper — not an access read
     try:
         event_code = int(fields.get("event", "-1"))
     except ValueError:
@@ -518,12 +573,17 @@ def parse_rtlog_line(line: str) -> dict | None:
     except ValueError:
         door = 1
     return {
-        "card_number": card,
+        # For a card read this is the card number; for a biometric verify it's the
+        # enrolled user id (pin), so downstream always has a stable identifier.
+        "card_number": card if is_card else pin,
+        "user_id": pin,
+        "is_biometric": (not is_card) and is_person,
+        "verify_method": _verify_method(fields.get("verifytype") or fields.get("verify")),
         "event_type": "allow" if event_code in _ALLOW_EVENT_CODES else "deny",
         "event_code": event_code,
-        "pin": fields.get("pin", ""),
+        "pin": pin,
         "door": door,
-        "index": fields.get("index", ""),   # panel's monotonic event id (for de-dup)
+        "index": fields.get("index", ""),   # device's monotonic event id (for de-dup)
         "timestamp": fields.get("time", time.strftime("%Y-%m-%dT%H:%M:%S")),
     }
 

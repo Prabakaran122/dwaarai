@@ -69,9 +69,13 @@ SOURCE_EVENTS = [
 
 
 def _post_via_queue(tmp_path, events):
-    """Enqueue through the real OfflineQueue and capture what it POSTs."""
+    """Enqueue through the real OfflineQueue and capture what it POSTs.
+
+    `defaults` mirrors how gate_controller constructs the queue — an entry node
+    stamps direction='entry' on everything it reports.
+    """
     from edge.offline_queue import OfflineQueue
-    oq = OfflineQueue(str(tmp_path / "q.db"))
+    oq = OfflineQueue(str(tmp_path / "q.db"), defaults={"direction": "entry"})
     for e in events:
         oq.enqueue(e)
     with patch("requests.post") as mp:
@@ -104,12 +108,29 @@ class TestEventSyncContract:
         """Mirror of the zod/column limits, so Python alone catches most drift."""
         for evt in json.loads(FIXTURE.read_text())["events"]:
             assert evt["access_decision"] in VALID_DECISIONS, evt["access_decision"]
+            assert evt.get("direction") in (None, "entry", "exit"), evt.get("direction")
             assert 1 <= len(evt["detection_method"]) <= 20, evt["detection_method"]
             assert len(evt.get("raw_value") or "") <= 100
             assert len(evt.get("deny_reason") or "") <= 100
             assert len(evt.get("matched_unit_number") or "") <= 30
             conf = evt.get("anpr_confidence")
             assert conf is None or 0 <= conf <= 1
+
+    def test_direction_is_stamped_from_the_gate_default(self, tmp_path):
+        """gate_events.direction existed since migration 008 but nothing set it,
+        so every row read 'entry' and exits were invisible. The queue stamps it
+        once, centrally, rather than relying on 12 call sites."""
+        from edge.offline_queue import OfflineQueue
+        oq = OfflineQueue(str(tmp_path / "q.db"), defaults={"direction": "exit"})
+        oq.enqueue({"detection_method": "anpr", "event_ts": 1785312000.0})
+        oq.enqueue({"detection_method": "anpr", "direction": "entry",   # caller wins
+                    "event_ts": 1785312001.0})
+        with patch("requests.post") as mp:
+            mp.return_value.status_code = 200
+            oq.sync("http://cloud/api/v1", "t")
+        posted = mp.call_args.kwargs["json"]["events"]
+        assert posted[0]["direction"] == "exit"
+        assert posted[1]["direction"] == "entry"
 
     def test_enqueue_normalizes_float_epoch(self, tmp_path):
         from edge.offline_queue import OfflineQueue

@@ -31,6 +31,9 @@ export const eventSyncItemSchema = z.object({
   access_decision: z.enum([
     'allow', 'deny', 'override', 'guard_review', 'alarm', 'alert',
   ]),
+  // Which way through the gate. The column has existed since migration 008 but
+  // the edge never set it, so every historical row reads 'entry'.
+  direction: z.enum(['entry', 'exit']).optional(),
   deny_reason: z.string().max(100).optional().nullable(),
   anpr_confidence: z.number().min(0).max(1).optional().nullable(),
   snapshot_s3_key: z.string().optional().nullable(),

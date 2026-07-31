@@ -137,11 +137,6 @@
     background: linear-gradient(165deg, #F4F8FA 0%, var(--color-brand-mist) 100%);
   }
 
-  .stat-glow {
-    position: relative;
-    overflow: hidden;
-  }
-
   .input-glow {
     background: #ffffff;
     border: 1px solid rgba(27, 58, 75, 0.12);

@@ -37,7 +37,11 @@ from edge.whitelist_sync import load_local, is_blacklisted_local, start_sync, cl
 _lock        = threading.Lock()
 _online      = False
 _seen_ids:   dict[str, float] = {}
-_oq          = OfflineQueue(cfg.OFFLINE_QUEUE_PATH)
+# Every event this node reports carries the gate's direction. An entry node
+# stamps 'entry', an exit node 'exit' — without it the cloud can't tell who is
+# still inside, which is what occupancy and visitor-overstay both rest on.
+_oq          = OfflineQueue(cfg.OFFLINE_QUEUE_PATH,
+                            defaults={"direction": cfg.GATE_TYPE})
 _mqtt_client = None
 _c3          = None
 _pending_unknown: dict[str, dict] = {}  # card_number → {ts, event}
@@ -93,6 +97,57 @@ def _try_auto_pair(tid_hash: str, plate: str):
 _last_read = {}  # card_number -> timestamp
 DEDUP_WINDOW = 2.0
 
+# ── USB FASTag path (edge-side decision) ─────────────────────────────
+def _handle_usb_fastag(epc: str):
+    """Decide + open the barrier for a FASTag EPC read over USB.
+
+    Used when the reader can't emit a C3-decodable Wiegand frame (it dumps the
+    full 96-bit EPC, which the C3's 32-bit card field can't hold). We hash the
+    EPC the same way the serial UHFReader does, so it matches the provisioned
+    `uid_hash`, run the normal whitelist decision, and open the C3 barrier from
+    the edge. See edge/uhf_usb_reader.py and UHF_412_Wiegand_Issue_Report.md."""
+    from edge.uhf_reader import tid_to_hash
+    epc = (epc or "").strip().upper()
+    if len(epc) < 8:
+        return
+    uid_hash = tid_to_hash(epc)
+
+    now = time.time()
+    with _lock:
+        if uid_hash in _last_read and (now - _last_read[uid_hash]) < DEDUP_WINDOW:
+            return
+        _last_read[uid_hash] = now
+
+    if is_blacklisted_local(cfg.OFFLINE_DB_PATH, "fastag", uid_hash):
+        log.info(f"USB FASTag DENIED (blacklisted): {epc[:12]}…")
+        _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
+                     "detection_method": "fastag", "raw_value": epc,
+                     "access_decision": "deny", "deny_reason": "blacklisted",
+                     "is_offline_event": not _online, "event_ts": now})
+        return
+
+    result = _cloud_check("fastag", uid_hash) if _online else None
+    if not result or result.get("decision") != "allow":
+        result = _local_check("fastag", uid_hash)
+
+    if result and result.get("decision") == "allow":
+        opened = _open_gate()
+        log.info(f"USB FASTag ALLOWED: {epc[:12]}… unit={result.get('unit_number')} "
+                 f"gate_opened={opened}")
+        _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
+                     "detection_method": "fastag", "raw_value": epc,
+                     "unit_id": result.get("unit_id"), "unit_number": result.get("unit_number"),
+                     "access_decision": "allow", "gate_opened": opened,
+                     "is_offline_event": not _online, "event_ts": now})
+    else:
+        decision = (result or {}).get("decision", "guard_review")
+        log.info(f"USB FASTag not recognized: {epc[:12]}… → {decision}")
+        _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
+                     "detection_method": "fastag", "raw_value": epc,
+                     "access_decision": decision,
+                     "deny_reason": (result or {}).get("reason", "not_recognized"),
+                     "is_offline_event": not _online, "event_ts": now})
+
 # ── C3 event poller ──────────────────────────────────────────────────
 def _process_c3_event(event: dict):
     """Handle a single event from C3 polling."""
@@ -121,6 +176,24 @@ def _process_c3_event(event: dict):
         # Clean old dedup entries periodically (snapshot keys — dict mutates here)
         for k in [k for k, ts in list(_last_read.items()) if now - ts > 30]:
             del _last_read[k]
+
+    # Biometric terminal (SpeedFace-V5L) person verify — face / fingerprint / PIN.
+    # The device verifies locally and opens its OWN pedestrian door, so we only
+    # LOG the entry into the unified feed here (no C3 gate command). The person is
+    # keyed by user_id (the enrolled PIN); the cloud resolves it to the guard /
+    # staff / visitor record. A local user_id→person lookup can be added later for
+    # fully-offline resolution.
+    if event.get("is_biometric"):
+        method = event.get("verify_method") or "biometric"
+        decision = "allow" if etype == "allow" else "deny"
+        uid = event.get("user_id") or card
+        log.info(f"BIOMETRIC {decision} via {method}: user_id={uid}")
+        _oq.enqueue({"community_id": cfg.COMMUNITY_ID, "gate_id": cfg.GATE_ID,
+                     "detection_method": method, "raw_value": uid, "user_id": uid,
+                     "access_decision": decision,
+                     "deny_reason": None if decision == "allow" else "verify_failed",
+                     "is_offline_event": not _online, "event_ts": time.time()})
+        return
 
     if etype == "allow":
         # The panel can't tell RFID (bike) from FASTag (car) — both are Wiegand
@@ -450,11 +523,28 @@ def main():
         threading.Thread(target=_c3_poll_loop, daemon=True).start()
         log.info(f"C3 event poller started (interval={cfg.C3_POLL_INTERVAL}s)")
 
+    # Optional USB FASTag reader — edge-side decision for readers that can't emit
+    # a C3-decodable Wiegand frame (full 96-bit EPC over Wiegand). Runs on entry
+    # gates only (needs the C3 to open).
+    usb_reader = None
+    if cfg.USE_UHF_USB and cfg.GATE_TYPE != "exit":
+        try:
+            from edge.uhf_usb_reader import UHFUsbReader
+            usb_reader = UHFUsbReader(on_epc_callback=_handle_usb_fastag,
+                                      debounce=cfg.UHF_USB_DEBOUNCE,
+                                      epc_lengths=cfg.UHF_EPC_LENGTHS,
+                                      max_gap=cfg.UHF_MAX_KEY_GAP)
+            usb_reader.start()
+            log.info("USB FASTag reader active (edge-side decision, bypasses Wiegand)")
+        except Exception as e:
+            log.error(f"USB FASTag reader failed to start: {e}")
+
     log.info("Gate controller running. CTRL+C to stop.")
     try:
         while True: time.sleep(1)
     except KeyboardInterrupt:
         anpr.stop()
+        if usb_reader: usb_reader.stop()
         if _c3: _c3.disconnect()
         if _mqtt_client: _mqtt_client.loop_stop()
 

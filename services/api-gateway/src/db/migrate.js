@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * SQL migration runner.
  *
@@ -34,7 +33,11 @@ const DEFAULT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../migr
 
 // Any 64-bit constant; shared by every runner so concurrent deploys queue up
 // instead of racing to apply the same file twice.
-const ADVISORY_LOCK_KEY = 8823147650021n;
+// Plain number, not a BigInt literal. It is interpolated straight into SQL and
+// sits well under Number.MAX_SAFE_INTEGER, so the `n` suffix bought nothing —
+// and it made the module unparseable under some esbuild/Node target
+// combinations, which took the whole migrate test suite down with it.
+const ADVISORY_LOCK_KEY = 8823147650021;
 
 const NO_TXN_MARKER = '-- migrate:no-transaction';
 

@@ -8,6 +8,11 @@ schedule==1.2.1
 # PULL lib remains for the non-push path but does NOT write the user/card table.
 zkaccess-c3==0.0.15
 
+# USB FASTag reader (edge/uhf_usb_reader.py) — edge-side decision path for UHF
+# readers that dump the full 96-bit EPC over Wiegand (which the 32-bit C3 card
+# field can't decode). Global keyboard-wedge capture. Enable with USE_UHF_USB=true.
+keyboard==0.13.5
+
 # Legacy serial/SPI readers (edge/uhf_reader.py, edge/rfid_reader.py) are NOT
 # used in the C3 architecture (readers wire into the C3 via Wiegand). Install
 # these only if reviving the direct-to-host reader path:

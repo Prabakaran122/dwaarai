@@ -31,8 +31,19 @@ def to_iso8601(ts) -> str:
 
 
 class OfflineQueue:
-    def __init__(self, path):
+    """
+    Args:
+        path: sqlite file backing the queue.
+        defaults: fields stamped onto every event unless the caller sets them.
+            Used for gate-wide facts a call site shouldn't have to remember —
+            `direction` being the one that matters: gate_events has had the
+            column since migration 008 but nothing ever set it, so every row in
+            the database claimed 'entry' and exits were invisible.
+    """
+
+    def __init__(self, path, defaults: dict | None = None):
         self.path = path
+        self.defaults = dict(defaults or {})
         # Ensure the parent directory exists (persistent paths like
         # /var/lib/communitygate/ won't exist on a fresh install).
         parent = os.path.dirname(path)
@@ -50,7 +61,8 @@ class OfflineQueue:
 
     def enqueue(self, event: dict):
         eid = event.get("event_id") or str(_uuid.uuid4())
-        event = {**event, "event_ts": to_iso8601(event.get("event_ts"))}
+        # Caller wins over defaults; event_ts is normalised last so it always applies.
+        event = {**self.defaults, **event, "event_ts": to_iso8601(event.get("event_ts"))}
         with sqlite3.connect(self.path) as c:
             c.execute("INSERT OR IGNORE INTO pending_events"
                       " (id, payload, created_at, synced, attempts) VALUES(?,?,?,0,0)",
