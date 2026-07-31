@@ -45,20 +45,23 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
               <>
                 <button
                   onClick={() => { selectCommunity(null, null); router.push('/communities'); }}
-                  className="text-xs text-glow-blue hover:text-glow-purple transition-colors"
+                  className="text-xs font-medium text-teal-700 hover:text-teal-800 transition-colors"
                 >
                   ← Communities
                 </button>
-                <span className="text-surface-border">|</span>
-                <span className="text-sm font-semibold text-slate-300">{selectedCommunityName}</span>
+                <span className="text-gray-300">|</span>
+                {/* These were slate-300/400 — left over from the dark theme this
+                    portal used to have. On the white header they rendered at
+                    roughly 1.5:1, effectively invisible. */}
+                <span className="text-sm font-semibold text-gray-900">{selectedCommunityName}</span>
               </>
             )}
             {!isViewingCommunity && (
-              <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-widest">Administration</h2>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest">Administration</h2>
             )}
           </div>
           <div className="flex items-center gap-3">
-            <div className="text-xs text-slate-500">{user?.name}</div>
+            <div className="text-xs text-gray-600">{user?.name}</div>
             <div className="w-8 h-8 rounded-lg bg-glow-primary flex items-center justify-center text-xs font-bold text-white">
               {user?.name?.charAt(0) || 'A'}
             </div>

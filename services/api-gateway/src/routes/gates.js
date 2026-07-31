@@ -6,6 +6,7 @@ import { success, error } from '../middleware/response.js';
 import { authenticateJWT, authenticateDevice } from '../middleware/auth.js';
 import { publishGateCommand } from '../mqtt.js';
 import { broadcast } from '../websocket.js';
+import { eventSyncSchema } from '../schemas/event-sync.js';
 
 const router = Router();
 
@@ -35,27 +36,8 @@ const heartbeatSchema = z.object({
   panel: z.object({}).passthrough().optional(),
 });
 
-const eventSyncItemSchema = z.object({
-  community_id: z.string().uuid(),
-  gate_id: z.string().uuid(),
-  detection_method: z.string().min(1).max(10),
-  raw_value: z.string().max(100).optional(),
-  matched_vehicle_id: z.string().uuid().optional().nullable(),
-  matched_pass_id: z.string().uuid().optional().nullable(),
-  matched_unit_id: z.string().uuid().optional().nullable(),
-  matched_unit_number: z.string().max(30).optional().nullable(),
-  resident_name: z.string().max(200).optional().nullable(),
-  access_decision: z.enum(['allow', 'deny', 'override']),
-  deny_reason: z.string().max(100).optional().nullable(),
-  anpr_confidence: z.number().min(0).max(1).optional().nullable(),
-  snapshot_s3_key: z.string().optional().nullable(),
-  processing_ms: z.number().int().optional().nullable(),
-  event_ts: z.string().datetime(),
-});
-
-const eventSyncSchema = z.object({
-  events: z.array(eventSyncItemSchema).min(1).max(500),
-});
+// The edge/cloud event contract lives in its own module so the contract test
+// can load it without booting express/db/mqtt. See schemas/event-sync.js.
 
 // -- GET /gates (JWT admin) --------------------------------------------------
 

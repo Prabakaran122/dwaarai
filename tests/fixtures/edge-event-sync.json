@@ -1,0 +1,66 @@
+{
+  "events": [
+    {
+      "event_id": "0a11f6d2-1c4e-4b90-8f52-6d3a7e18c9b4",
+      "community_id": "3f1c9a52-8d4e-4a7b-9c31-5e2f8b6d0a14",
+      "gate_id": "b7e2d148-6c93-4f05-8a1d-2e7c4b9f3a60",
+      "detection_method": "anpr",
+      "raw_value": "KA05MF1234",
+      "access_decision": "allow",
+      "anpr_confidence": 0.93,
+      "gate_opened": true,
+      "auto_paired": false,
+      "ambiguous_correlation": false,
+      "pass_kind": "resident",
+      "is_offline_event": false,
+      "event_ts": "2026-07-29T08:00:00.500Z"
+    },
+    {
+      "event_id": "1b22a7e3-2d5f-4ca1-9063-7e4b8f29d0c5",
+      "community_id": "3f1c9a52-8d4e-4a7b-9c31-5e2f8b6d0a14",
+      "gate_id": "b7e2d148-6c93-4f05-8a1d-2e7c4b9f3a60",
+      "detection_method": "fastag",
+      "raw_value": "34161FA820328972305B75E0",
+      "unit_number": "A-402",
+      "access_decision": "allow",
+      "gate_opened": true,
+      "is_offline_event": true,
+      "event_ts": "2026-07-29T08:01:01.000Z"
+    },
+    {
+      "event_id": "2c33b8f4-3e60-4db2-a174-8f5c9038e1d6",
+      "community_id": "3f1c9a52-8d4e-4a7b-9c31-5e2f8b6d0a14",
+      "gate_id": "b7e2d148-6c93-4f05-8a1d-2e7c4b9f3a60",
+      "detection_method": "anpr",
+      "raw_value": "TN09XY7788",
+      "access_decision": "guard_review",
+      "deny_reason": "not_recognized",
+      "anpr_confidence": 0.71,
+      "is_offline_event": true,
+      "event_ts": "2026-07-29T08:02:05.250Z"
+    },
+    {
+      "event_id": "3d44c905-4f71-4ec3-b285-906da149f2e7",
+      "community_id": "3f1c9a52-8d4e-4a7b-9c31-5e2f8b6d0a14",
+      "gate_id": "b7e2d148-6c93-4f05-8a1d-2e7c4b9f3a60",
+      "detection_method": "fingerprint",
+      "raw_value": "1042",
+      "user_id": "1042",
+      "access_decision": "allow",
+      "deny_reason": null,
+      "is_offline_event": false,
+      "event_ts": "2026-07-29T08:03:10.000Z"
+    },
+    {
+      "event_id": "4e55da16-5082-4fd4-a396-a17eb25a03f8",
+      "community_id": "3f1c9a52-8d4e-4a7b-9c31-5e2f8b6d0a14",
+      "gate_id": "b7e2d148-6c93-4f05-8a1d-2e7c4b9f3a60",
+      "detection_method": "panel",
+      "raw_value": "door1",
+      "access_decision": "alarm",
+      "deny_reason": "alarm_1",
+      "is_offline_event": false,
+      "event_ts": "2026-07-29T08:04:05.750Z"
+    }
+  ]
+}
