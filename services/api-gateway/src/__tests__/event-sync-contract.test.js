@@ -51,11 +51,14 @@ describe('POST /events/sync contract', () => {
   });
 
   it('drops edge-only bookkeeping fields instead of failing on them', () => {
-    // The edge attaches gate_opened/is_offline_event/user_id etc. for its own
-    // logs; the schema must tolerate them (zod strips unknown keys).
+    // The edge attaches gate_opened/user_id/etc. for its own logs; the schema
+    // must tolerate them (zod strips unknown keys). is_offline_event is no
+    // longer edge-only bookkeeping — it's now a recognized, optional field on
+    // the contract (see the `is_offline_event` describe block below), so it
+    // passes through with its real value instead of being stripped.
     const parsed = eventSyncItemSchema.parse(fixture.events[0]);
     expect(parsed).not.toHaveProperty('gate_opened');
-    expect(parsed).not.toHaveProperty('is_offline_event');
+    expect(parsed.is_offline_event).toBe(fixture.events[0].is_offline_event);
     expect(parsed.detection_method).toBe('anpr');
   });
 
@@ -65,5 +68,37 @@ describe('POST /events/sync contract', () => {
     expect(eventSyncItemSchema.safeParse({ ...base, access_decision: 'maybe' }).success).toBe(false);
     expect(eventSyncItemSchema.safeParse({ ...base, detection_method: 'x'.repeat(21) }).success).toBe(false);
     expect(eventSyncItemSchema.safeParse({ ...base, anpr_confidence: 1.5 }).success).toBe(false);
+  });
+});
+
+describe('is_offline_event', () => {
+  const base = {
+    community_id: '00000000-0000-0000-0000-000000000043',
+    gate_id: '00000000-0000-0000-0000-000000043001',
+    detection_method: 'rfid',
+    access_decision: 'allow',
+    event_ts: '2026-07-31T10:00:00.000Z',
+  };
+
+  it('accepts an explicit false', () => {
+    const parsed = eventSyncItemSchema.safeParse({ ...base, is_offline_event: false });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data.is_offline_event).toBe(false);
+  });
+
+  it('accepts an explicit true', () => {
+    const parsed = eventSyncItemSchema.safeParse({ ...base, is_offline_event: true });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('stays optional so existing edge payloads still validate', () => {
+    const parsed = eventSyncItemSchema.safeParse(base);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data.is_offline_event).toBeUndefined();
+  });
+
+  it('rejects a non-boolean', () => {
+    const parsed = eventSyncItemSchema.safeParse({ ...base, is_offline_event: 'yes' });
+    expect(parsed.success).toBe(false);
   });
 });

@@ -41,6 +41,10 @@ export const eventSyncItemSchema = z.object({
   // zod's .datetime() accepts ONLY UTC ISO-8601 ending in `Z`. The edge
   // normalises its float-epoch timestamps in offline_queue.to_iso8601().
   event_ts: z.string().datetime(),
+  // Whether this event was buffered on the edge and synced late. Optional and
+  // defaulted at the handler, not here, so payloads from existing edge builds —
+  // which never send it — keep their historical meaning of "synced offline".
+  is_offline_event: z.boolean().optional(),
 });
 
 export const eventSyncSchema = z.object({

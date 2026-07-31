@@ -67,6 +67,10 @@ const eventSyncItemSchema = z.object({
   snapshot_s3_key: z.string().optional().nullable(),
   processing_ms: z.number().int().optional().nullable(),
   event_ts: z.string().datetime(),
+  // Whether this event was buffered on the edge and synced late. Optional and
+  // defaulted at the handler, not here, so payloads from existing edge builds —
+  // which never send it — keep their historical meaning of "synced offline".
+  is_offline_event: z.boolean().optional(),
 });
 
 const eventSyncSchema = z.object({
