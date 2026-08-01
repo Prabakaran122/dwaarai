@@ -1,4 +1,4 @@
-import { ratePerHour } from './rhythm.js';
+import { ratePerHour, istClock } from './rhythm.js';
 import { buildEvent } from './event.js';
 import { GATES } from './config.js';
 
@@ -22,9 +22,9 @@ export function buildHistory({ pop, days, until, rand }) {
   const start = new Date(until.getTime() - days * 24 * 3600 * 1000);
 
   for (let cursor = new Date(start); cursor <= until; cursor = new Date(cursor.getTime() + 3600 * 1000)) {
-    const day = cursor.getUTCDay();
-    const isWeekend = day === 0 || day === 6;
-    const rate = ratePerHour(cursor.getUTCHours(), isWeekend);
+    // Hour and weekday in Asia/Kolkata — the zone the dashboard buckets in.
+    const { hour, isWeekend } = istClock(cursor);
+    const rate = ratePerHour(hour, isWeekend);
     // Vary each hour by ±25% so no two days are identical.
     const count = Math.max(0, Math.round(rate * (0.75 + rand() * 0.5)));
 

@@ -14,6 +14,10 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { DEMO_COMMUNITY_ID, GATES } from './config.js';
 import { randomPlate } from './plates.js';
+import { IST_OFFSET_MS } from './rhythm.js';
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+                     'July', 'August', 'September', 'October', 'November', 'December'];
 
 const COURIERS = ['Amazon', 'Flipkart', 'Blinkit', 'Zepto', 'Swiggy Instamart',
                   'Zomato', 'BigBasket', 'Delhivery', 'Blue Dart'];
@@ -43,11 +47,28 @@ const NOTICE_SEEDS = [
    + 'Sunday is when most of us have guests over — could the RWA ask the vendor for a weekday slot instead?'],
 ];
 
+/*
+ * [type, description].
+ *
+ * `type` is one of the six values apps/admin-portal/app/incidents/page.tsx maps
+ * to a human label. Anything else inserts cleanly — there is no CHECK
+ * constraint — and then renders as raw snake_case on the incidents page, which
+ * is exactly the class of silent breakage this module exists to prevent. The
+ * situation-specific colour therefore lives in the description, not in a type of
+ * its own: a wrong-parking row is 'other', a boom-barrier knock is
+ * 'vehicle_damage'. INCIDENT_TYPES pins the list for the test.
+ */
+export const INCIDENT_TYPES = ['unauthorized_entry', 'tailgating', 'suspicious_person',
+                               'vehicle_damage', 'equipment_malfunction', 'other'];
+
 const INCIDENT_SEEDS = [
   ['tailgating', 'Two-wheeler followed a car through the boom without a tag read.'],
-  ['wrong_parking', 'Visitor car parked in a resident bay in the Tower B basement.'],
-  ['damage', 'Boom barrier arm clipped by a delivery tempo at the service gate.'],
-  ['dispute', 'Argument between a resident and a cab driver over entry charges.'],
+  ['other', 'Visitor car parked in a resident bay in the Tower B basement.'],
+  ['vehicle_damage', 'Boom barrier arm clipped by a delivery tempo at the service gate.'],
+  ['other', 'Argument between a resident and a cab driver over entry charges.'],
+  ['unauthorized_entry', 'Cab drove in behind a resident car without an approved visitor pass.'],
+  ['suspicious_person', 'Unidentified man photographing parked cars in the Tower A basement.'],
+  ['equipment_malfunction', 'ANPR camera at the exit gate stopped returning reads for 20 minutes.'],
 ];
 
 const STAFF_ROLES = [
@@ -84,10 +105,21 @@ const PET_CATS = ['Mishti', 'Snowy', 'Bella', 'Kaju', 'Pixie', 'Momo'];
 const DOG_BREEDS = ['Labrador', 'Indie', 'Beagle', 'German Shepherd', 'Pug', 'Golden Retriever'];
 const CAT_BREEDS = ['Persian', 'Indian Billi', 'Siamese', 'Bombay'];
 
+/*
+ * [question, status, options, weights].
+ *
+ * A poll with no options renders as an unvotable empty card with "0 votes", so
+ * every seed carries its own ballot. `weights` is the relative pull of each
+ * option — a real vote is lopsided, and three evenly-split results in a row read
+ * as generated data.
+ */
 const POLL_SEEDS = [
-  ['Should the RWA install EV charging points in the basement?', 'open'],
-  ['Do you approve the revised maintenance charge of Rs 3,200 per month?', 'closed'],
-  ['Should visitor parking be capped at two hours on weekends?', 'closed'],
+  ['Should the RWA install EV charging points in the basement?', 'open',
+   ['Yes, in visitor parking', 'Yes, one per tower', 'No, not yet'], [5, 6, 2]],
+  ['Do you approve the revised maintenance charge of Rs 3,200 per month?', 'closed',
+   ['Approve', 'Approve only with an audit', 'Reject'], [7, 4, 3]],
+  ['Should visitor parking be capped at two hours on weekends?', 'closed',
+   ['Yes, two hours', 'Yes, but four hours', 'No cap', 'Undecided'], [6, 5, 3, 1]],
 ];
 
 const SOS_SEEDS = [
@@ -287,7 +319,14 @@ export function buildBreadth(pop, rand, now) {
     };
   });
 
-  // ---- dues: July 2026 maintenance bill per inhabited flat -------------------
+  // ---- dues: the current month's maintenance bill per inhabited flat ---------
+  // Derived from `now`, never hardcoded: the generator runs for months and a
+  // pinned "July 2026" bill silently turns into a stale demo.
+  const istNow = new Date(t + IST_OFFSET_MS);
+  const period = `${istNow.getUTCFullYear()}-${String(istNow.getUTCMonth() + 1).padStart(2, '0')}`;
+  const periodLabel = `${MONTH_NAMES[istNow.getUTCMonth()]} ${istNow.getUTCFullYear()}`;
+  const dueDate = `${period}-10`;
+
   const dues = livedIn.map((unit) => {
     const pending = rand() < 0.15;
     const base = 2800 + Math.floor(rand() * 1401); // 2800–4200
@@ -295,11 +334,11 @@ export function buildBreadth(pop, rand, now) {
       id: randomUUID(),
       community_id: DEMO_COMMUNITY_ID,
       unit_id: unit.id,
-      period: '2026-07',
-      description: 'Monthly maintenance — July 2026',
+      period,
+      description: `Monthly maintenance — ${periodLabel}`,
       base_amount: base,
       penalty_amount: pending ? 250 : 0,
-      due_date: '2026-07-10',
+      due_date: dueDate,
       status: pending ? 'pending' : 'paid',
       created_at: iso(t - 25 * DAY_MS),
     };
@@ -347,18 +386,61 @@ export function buildBreadth(pop, rand, now) {
   }
 
   // ---- polls: one live, two decided ----------------------------------------
-  const polls = POLL_SEEDS.map(([question, status], i) => {
+  // Columns per migration 027 (polls, poll_options, poll_votes) and 029, which
+  // added poll_votes.unit_id and swapped the one-vote-per-resident primary key
+  // for the uniq_poll_unit UNIQUE index on (poll_id, unit_id). Voting is
+  // therefore per flat: each poll draws a distinct set of units and casts one
+  // vote per unit through that unit's primary resident, which satisfies the
+  // surviving unit constraint and the dropped resident one alike.
+  const polls = [];
+  const pollOptions = [];
+  const pollVotes = [];
+
+  POLL_SEEDS.forEach(([question, status, labels, weights], i) => {
     const author = committee.length ? committee[i % committee.length] : pop.residents[i];
-    return {
-      id: randomUUID(),
+    const pollId = randomUUID();
+    const createdAt = t - (i + 1) * 14 * DAY_MS;
+
+    polls.push({
+      id: pollId,
       community_id: DEMO_COMMUNITY_ID,
       created_by: author.id,
       author_name: author.name,
       question,
       status,
       closes_at: iso(status === 'open' ? t + 5 * DAY_MS : t - (i + 1) * 6 * DAY_MS),
-      created_at: iso(t - (i + 1) * 14 * DAY_MS),
-    };
+      created_at: iso(createdAt),
+    });
+
+    const options = labels.map((label, position) => ({
+      id: randomUUID(),
+      poll_id: pollId,
+      label,
+      position,
+    }));
+    pollOptions.push(...options);
+
+    // Turnout: a closed poll has run its course, a live one is still filling up.
+    const turnout = status === 'closed' ? 0.55 : 0.3;
+    const voters = livedIn.filter(() => rand() < turnout);
+    for (const unit of voters) {
+      const voter = primaryOf(unit);
+      if (!voter) continue;
+      const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+      let roll = rand() * totalWeight;
+      let chosen = options[options.length - 1];
+      for (let n = 0; n < options.length; n++) {
+        roll -= weights[n];
+        if (roll <= 0) { chosen = options[n]; break; }
+      }
+      pollVotes.push({
+        poll_id: pollId,
+        option_id: chosen.id,
+        resident_id: voter.id,
+        unit_id: unit.id,
+        created_at: iso(createdAt + Math.floor(rand() * 5 * DAY_MS)),
+      });
+    }
   });
 
   // ---- SOS: all resolved. A live red alert on a demo board reads as a fault. --
@@ -442,8 +524,14 @@ export function buildBreadth(pop, rand, now) {
   for (let day = 2; day >= 0; day--) {
     SHIFT_HOURS.forEach((hour, shift) => {
       const guard = pop.guards[(day * 3 + shift) % pop.guards.length];
-      const at = new Date(t - day * DAY_MS);
-      at.setUTCHours(hour, 0, 0, 0);
+      // Shift changes are wall-clock events in the society's own zone, so the
+      // hour is set in IST and converted back.
+      const istMidnight = new Date(t - day * DAY_MS + IST_OFFSET_MS);
+      istMidnight.setUTCHours(hour, 0, 0, 0);
+      const at = new Date(istMidnight.getTime() - IST_OFFSET_MS);
+      // Today's later shifts have not happened yet — a handover note stamped in
+      // the future is the sort of detail that unpicks a whole demo.
+      if (at.getTime() > t) return;
       handovers.push({
         id: randomUUID(),
         community_id: DEMO_COMMUNITY_ID,
@@ -458,6 +546,6 @@ export function buildBreadth(pop, rand, now) {
 
   return {
     passes, deliveries, incidents, notices, dues, facilities,
-    bookings, polls, sosAlerts, pets, rfidCards, handovers,
+    bookings, polls, pollOptions, pollVotes, sosAlerts, pets, rfidCards, handovers,
   };
 }

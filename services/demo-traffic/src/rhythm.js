@@ -32,6 +32,29 @@ export function ratePerHour(hour, isWeekend) {
 }
 
 /**
+ * Asia/Kolkata is UTC+05:30 all year — India has never observed daylight saving —
+ * so a fixed offset is exact and, unlike Intl.DateTimeFormat, carries no runtime
+ * dependency on a full-ICU Node build.
+ */
+export const IST_OFFSET_MS = 5.5 * 3600 * 1000;
+
+/**
+ * Hour-of-day and day-of-week in Asia/Kolkata.
+ *
+ * The curve above is a *local* daily rhythm and the dashboard buckets every
+ * hourly and daily chart in Asia/Kolkata (routes/dashboard.js DEFAULT_TZ), so
+ * every caller that maps an instant onto the curve must agree on the zone.
+ * Both callers (history.js backfill, generate.js live loop) go through this one
+ * function precisely so they cannot drift apart again: reading the hour off a
+ * UTC server shifts the whole society by 5½ hours and nothing errors.
+ */
+export function istClock(date) {
+  const shifted = new Date(date.getTime() + IST_OFFSET_MS);
+  const day = shifted.getUTCDay();
+  return { hour: shifted.getUTCHours(), day, isWeekend: day === 0 || day === 6 };
+}
+
+/**
  * Exponential inter-arrival gap for a Poisson process of `rate` events/hour.
  * Clamped below at 1s so a burst can't spin the loop.
  */

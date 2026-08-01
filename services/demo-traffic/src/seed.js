@@ -63,8 +63,11 @@ async function insertRows(client, table, columns, rows) {
   return written;
 }
 
-export async function seedAll(client) {
-  assertDemoCommunity(DEMO_COMMUNITY_ID);
+export async function seedAll(client, communityId = DEMO_COMMUNITY_ID) {
+  // Asserts the resolved id (config() honours a COMMUNITY_ID override), so a
+  // misconfigured environment throws before the first DELETE rather than
+  // truncating some other tenant.
+  assertDemoCommunity(communityId);
   await client.query('BEGIN');
   try {
     for (const sql of POLL_CHILD_DELETES) {
@@ -190,10 +193,21 @@ export async function seedAll(client) {
        'start_time', 'end_time', 'status'],
       breadth.bookings);
 
+    // polls → poll_options → poll_votes: FK order, and poll_votes references
+    // both parents. The two child tables are already cleared by
+    // POLL_CHILD_DELETES above (they carry no community_id of their own).
     await insertRows(client, 'polls',
       ['id', 'community_id', 'created_by', 'author_name', 'question', 'status',
        'closes_at', 'created_at'],
       breadth.polls);
+
+    await insertRows(client, 'poll_options',
+      ['id', 'poll_id', 'label', 'position'],
+      breadth.pollOptions);
+
+    await insertRows(client, 'poll_votes',
+      ['poll_id', 'option_id', 'resident_id', 'unit_id', 'created_at'],
+      breadth.pollVotes);
 
     await insertRows(client, 'sos_alerts',
       ['id', 'community_id', 'gate_id', 'raised_by', 'raised_by_name', 'type', 'note',
@@ -253,10 +267,11 @@ export async function seedAll(client) {
 // no-op indistinguishable from a fast successful seed. See the identical fix
 // in generate.js.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { databaseUrl } = config(process.env);
+  const { databaseUrl, communityId } = config(process.env);
+  assertDemoCommunity(communityId);
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
-  const pop = await seedAll(client);
+  const pop = await seedAll(client, communityId);
   console.log(`seeded ${pop.units.length} units, ${pop.vehicles.length} vehicles`);
   await client.end();
 }

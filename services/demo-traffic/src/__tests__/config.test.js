@@ -30,6 +30,28 @@ describe('config', () => {
     expect(c.dryRun).toBe(true);
   });
 
+  it('defaults the community to the demo tenant', () => {
+    expect(config({ JWT_SECRET: 's' }).communityId).toBe(DEMO_COMMUNITY_ID);
+  });
+
+  it('rejects a COMMUNITY_ID override that is not the demo tenant', () => {
+    // The guarantee the entrypoints rely on: config() resolves the override and
+    // both seed.js and generate.js assert the *resolved* value, so a
+    // misconfigured unit throws at startup instead of writing into a real
+    // society. Passing the module constant to itself could never throw.
+    const resolved = config({
+      JWT_SECRET: 's',
+      COMMUNITY_ID: '11111111-1111-1111-1111-111111111111',
+    }).communityId;
+    expect(resolved).toBe('11111111-1111-1111-1111-111111111111');
+    expect(() => assertDemoCommunity(resolved)).toThrow(/refusing/i);
+  });
+
+  it('accepts a COMMUNITY_ID override that spells out the demo tenant', () => {
+    const resolved = config({ JWT_SECRET: 's', COMMUNITY_ID: DEMO_COMMUNITY_ID }).communityId;
+    expect(() => assertDemoCommunity(resolved)).not.toThrow();
+  });
+
   it('throws when JWT_SECRET is missing', () => {
     expect(() => config({ DATABASE_URL: 'x' })).toThrow(/JWT_SECRET/);
   });

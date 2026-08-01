@@ -24,6 +24,30 @@ const METHODS_BY_GATE = {
   service: [['manual', 45], ['qr', 30], ['anpr', 20], ['rfid', 5]],
 };
 
+/*
+ * P(direction = 'entry') per gate type.
+ *
+ * Everyone who drives in also drives out, so entries and exits have to balance
+ * over a day — the dashboard's "currently inside" tile is entries minus exits
+ * since midnight, and a structural entry surplus makes it climb to a few hundred
+ * phantom vehicles by the evening.
+ *
+ * Deriving direction from the gate's *type* (entry gate ⇒ entry) is what caused
+ * that: with gate shares 55/30/15 it yields a 62.5/37.5 split. The correction
+ * belongs in the mix rather than in making each gate 50/50 — the Main Entry is
+ * still overwhelmingly people coming in and the Exit Gate people leaving, but
+ * the main gate is also the one residents use to leave when the exit lane is
+ * queued, and the service gate (couriers, staff, vendors) leans slightly out.
+ *
+ * With the shares in config.js this comes to 49.95% entries:
+ *   0.55*0.72 + 0.30*0.12 + 0.15*0.45 = 0.4995
+ */
+const ENTRY_SHARE_BY_GATE = {
+  entry:   0.72,
+  exit:    0.12,
+  service: 0.45,
+};
+
 function weightedPick(pairs, rand) {
   const total = pairs.reduce((sum, [, w]) => sum + w, 0);
   let roll = rand() * total;
@@ -56,11 +80,7 @@ export function buildEvent({ pop, gate, at, rand }) {
     decision = decisionRoll < 0.985 ? 'allow' : decisionRoll < 0.995 ? 'guard_review' : 'deny';
   }
 
-  const direction = gate.type === 'exit'
-    ? 'exit'
-    : gate.type === 'entry'
-      ? 'entry'
-      : rand() < 0.5 ? 'entry' : 'exit';
+  const direction = rand() < (ENTRY_SHARE_BY_GATE[gate.type] ?? 0.5) ? 'entry' : 'exit';
 
   return {
     community_id: DEMO_COMMUNITY_ID,

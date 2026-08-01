@@ -293,6 +293,7 @@ function ChartHeader({ onToggle, showing }: { onToggle: () => void; showing: 'ch
 
 const METHOD_LABELS: Record<string, string> = {
   anpr: 'Number plate', fastag: 'FASTag', rfid: 'RFID card', manual: 'Guard (manual)',
+  qr: 'QR code',
   face: 'Face', fingerprint: 'Fingerprint', finger_vein: 'Finger vein', palm: 'Palm',
   password: 'PIN', card: 'Card', panel: 'Panel', auto: 'Automatic', biometric: 'Biometric',
 };

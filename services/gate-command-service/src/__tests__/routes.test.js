@@ -342,11 +342,17 @@ describe('POST /events/sync', () => {
     const commitCall = mockConn.query.mock.calls[3][0];
     expect(commitCall).toBe('COMMIT');
 
-    // Verify INSERTs reference is_offline_event (value defaults to true at the
-    // parameter level via evt.is_offline_event ?? true, not hardcoded in SQL)
-    const insertCall = mockConn.query.mock.calls[1][0];
+    // Verify INSERTs reference is_offline_event AND write the right value.
+    // The default lives at the parameter level (evt.is_offline_event ?? true),
+    // not in the SQL, so asserting only that the string mentions the column
+    // would still pass if the wrong value were bound.
+    const [insertCall, insertParams] = mockConn.query.mock.calls[1];
     expect(insertCall).toContain('is_offline_event');
     expect(insertCall).toContain('synced_at');
+    // Column order in the INSERT: is_offline_event is the 15th bind parameter,
+    // and neither posted event sets it, so both default to true.
+    expect(insertParams[14]).toBe(true);
+    expect(mockConn.query.mock.calls[2][1][14]).toBe(true);
 
     // Verify release is called
     expect(mockConn.release).toHaveBeenCalled();

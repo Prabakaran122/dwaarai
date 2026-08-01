@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import jwt from 'jsonwebtoken';
-import { deviceToken, postEvent, loadPopulation } from '../generate.js';
+import { deviceToken, postEvent, loadPopulation, connectDb } from '../generate.js';
 import { DEMO_COMMUNITY_ID, GATES } from '../config.js';
 import { buildEvent } from '../event.js';
 
@@ -39,6 +39,20 @@ describe('postEvent', () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
     const result = await postEvent({}, { apiBase: 'http://api/api/v1', token: 't', fetchImpl });
     expect(result.ok).toBe(false);
+  });
+});
+
+describe('connectDb', () => {
+  it('handles the client error event instead of letting it kill the process', () => {
+    // node-postgres emits 'error' on the Client when the backend connection
+    // drops. EventEmitter throws an unhandled 'error' event, and because it is
+    // emitted outside any await it becomes an uncaught exception — a Postgres
+    // restart would take the always-on generator down with it.
+    const onLost = vi.fn();
+    const client = connectDb('postgres://u:p@127.0.0.1:5432/db', onLost);
+    expect(client.listenerCount('error')).toBeGreaterThan(0);
+    expect(() => client.emit('error', new Error('terminating connection'))).not.toThrow();
+    expect(onLost).toHaveBeenCalledTimes(1);
   });
 });
 

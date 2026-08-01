@@ -20,6 +20,13 @@ export function assertDemoCommunity(id) {
   }
 }
 
+/**
+ * `communityId` resolves an optional COMMUNITY_ID override so that
+ * assertDemoCommunity() has something real to check. Both entrypoints assert
+ * the resolved value: without the override the assertion could only ever be
+ * handed the constant it compares against, which made it dead code and the
+ * "refuses to start against another tenant" guarantee purely notional.
+ */
 export function config(env) {
   if (!env.JWT_SECRET) throw new Error('JWT_SECRET is required');
   return {
@@ -27,5 +34,6 @@ export function config(env) {
     databaseUrl: env.DATABASE_URL || '',
     jwtSecret: env.JWT_SECRET,
     dryRun: env.DRY_RUN === 'true',
+    communityId: env.COMMUNITY_ID || DEMO_COMMUNITY_ID,
   };
 }

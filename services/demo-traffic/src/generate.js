@@ -3,7 +3,7 @@ import pg from 'pg';
 import { pathToFileURL } from 'node:url';
 import { DEMO_COMMUNITY_ID, GATES, assertDemoCommunity, config } from './config.js';
 import { buildEvent } from './event.js';
-import { ratePerHour, nextGapMs, mulberry32 } from './rhythm.js';
+import { ratePerHour, nextGapMs, mulberry32, istClock } from './rhythm.js';
 import { newDelivery, newPass, insertTrickle } from './trickle.js';
 import { buildPopulation } from './population.js';
 
@@ -95,9 +95,34 @@ function pickGate(rand) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// How long to wait before trying to re-open a dropped database connection.
+const DB_RETRY_MS = 60 * 1000;
+
+/**
+ * A pg.Client with an 'error' listener attached.
+ *
+ * node-postgres emits 'error' on the Client whenever the backend connection
+ * drops — a Postgres restart, a network blip, an idle-session timeout. An
+ * 'error' event with no listener is thrown by EventEmitter and, being emitted
+ * asynchronously outside any await, becomes an uncaught exception that kills
+ * the process. The generator is a long-running always-on feed; it must outlive
+ * a database restart, so the listener logs and notifies the caller instead.
+ */
+export function connectDb(databaseUrl, onLost) {
+  const client = new pg.Client({ connectionString: databaseUrl });
+  client.on('error', (err) => {
+    console.error('[demo-traffic] database connection lost:', err.message);
+    onLost(err);
+  });
+  return client;
+}
+
 async function main() {
-  const { apiBase, jwtSecret, databaseUrl, dryRun } = config(process.env);
-  assertDemoCommunity(DEMO_COMMUNITY_ID);
+  const { apiBase, jwtSecret, databaseUrl, dryRun, communityId } = config(process.env);
+  // Assert the *resolved* id, not the module constant: COMMUNITY_ID can be
+  // overridden from the environment, and a misconfigured unit must fail loudly
+  // here rather than have this process write traffic into a real society.
+  assertDemoCommunity(communityId);
 
   // Load the society from the database, NOT from buildPopulation(): ids are
   // minted per-run, so a rebuilt population would reference rows that were
@@ -108,8 +133,16 @@ async function main() {
   // The `!db && !dryRun` guard below makes that a structural impossibility
   // rather than a convention someone could accidentally violate — buildPopulation
   // is only reachable when dryRun is true and there is no db to write ids into.
-  const db = databaseUrl ? new pg.Client({ connectionString: databaseUrl }) : null;
-  if (db) await db.connect();
+  //
+  // The database is used *only* for the delivery/visitor trickle. Gate traffic
+  // goes out over HTTP and needs no database at all, so a dead Postgres pauses
+  // the trickle and nothing else — see the loop below.
+  let dbUp = false;
+  let db = databaseUrl ? connectDb(databaseUrl, () => { dbUp = false; }) : null;
+  if (db) {
+    await db.connect();
+    dbUp = true;
+  }
   if (!db && !dryRun) {
     throw new Error('DATABASE_URL is required unless DRY_RUN=true');
   }
@@ -121,6 +154,7 @@ async function main() {
 
   let tokens = Object.fromEntries(GATES.map((g) => [g.id, deviceToken(g.id, jwtSecret)]));
   let tokensMintedAt = Date.now();
+  let nextDbRetryAt = 0;
 
   console.log(`[demo-traffic] started — ${dryRun ? 'DRY RUN' : apiBase}`);
 
@@ -131,8 +165,11 @@ async function main() {
     }
 
     const now = new Date();
-    const day = now.getDay();
-    const rate = ratePerHour(now.getHours(), day === 0 || day === 6);
+    // Asia/Kolkata, never the server's zone: the box runs on UTC and the
+    // dashboard buckets in IST, so a local-time read would put the morning
+    // peak on screen at half past one in the afternoon.
+    const { hour, isWeekend } = istClock(now);
+    const rate = ratePerHour(hour, isWeekend);
     const gate = pickGate(rand);
     const payload = buildEvent({ pop, gate, at: now, rand });
 
@@ -143,12 +180,30 @@ async function main() {
       logPostResult(result);
     }
 
+    // A dropped connection cannot be re-opened on the same pg.Client, so build a
+    // fresh one, at most once a minute. Failing to reconnect is logged and
+    // shrugged off — the gate feed above has already been posted regardless.
+    if (databaseUrl && !dbUp && Date.now() >= nextDbRetryAt) {
+      nextDbRetryAt = Date.now() + DB_RETRY_MS;
+      db.end().catch(() => {});                       // best effort on the dead one
+      db = connectDb(databaseUrl, () => { dbUp = false; });
+      try {
+        await db.connect();
+        dbUp = true;
+        console.log('[demo-traffic] database reconnected — trickle resumed');
+      } catch (err) {
+        console.error('[demo-traffic] database reconnect failed:', err.message);
+      }
+    }
+
     // A few parcels and visitor passes an hour, independent of gate traffic.
-    if (db && rand() < 0.03) {
+    // Skipped entirely while the database is down: this is the only part of the
+    // loop that needs it, and gate events must keep flowing without it.
+    if (db && dbUp && rand() < 0.03) {
       await insertTrickle(db, newDelivery(pop, rand, now), 'deliveries').catch((e) =>
         console.error('[demo-traffic] delivery insert failed:', e.message));
     }
-    if (db && rand() < 0.02) {
+    if (db && dbUp && rand() < 0.02) {
       const pass = newPass(pop, rand, now);
       if (pass) {
         await insertTrickle(db, pass, 'visitor_passes').catch((e) =>

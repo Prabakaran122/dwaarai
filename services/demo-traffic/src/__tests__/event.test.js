@@ -65,6 +65,40 @@ describe('buildEvent', () => {
     }
   });
 
+  it('balances entries against exits over a full day of traffic', () => {
+    // The dashboard's occupancy tile is entries minus exits since midnight, so a
+    // structural entry surplus makes "currently inside" climb all day. Sample the
+    // gates in their real proportions rather than round-robin.
+    const rand = mulberry32(28);
+    const counts = { entry: 0, exit: 0 };
+    const n = 30000;
+    for (let i = 0; i < n; i++) {
+      let roll = rand();
+      let gate = GATES[GATES.length - 1];
+      for (const g of GATES) {
+        roll -= g.share;
+        if (roll <= 0) { gate = g; break; }
+      }
+      counts[buildEvent({ pop, gate, at: new Date(), rand }).direction]++;
+    }
+    const entryShare = counts.entry / n;
+    expect(entryShare).toBeGreaterThan(0.47);
+    expect(entryShare).toBeLessThan(0.53);
+  });
+
+  it('keeps each gate plausible: the main gate lets people in, the exit gate out', () => {
+    const share = (gate) => {
+      const rand = mulberry32(29);
+      let entries = 0;
+      for (let i = 0; i < 5000; i++) {
+        if (buildEvent({ pop, gate, at: new Date(), rand }).direction === 'entry') entries++;
+      }
+      return entries / 5000;
+    };
+    expect(share(GATES.find((g) => g.type === 'entry'))).toBeGreaterThan(0.6);
+    expect(share(GATES.find((g) => g.type === 'exit'))).toBeLessThan(0.25);
+  });
+
   it('resolves known vehicles to their unit and resident', () => {
     const rand = mulberry32(27);
     let matched = 0;
