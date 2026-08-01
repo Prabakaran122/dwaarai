@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import jwt from 'jsonwebtoken';
-import { deviceToken, postEvent } from '../generate.js';
+import { deviceToken, postEvent, loadPopulation } from '../generate.js';
 import { DEMO_COMMUNITY_ID, GATES } from '../config.js';
+import { buildEvent } from '../event.js';
 
 describe('deviceToken', () => {
   it('mints a token the device middleware will accept', () => {
@@ -38,5 +39,47 @@ describe('postEvent', () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
     const result = await postEvent({}, { apiBase: 'http://api/api/v1', token: 't', fetchImpl });
     expect(result.ok).toBe(false);
+  });
+});
+
+describe('loadPopulation', () => {
+  it('reads real ids back out of the database in the shape buildEvent expects', async () => {
+    // Important 4: this is the test that would have caught Critical 1 — a fake
+    // client returning canned rows in the *real* column-alias shape (including
+    // `status`, which an earlier draft of the units query forgot to select).
+    const fakeClient = {
+      query: vi.fn()
+        .mockResolvedValueOnce({
+          rows: [{ id: 'unit-1', unitNumber: 'A-101', status: 'occupied' }],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            { id: 'res-1', unitId: 'unit-1', name: 'Rajesh Sharma', type: 'owner', isPrimary: true },
+            { id: 'guard-1', unitId: null, name: 'Ram Kishan', type: 'guard', isPrimary: false },
+          ],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ id: 'veh-1', unitId: 'unit-1', residentId: 'res-1', plate: 'HR26AB1234' }],
+        }),
+    };
+
+    const pop = await loadPopulation(fakeClient);
+
+    expect(pop.units).toEqual([{ id: 'unit-1', unitNumber: 'A-101', status: 'occupied' }]);
+    expect(pop.vehicles).toHaveLength(1);
+    expect(pop.guards).toHaveLength(1);
+    expect(pop.residents).toHaveLength(1);
+
+    // A rand() pinned low always resolves the single-entry lists to their one
+    // element and keeps the vehicle "known" (< 0.88), so buildEvent should be
+    // able to fully resolve the match chain from ids that actually came from
+    // the fake "database" rows above.
+    const rand = () => 0.1;
+    const event = buildEvent({ pop, gate: GATES[0], at: new Date(), rand });
+
+    expect(event.matched_vehicle_id).toBe('veh-1');
+    expect(event.matched_unit_id).toBe('unit-1');
+    expect(event.matched_unit_number).toBe('A-101');
+    expect(event.resident_name).toBe('Rajesh Sharma');
   });
 });

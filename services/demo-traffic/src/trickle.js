@@ -16,6 +16,14 @@ function occupiedUnit(pop, rand) {
   return pick(occupied, rand);
 }
 
+// Units carrying `status: undefined` (a query that forgot to select it) must
+// not silently pass the `!== 'vacant'` filter above. Defense in depth: even if
+// occupiedUnit somehow returns a unit with no resident, callers below must not
+// dereference undefined — the query and the caller are each safe alone.
+function primaryResidentOf(pop, unit) {
+  return pop.residents.find((r) => r.unitId === unit.id && r.isPrimary);
+}
+
 export function newDelivery(pop, rand, now) {
   const unit = occupiedUnit(pop, rand);
   const guard = pick(pop.guards, rand);
@@ -27,16 +35,38 @@ export function newDelivery(pop, rand, now) {
     unit_id: unit.id,
     company: pick(COURIERS, rand),
     note: `Parcel held at gate for ${unit.unitNumber}`,
-    status: 'pending',
+    // Real vocabulary is 'waiting' | 'delivered' | 'left_at_gate' — every
+    // consumer (deliveries.js, dashboard.js, handover.js, resident-home.js)
+    // filters status = 'waiting' for parcels still at the desk.
+    status: 'waiting',
     logged_by: guard.id,
     logged_by_name: guard.name,
     created_at: now.toISOString(),
   };
 }
 
+/**
+ * Pick an occupied unit that actually has a primary resident to attribute the
+ * pass to. Tries a bounded number of times before giving up, rather than
+ * trusting a single draw + `.status` filter to always line up with the
+ * residents array (see Critical 1: a unit whose `status` came back undefined
+ * from an incomplete query would otherwise pass the vacancy filter and have
+ * no residents, crashing on a synchronous throw that no `.catch` can see).
+ */
+function occupiedUnitWithHost(pop, rand) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const unit = occupiedUnit(pop, rand);
+    if (!unit) return null;
+    const host = primaryResidentOf(pop, unit);
+    if (host) return { unit, host };
+  }
+  return null;
+}
+
 export function newPass(pop, rand, now) {
-  const unit = occupiedUnit(pop, rand);
-  const host = pop.residents.find((r) => r.unitId === unit.id && r.isPrimary);
+  const found = occupiedUnitWithHost(pop, rand);
+  if (!found) return null;
+  const { unit, host } = found;
   const otp = String(Math.floor(rand() * 900000) + 100000);
   return {
     id: randomUUID(),

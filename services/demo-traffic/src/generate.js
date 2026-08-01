@@ -1,9 +1,11 @@
 import jwt from 'jsonwebtoken';
 import pg from 'pg';
+import { pathToFileURL } from 'node:url';
 import { DEMO_COMMUNITY_ID, GATES, assertDemoCommunity, config } from './config.js';
 import { buildEvent } from './event.js';
 import { ratePerHour, nextGapMs, mulberry32 } from './rhythm.js';
 import { newDelivery, newPass, insertTrickle } from './trickle.js';
+import { buildPopulation } from './population.js';
 
 const TOKEN_TTL_SECONDS = 24 * 3600;
 const TOKEN_REFRESH_MS = 12 * 3600 * 1000;
@@ -17,7 +19,7 @@ const TOKEN_REFRESH_MS = 12 * 3600 * 1000;
  */
 export async function loadPopulation(client) {
   const { rows: units } = await client.query(
-    `SELECT id, unit_number AS "unitNumber" FROM units WHERE community_id = $1`,
+    `SELECT id, unit_number AS "unitNumber", status FROM units WHERE community_id = $1`,
     [DEMO_COMMUNITY_ID]
   );
   const { rows: residents } = await client.query(
@@ -61,6 +63,27 @@ export async function postEvent(payload, { apiBase, token, fetchImpl = fetch }) 
   }
 }
 
+// Rate-limits the "posts are failing" log so a sustained API outage cannot
+// flood the systemd journal: log the first failure, then at most one line per
+// minute, and log once when posting recovers.
+const FAILURE_LOG_INTERVAL_MS = 60 * 1000;
+let lastFailureLogAt = 0;
+let wasFailing = false;
+
+function logPostResult(result) {
+  if (!result.ok) {
+    const now = Date.now();
+    if (!wasFailing || now - lastFailureLogAt >= FAILURE_LOG_INTERVAL_MS) {
+      console.error(`[demo-traffic] event post failed — status ${result.status}`);
+      lastFailureLogAt = now;
+    }
+    wasFailing = true;
+  } else if (wasFailing) {
+    console.log('[demo-traffic] event posting recovered');
+    wasFailing = false;
+  }
+}
+
 function pickGate(rand) {
   let roll = rand();
   for (const gate of GATES) {
@@ -79,10 +102,19 @@ async function main() {
   // Load the society from the database, NOT from buildPopulation(): ids are
   // minted per-run, so a rebuilt population would reference rows that were
   // never inserted. See the amendment note in this task.
-  const db = new pg.Client({ connectionString: databaseUrl });
-  await db.connect();
-  const pop = await loadPopulation(db);
-  if (!pop.vehicles.length) {
+  //
+  // The one exception: a standalone DRY_RUN with no DATABASE_URL, where nothing
+  // is ever posted or inserted, so a mismatched id can never leave this process.
+  // The `!db && !dryRun` guard below makes that a structural impossibility
+  // rather than a convention someone could accidentally violate — buildPopulation
+  // is only reachable when dryRun is true and there is no db to write ids into.
+  const db = databaseUrl ? new pg.Client({ connectionString: databaseUrl }) : null;
+  if (db) await db.connect();
+  if (!db && !dryRun) {
+    throw new Error('DATABASE_URL is required unless DRY_RUN=true');
+  }
+  const pop = db ? await loadPopulation(db) : buildPopulation(2043);
+  if (db && !pop.vehicles.length) {
     throw new Error('no vehicles found for the demo community — run src/seed.js first');
   }
   const rand = mulberry32(Date.now() % 2 ** 31);
@@ -107,7 +139,8 @@ async function main() {
     if (dryRun) {
       console.log(JSON.stringify(payload));
     } else {
-      await postEvent(payload, { apiBase, token: tokens[gate.id] });
+      const result = await postEvent(payload, { apiBase, token: tokens[gate.id] });
+      logPostResult(result);
     }
 
     // A few parcels and visitor passes an hour, independent of gate traffic.
@@ -116,15 +149,22 @@ async function main() {
         console.error('[demo-traffic] delivery insert failed:', e.message));
     }
     if (db && rand() < 0.02) {
-      await insertTrickle(db, newPass(pop, rand, now), 'visitor_passes').catch((e) =>
-        console.error('[demo-traffic] pass insert failed:', e.message));
+      const pass = newPass(pop, rand, now);
+      if (pass) {
+        await insertTrickle(db, pass, 'visitor_passes').catch((e) =>
+          console.error('[demo-traffic] pass insert failed:', e.message));
+      }
     }
 
     await sleep(nextGapMs(rate, rand));
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL handles Windows drive-letter paths and backslashes correctly;
+// a plain `file://${process.argv[1]}` string comparison silently never matches
+// on Windows (backslashes, missing extra leading slash), so `main()` would
+// never run when this file is executed directly.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => {
     console.error('[demo-traffic] fatal:', err);
     process.exit(1);
