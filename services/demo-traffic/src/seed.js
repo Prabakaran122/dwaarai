@@ -218,12 +218,12 @@ export async function seedAll(client) {
       const values = [];
       const params = [];
       batch.forEach((e, n) => {
-        const b = n * 14;
-        values.push(`($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9},$${b+10},$${b+11},$${b+12},$${b+13},$${b+14})`);
+        const b = n * 15;
+        values.push(`($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9},$${b+10},$${b+11},$${b+12},$${b+13},$${b+14},$${b+15})`);
         params.push(
           randomUUID(), e.community_id, e.gate_id, e.detection_method, e.raw_value,
           e.matched_vehicle_id, e.matched_unit_id, e.matched_unit_number,
-          e.resident_name, e.access_decision, e.deny_reason, e.anpr_confidence,
+          e.resident_name, e.access_decision, e.direction, e.deny_reason, e.anpr_confidence,
           e.processing_ms, e.event_ts
         );
       });
@@ -231,7 +231,7 @@ export async function seedAll(client) {
         `INSERT INTO gate_events
            (id, community_id, gate_id, detection_method, raw_value,
             matched_vehicle_id, matched_unit_id, matched_unit_number,
-            resident_name, access_decision, deny_reason, anpr_confidence,
+            resident_name, access_decision, direction, deny_reason, anpr_confidence,
             processing_ms, event_ts)
          VALUES ${values.join(',')}`,
         params
