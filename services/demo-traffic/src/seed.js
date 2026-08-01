@@ -7,13 +7,12 @@
  * transaction, so a re-run either replaces the tenant completely or leaves it
  * exactly as it was.
  */
+import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { DEMO_COMMUNITY_ID, GATES, assertDemoCommunity, config } from './config.js';
 import { buildPopulation } from './population.js';
 import { buildBreadth } from './breadth.js';
-// import { buildHistory } from './history.js';
-//   ^ Task 8 adds history.js. Importing it before it exists would make this
-//     module unloadable, so the wiring lands with that task.
+import { buildHistory } from './history.js';
 import { mulberry32 } from './rhythm.js';
 
 const SEED = 2043;
@@ -212,6 +211,32 @@ export async function seedAll(client) {
     await insertRows(client, 'shift_handovers',
       ['id', 'community_id', 'gate_id', 'guard_id', 'guard_name', 'note', 'created_at'],
       breadth.handovers);
+
+    const history = buildHistory({ pop, days: 10, until: new Date(), rand: mulberry32(SEED + 2) });
+    for (let i = 0; i < history.length; i += 500) {
+      const batch = history.slice(i, i + 500);
+      const values = [];
+      const params = [];
+      batch.forEach((e, n) => {
+        const b = n * 14;
+        values.push(`($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9},$${b+10},$${b+11},$${b+12},$${b+13},$${b+14})`);
+        params.push(
+          randomUUID(), e.community_id, e.gate_id, e.detection_method, e.raw_value,
+          e.matched_vehicle_id, e.matched_unit_id, e.matched_unit_number,
+          e.resident_name, e.access_decision, e.deny_reason, e.anpr_confidence,
+          e.processing_ms, e.event_ts
+        );
+      });
+      await client.query(
+        `INSERT INTO gate_events
+           (id, community_id, gate_id, detection_method, raw_value,
+            matched_vehicle_id, matched_unit_id, matched_unit_number,
+            resident_name, access_decision, deny_reason, anpr_confidence,
+            processing_ms, event_ts)
+         VALUES ${values.join(',')}`,
+        params
+      );
+    }
 
     await client.query('COMMIT');
     return pop;
