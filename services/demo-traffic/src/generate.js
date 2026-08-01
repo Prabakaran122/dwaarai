@@ -3,6 +3,7 @@ import pg from 'pg';
 import { DEMO_COMMUNITY_ID, GATES, assertDemoCommunity, config } from './config.js';
 import { buildEvent } from './event.js';
 import { ratePerHour, nextGapMs, mulberry32 } from './rhythm.js';
+import { newDelivery, newPass, insertTrickle } from './trickle.js';
 
 const TOKEN_TTL_SECONDS = 24 * 3600;
 const TOKEN_REFRESH_MS = 12 * 3600 * 1000;
@@ -107,6 +108,16 @@ async function main() {
       console.log(JSON.stringify(payload));
     } else {
       await postEvent(payload, { apiBase, token: tokens[gate.id] });
+    }
+
+    // A few parcels and visitor passes an hour, independent of gate traffic.
+    if (db && rand() < 0.03) {
+      await insertTrickle(db, newDelivery(pop, rand, now), 'deliveries').catch((e) =>
+        console.error('[demo-traffic] delivery insert failed:', e.message));
+    }
+    if (db && rand() < 0.02) {
+      await insertTrickle(db, newPass(pop, rand, now), 'visitor_passes').catch((e) =>
+        console.error('[demo-traffic] pass insert failed:', e.message));
     }
 
     await sleep(nextGapMs(rate, rand));
