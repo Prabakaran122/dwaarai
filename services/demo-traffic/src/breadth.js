@@ -18,17 +18,29 @@ import { randomPlate } from './plates.js';
 const COURIERS = ['Amazon', 'Flipkart', 'Blinkit', 'Zepto', 'Swiggy Instamart',
                   'Zomato', 'BigBasket', 'Delhivery', 'Blue Dart'];
 
+/*
+ * [category, title, body].
+ *
+ * `category` is exactly 'official' | 'discussion' — migration 014 and the zod
+ * enum at services/api-gateway/src/routes/notices.js:13 admit nothing else. The
+ * topical framing (maintenance / event / security) therefore lives in the title
+ * and body rather than in a column of its own.
+ *
+ * The board sorts pinned official notices first, so the pinned seed is official.
+ */
 const NOTICE_SEEDS = [
-  ['maintenance', 'Water tanker schedule revised',
+  ['official', 'Maintenance: water tanker schedule revised',
    'Tankers will now arrive at 7:00 AM and 5:30 PM daily until the HUDA supply line is restored.'],
-  ['event', 'Annual General Meeting — 9 August',
+  ['official', 'Annual General Meeting — 9 August',
    'The AGM will be held in the clubhouse at 11:00 AM. Agenda: maintenance revision, security audit, parking policy.'],
-  ['security', 'Visitor entry now requires OTP verification',
+  ['official', 'Security: visitor entry now requires OTP verification',
    'All visitors must be approved through the resident app. Guards will not admit anyone on a phone call alone.'],
-  ['event', 'Diwali celebration — cultural evening',
-   'Cultural programme in the central lawn from 6 PM. Residents are requested to park in the basement.'],
-  ['maintenance', 'Lift servicing in Tower C',
-   'Tower C lift will be unavailable on Sunday between 10 AM and 2 PM for its annual service.'],
+  ['discussion', 'Diwali cultural evening — who is volunteering?',
+   'Cultural programme in the central lawn from 6 PM, and residents are requested to park in the basement. '
+   + 'Anyone willing to help with the decoration and the children’s events, please reply on this thread.'],
+  ['discussion', 'Lift servicing in Tower C — can we move it off Sunday?',
+   'The Tower C lift will be unavailable on Sunday between 10 AM and 2 PM for its annual service. '
+   + 'Sunday is when most of us have guests over — could the RWA ask the vendor for a weekday slot instead?'],
 ];
 
 const INCIDENT_SEEDS = [
@@ -92,23 +104,23 @@ const HANDOVER_NOTES = [
 ];
 
 /*
- * Status vocabularies, hoisted so they are one edit away.
+ * Status vocabularies, taken from the API rather than invented here. The routes
+ * are the source of truth — seeding anything else inserts cleanly (there are no
+ * CHECK constraints) but renders as an empty page, which is the one outcome this
+ * whole module exists to prevent.
  *
- * These are the values the task brief specifies. Two of them do NOT match what
- * the running platform reads back, so the corresponding pages will look empty
- * until these are flipped:
- *   - services/api-gateway/src/routes/deliveries.js filters `status = 'waiting'`
- *     for the guard's active-delivery list and the resident home badge, and only
- *     accepts 'delivered' | 'left_at_gate' as terminal states.
- *   - services/api-gateway/src/routes/facilities.js filters `status = 'booked'`
- *     for slot availability; the uniq_facility_slot index is partial on it too.
- * Likewise notices.category is 'official' | 'discussion' in migration 014 and in
- * the zod enum in routes/notices.js — the topical categories below are seeded as
- * given but are off-contract.
+ *   - deliveries: services/api-gateway/src/routes/deliveries.js filters
+ *     `status = 'waiting'` for the guard's active-delivery list (:125) and
+ *     validates the terminal states as 'delivered' | 'left_at_gate' (:170).
+ *   - facility_bookings: services/api-gateway/src/routes/facilities.js filters
+ *     `status = 'booked'` for slot availability (:64, :146, :241, :255), and the
+ *     uniq_facility_slot index is partial on that same value.
+ *
+ * breadth.test.js pins all three so a future edit cannot quietly drift off them.
  */
-const DELIVERY_PENDING = 'pending';    // platform reads 'waiting'
-const DELIVERY_DONE = 'collected';     // platform writes 'delivered'
-const BOOKING_STATUS = 'confirmed';    // platform reads 'booked'
+const DELIVERY_WAITING = 'waiting';    // still at the desk — what the guard screen lists
+const DELIVERY_DONE = 'delivered';     // handed over
+const BOOKING_STATUS = 'booked';
 
 const HOUR_MS = 3600 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -206,13 +218,17 @@ export function buildBreadth(pop, rand, now) {
   }
 
   // ---- deliveries: 60 over the last three days ------------------------------
+  // Every fourth one is left 'waiting' — 15 parcels still at the desk, which is
+  // what the guard's active-delivery list and the resident home badge read. The
+  // other 45 are 'delivered'. Waiting parcels are all from today: a courier drop
+  // still unclaimed after three days would look like a stuck demo, not a busy one.
   const deliveries = [];
   for (let i = 0; i < 60; i++) {
     const unit = pick(livedIn, rand);
     const guard = pick(pop.guards, rand);
-    const collected = rand() < 0.7;
+    const waiting = i % 4 === 0;
     // Couriers arrive across the working day, not uniformly around the clock.
-    const daysAgo = Math.floor(rand() * 3);
+    const daysAgo = waiting ? 0 : Math.floor(rand() * 3);
     const at = t - daysAgo * DAY_MS - (Math.floor(rand() * 11) + 1) * HOUR_MS;
     deliveries.push({
       id: randomUUID(),
@@ -221,7 +237,7 @@ export function buildBreadth(pop, rand, now) {
       unit_id: unit.id,
       company: pick(COURIERS, rand),
       note: rand() < 0.5 ? pick(DELIVERY_NOTES, rand) : null,
-      status: collected ? DELIVERY_DONE : DELIVERY_PENDING,
+      status: waiting ? DELIVERY_WAITING : DELIVERY_DONE,
       logged_by: guard.id,
       logged_by_name: guard.name,
       created_at: iso(at),
@@ -249,6 +265,7 @@ export function buildBreadth(pop, rand, now) {
   // ---- notices --------------------------------------------------------------
   const committee = pop.residents.filter((r) => r.isCommittee);
   const notices = NOTICE_SEEDS.map(([category, title, body], i) => {
+    const official = category === 'official';
     const author = committee.length ? committee[i % committee.length] : pop.residents[i];
     const authorUnit = pop.units.find((u) => u.id === author.unitId);
     const created = t - (i + 1) * 2 * DAY_MS;
@@ -258,9 +275,11 @@ export function buildBreadth(pop, rand, now) {
       category,
       title,
       body,
-      author_name: author.name,
-      author_unit: authorUnit ? authorUnit.unitNumber : null,
-      posted_by_role: 'admin',
+      // routes/notices.js:114 posts 'official' as the RWA and 'discussion' as a
+      // resident, and migration 014 notes author_unit is NULL on an RWA post.
+      author_name: official ? 'RWA Office' : author.name,
+      author_unit: official ? null : (authorUnit ? authorUnit.unitNumber : null),
+      posted_by_role: official ? 'admin' : 'resident',
       is_pinned: i === 0,
       is_removed: false,
       created_at: iso(created),
