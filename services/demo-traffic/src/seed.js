@@ -8,6 +8,7 @@
  * exactly as it was.
  */
 import { randomUUID } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import pg from 'pg';
 import { DEMO_COMMUNITY_ID, GATES, assertDemoCommunity, config } from './config.js';
 import { buildPopulation } from './population.js';
@@ -246,7 +247,12 @@ export async function seedAll(client) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL handles Windows drive-letter paths and backslashes correctly;
+// a plain `file://${process.argv[1]}` string comparison silently never matches
+// on Windows, so `node src/seed.js` would invoke nothing and exit 0 — a silent
+// no-op indistinguishable from a fast successful seed. See the identical fix
+// in generate.js.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { databaseUrl } = config(process.env);
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
