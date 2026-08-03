@@ -174,6 +174,35 @@ export const translations: Dict = {
 
   // Nazar — unbuilt tab placeholder
   comingInThisRedesign: { en: 'Coming in this redesign', hi: 'इस नए डिज़ाइन में जल्द आ रहा है', kn: 'ಈ ಮರುವಿನ್ಯಾಸದಲ್ಲಿ ಶೀಘ್ರದಲ್ಲಿ ಬರಲಿದೆ' },
+
+  // New vehicle entry intake (NAZ-019..029)
+  plateNotFoundWarning: { en: 'Plate not found in registry — do not allow entry without logging', hi: 'प्लेट रजिस्ट्री में नहीं मिली — बिना दर्ज किए प्रवेश न दें', kn: 'ಪ್ಲೇಟ್ ನೋಂದಣಿಯಲ್ಲಿ ಕಂಡುಬಂದಿಲ್ಲ — ದಾಖಲಿಸದೆ ಪ್ರವೇಶ ನೀಡಬೇಡಿ' },
+  plateNumber: { en: 'Plate number', hi: 'प्लेट नंबर', kn: 'ಪ್ಲೇಟ್ ಸಂಖ್ಯೆ' },
+  vehicleType: { en: 'Vehicle type', hi: 'वाहन प्रकार', kn: 'ವಾಹನ ಪ್ರಕಾರ' },
+  vehicleTypeCar: { en: 'Car/SUV', hi: 'कार/एसयूवी', kn: 'ಕಾರ್/ಎಸ್‌ಯುವಿ' },
+  vehicleTypeTwoWheeler: { en: 'Two-wheeler', hi: 'दोपहिया', kn: 'ದ್ವಿಚಕ್ರ ವಾಹನ' },
+  vehicleTypeGoods: { en: 'Goods vehicle', hi: 'माल वाहन', kn: 'ಸರಕು ವಾಹನ' },
+  vehicleTypeOther: { en: 'Other', hi: 'अन्य', kn: 'ಇತರೆ' },
+  purposeOfVisit: { en: 'Purpose of visit', hi: 'यात्रा का उद्देश्य', kn: 'ಭೇಟಿಯ ಉದ್ದೇಶ' },
+  purposeDelivery: { en: 'Delivery', hi: 'डिलीवरी', kn: 'ಡೆಲಿವರಿ' },
+  purposeGuestVisit: { en: 'Guest visit', hi: 'अतिथि यात्रा', kn: 'ಅತಿಥಿ ಭೇಟಿ' },
+  purposeService: { en: 'Service', hi: 'सेवा', kn: 'ಸೇವೆ' },
+  purposeContractor: { en: 'Contractor', hi: 'ठेकेदार', kn: 'ಗುತ್ತಿಗೆದಾರ' },
+  purposeOther: { en: 'Other', hi: 'अन्य', kn: 'ಇತರೆ' },
+  takePhoto: { en: 'Take photo', hi: 'फ़ोटो लें', kn: 'ಫೋಟೋ ತೆಗೆಯಿರಿ' },
+  retakePhoto: { en: 'Retake photo', hi: 'फिर से फ़ोटो लें', kn: 'ಮತ್ತೆ ಫೋಟೋ ತೆಗೆಯಿರಿ' },
+  next: { en: 'Next', hi: 'आगे', kn: 'ಮುಂದೆ' },
+  back: { en: 'Back', hi: 'पीछे', kn: 'ಹಿಂದೆ' },
+  searchUnitPlaceholder: { en: 'Search unit number or resident name', hi: 'यूनिट नंबर या निवासी का नाम खोजें', kn: 'ಯೂನಿಟ್ ಸಂಖ್ಯೆ ಅಥವಾ ನಿವಾಸಿಯ ಹೆಸರು ಹುಡುಕಿ' },
+  noUnitsFound: { en: 'No matching units', hi: 'कोई मिलती यूनिट नहीं', kn: 'ಹೊಂದಾಣಿಕೆಯ ಯೂನಿಟ್ ಇಲ್ಲ' },
+  sendForApproval: { en: 'Send for approval', hi: 'स्वीकृति हेतु भेजें', kn: 'ಅನುಮೋದನೆಗೆ ಕಳುಹಿಸಿ' },
+  awaitingApproval: { en: 'Awaiting resident approval', hi: 'निवासी की स्वीकृति की प्रतीक्षा', kn: 'ನಿವಾಸಿಯ ಅನುಮೋದನೆಗಾಗಿ ಕಾಯಲಾಗುತ್ತಿದೆ' },
+  residentApproved: { en: 'Resident approved', hi: 'निवासी ने स्वीकृत किया', kn: 'ನಿವಾಸಿ ಅನುಮೋದಿಸಿದ್ದಾರೆ' },
+  residentDenied: { en: 'Resident denied', hi: 'निवासी ने अस्वीकृत किया', kn: 'ನಿವಾಸಿ ನಿರಾಕರಿಸಿದ್ದಾರೆ' },
+  noResponseCallResident: { en: 'No response — call the resident directly', hi: 'कोई प्रतिक्रिया नहीं — निवासी को सीधे कॉल करें', kn: 'ಪ್ರತಿಕ್ರಿಯೆ ಇಲ್ಲ — ನಿವಾಸಿಗೆ ನೇರವಾಗಿ ಕರೆ ಮಾಡಿ' },
+  callResident: { en: 'Call resident', hi: 'निवासी को कॉल करें', kn: 'ನಿವಾಸಿಗೆ ಕರೆ ಮಾಡಿ' },
+  allowEntry: { en: 'Allow entry', hi: 'प्रवेश की अनुमति दें', kn: 'ಪ್ರವೇಶ ಅನುಮತಿಸಿ' },
+  holdVehicle: { en: 'Hold vehicle', hi: 'वाहन रोकें', kn: 'ವಾಹನ ತಡೆಹಿಡಿಯಿರಿ' },
 };
 
 export function translate(key: string, lang: Lang): string {

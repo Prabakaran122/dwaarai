@@ -105,9 +105,22 @@ export const createApproval = (data: {
   visitor_name: string;
   vehicle_plate?: string;
   gate_id: string;
-}) => api.post('/approvals', data);
+  vehicle_type?: string;
+  purpose?: string;
+  photoUri?: string;
+}) => {
+  const { photoUri, ...fields } = data;
+  if (!photoUri) return api.post('/approvals', fields);
+  const form = new FormData();
+  Object.entries(fields).forEach(([k, v]) => { if (v !== undefined) form.append(k, String(v)); });
+  form.append('photo', { uri: photoUri, name: 'vehicle.jpg', type: 'image/jpeg' } as any);
+  return api.post('/approvals', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
 
 export const getApproval = (id: string) => api.get(`/approvals/${id}`);
+
+// Unit/resident lookup (new-vehicle-entry + walk-in-visitor intake)
+export const lookupUnits = (q: string) => api.get('/units/lookup', { params: { q } });
 
 // Expected visits (recurring visitors)
 export const getExpectedVisits = (date?: string) =>
