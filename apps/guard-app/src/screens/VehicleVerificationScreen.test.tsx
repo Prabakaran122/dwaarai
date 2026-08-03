@@ -104,12 +104,12 @@ describe('VehicleVerificationScreen', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('Deny sends the deny command, clears the entry, and closes', async () => {
+  it('Deny sends close (the backend has no separate "deny" action), clears the entry, and closes', async () => {
     (api.sendGateCommand as jest.Mock).mockResolvedValue({});
     const onClose = jest.fn();
     const { getByTestId } = render(<VehicleVerificationScreen entry={matchedEntry} onClose={onClose} />);
     fireEvent.press(getByTestId('deny-button'));
-    await waitFor(() => expect(api.sendGateCommand).toHaveBeenCalledWith('g1', 'deny'));
+    await waitFor(() => expect(api.sendGateCommand).toHaveBeenCalledWith('g1', 'close'));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

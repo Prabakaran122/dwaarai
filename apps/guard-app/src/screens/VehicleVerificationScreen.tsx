@@ -70,7 +70,10 @@ export default function VehicleVerificationScreen({ entry, onClose }: Props) {
     }
   };
 
-  const finish = async (action: 'open' | 'deny') => {
+  // The backend's gate-command action enum has no separate "deny" value
+  // (open/close/hold_open/evacuate/restore/lockdown) -- denying a vehicle is
+  // just "close" (or a no-op if the barrier never opened).
+  const finish = async (action: 'open' | 'close') => {
     if (!gateId) return;
     setActionLoading(true);
     try {
@@ -180,7 +183,7 @@ export default function VehicleVerificationScreen({ entry, onClose }: Props) {
             <Text style={styles.overrideText}>Override and flag for review</Text>
           </Pressable>
         )}
-        <Pressable testID="deny-button" style={styles.denyBtn} onPress={() => finish('deny')} disabled={actionLoading}>
+        <Pressable testID="deny-button" style={styles.denyBtn} onPress={() => finish('close')} disabled={actionLoading}>
           <Text style={styles.denyText}>Deny</Text>
         </Pressable>
       </View>
