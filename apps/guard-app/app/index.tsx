@@ -1,16 +1,18 @@
 import React, { useEffect } from 'react';
-import { ActivityIndicator } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { ActivityIndicator, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../src/store/authStore';
 import { useQueueStore, type QueueEntry } from '../src/store/queueStore';
 import { useApprovalStore } from '../src/store/approvalStore';
 import { useLangStore } from '../src/store/langStore';
 import { useSosStore } from '../src/store/sosStore';
 import { useDeliveryStore } from '../src/store/deliveryStore';
+import { useEntitlementStore } from '../src/store/entitlementStore';
 import { getSocket } from '../src/api/socket';
 import { colors } from '../src/theme/colors';
+import { useAppFonts } from '../src/lib/fonts';
 import LoginScreen from '../src/screens/LoginScreen';
-import WorkstationScreen from '../src/screens/WorkstationScreen';
+import NazarShell from '../src/screens/NazarShell';
 
 function AuthenticatedApp() {
   const addEntry = useQueueStore((s) => s.addEntry);
@@ -19,6 +21,10 @@ function AuthenticatedApp() {
   const removeSos = useSosStore((s) => s.removeAlert);
   const addDelivery = useDeliveryStore((s) => s.addArrived);
   const removeDelivery = useDeliveryStore((s) => s.removeById);
+  const fetchEntitlements = useEntitlementStore((s) => s.fetch);
+  const applyEntitlementUpdate = useEntitlementStore((s) => s.applyUpdate);
+
+  useEffect(() => { fetchEntitlements(); }, [fetchEntitlements]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -49,6 +55,7 @@ function AuthenticatedApp() {
         fastagTidHash: data.fastagTidHash,
         unitNumber: data.matchedUnitNumber,
         residentName: data.residentName,
+        anprConfidence: data.anprConfidence,
         autoPaired: data.autoPaired,
         alertType: data.alertType as QueueEntry['alertType'],
       };
@@ -93,6 +100,7 @@ function AuthenticatedApp() {
     socket.on('sos:resolved', (data: { id: string }) => removeSos(data.id));
     socket.on('delivery:arrived', (data: any) => addDelivery(data));
     socket.on('delivery:updated', (data: { id: string }) => removeDelivery(data.id));
+    socket.on('entitlement:updated', applyEntitlementUpdate);
     return () => {
       socket.off('gate:event', handleEvent);
       socket.off('fastag:paired');
@@ -102,10 +110,11 @@ function AuthenticatedApp() {
       socket.off('sos:resolved');
       socket.off('delivery:arrived');
       socket.off('delivery:updated');
+      socket.off('entitlement:updated', applyEntitlementUpdate);
     };
-  }, [addEntry, updateApproval, addSos, removeSos, addDelivery, removeDelivery]);
+  }, [addEntry, updateApproval, addSos, removeSos, addDelivery, removeDelivery, applyEntitlementUpdate]);
 
-  return <WorkstationScreen />;
+  return <NazarShell />;
 }
 
 export default function Page() {
@@ -113,16 +122,22 @@ export default function Page() {
   const isLoading = useAuthStore((s) => s.isLoading);
   const rehydrate = useAuthStore((s) => s.rehydrate);
   const rehydrateLang = useLangStore((s) => s.rehydrate);
+  const rehydrateEntitlements = useEntitlementStore((s) => s.rehydrate);
+  const fontsLoaded = useAppFonts();
 
-  useEffect(() => { rehydrate(); rehydrateLang(); }, []);
+  useEffect(() => { rehydrate(); rehydrateLang(); rehydrateEntitlements(); }, []);
 
-  if (isLoading) {
+  if (!fontsLoaded || isLoading) {
     return (
-      <LinearGradient colors={colors.gradientBg} style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={colors.info} />
-      </LinearGradient>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bgPrimary }}>
+        <ActivityIndicator size="large" color={colors.teal} />
+      </View>
     );
   }
 
-  return isAuthenticated ? <AuthenticatedApp /> : <LoginScreen />;
+  return (
+    <SafeAreaProvider>
+      {isAuthenticated ? <AuthenticatedApp /> : <LoginScreen />}
+    </SafeAreaProvider>
+  );
 }

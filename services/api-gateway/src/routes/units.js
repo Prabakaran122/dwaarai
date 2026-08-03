@@ -5,18 +5,22 @@ import { authenticateJWT } from '../middleware/auth.js';
 import { success, error } from '../middleware/response.js';
 
 /**
- * Unit CRUD for the admin portal.
+ * Unit routes.
  *
- * The portal's Units page has always called GET/POST/PUT /units, but no such
- * route existed anywhere in the API — the page 404'd and rendered an empty
- * table, which read as "this community has no units" rather than as a missing
- * endpoint.
+ * Two audiences share this file:
+ *  - guards get /units/lookup, the search behind new-vehicle-entry and walk-in
+ *    visitor intake (NAZ-024);
+ *  - admins get CRUD for the portal's Units page, which called GET/POST/PUT
+ *    /units long before any such route existed and so rendered an empty table
+ *    that read as "this community has no units" rather than as a 404.
  *
- * The portal models `block` as the block's NAME, not its id, so this maps
- * between the two: reads join the name in, writes resolve it (creating the
- * block if the community does not have one by that name yet).
+ * The portal models `block` as the block's NAME, not its id, so the admin
+ * handlers map between the two: reads join the name in, writes resolve it
+ * (creating the block if the community does not have one by that name yet).
  */
 const router = Router();
+
+const lookupSchema = z.object({ q: z.string().min(2).max(50) });
 
 const unitSchema = z.object({
   unit_number: z.string().min(1).max(30),
@@ -25,6 +29,16 @@ const unitSchema = z.object({
   owner_name: z.string().max(200).optional().nullable(),
   status: z.string().max(20).optional(),
 });
+
+function shape(row) {
+  return {
+    unitId: row.unit_id,
+    unitNumber: row.unit_number,
+    residentName: row.resident_name,
+    relationship: row.relationship,
+    mobile: row.mobile,
+  };
+}
 
 /** Resolve a block name to an id within this community, creating it if needed. */
 async function resolveBlockId(communityId, blockName) {
@@ -49,7 +63,38 @@ function parseFloor(value) {
   return Number.isNaN(n) ? null : n;
 }
 
-// -- GET /units --------------------------------------------------------------
+// -- GET /units/lookup?q= (guard JWT) -----------------------------------------
+// Unit/resident search for the new-vehicle-entry and walk-in-visitor intake
+// flows (NAZ-024): "search by unit number or resident name; shows matched
+// resident card with unit, name, owner/tenant status."
+//
+// Registered before the admin routes so a future /units/:id can never capture
+// the literal "lookup" segment.
+
+router.get('/units/lookup', authenticateJWT(['guard']), async (req, res) => {
+  try {
+    const parsed = lookupSchema.safeParse(req.query);
+    if (!parsed.success) {
+      return error(res, 'Query must be at least 2 characters', 400, parsed.error.issues);
+    }
+    const like = `%${parsed.data.q}%`;
+    const rows = await queryRows(
+      `SELECT u.id AS unit_id, u.unit_number, r.name AS resident_name, r.type AS relationship, r.mobile
+         FROM units u
+         LEFT JOIN residents r ON r.unit_id = u.id AND r.is_primary = true AND r.is_active = true
+        WHERE u.community_id = $1 AND (u.unit_number ILIKE $2 OR r.name ILIKE $2)
+        ORDER BY u.unit_number
+        LIMIT 5`,
+      [req.user.community_id, like]
+    );
+    return success(res, rows.map(shape));
+  } catch (err) {
+    console.error('GET /units/lookup error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- GET /units (admin JWT) --------------------------------------------------
 router.get('/units', authenticateJWT(['admin']), async (req, res) => {
   try {
     const communityId = req.user.community_id;
@@ -79,7 +124,7 @@ router.get('/units', authenticateJWT(['admin']), async (req, res) => {
   }
 });
 
-// -- POST /units -------------------------------------------------------------
+// -- POST /units (admin JWT) -------------------------------------------------
 router.post('/units', authenticateJWT(['admin']), async (req, res) => {
   try {
     const communityId = req.user.community_id;
@@ -109,7 +154,7 @@ router.post('/units', authenticateJWT(['admin']), async (req, res) => {
   }
 });
 
-// -- PUT /units/:id ----------------------------------------------------------
+// -- PUT /units/:id (admin JWT) ----------------------------------------------
 router.put('/units/:id', authenticateJWT(['admin']), async (req, res) => {
   try {
     const communityId = req.user.community_id;

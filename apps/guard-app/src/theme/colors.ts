@@ -1,40 +1,60 @@
 // apps/guard-app/src/theme/colors.ts
+//
+// Nazar dark palette — BRD §3 ("Night Mode is the ONLY mode for Nazar").
+// See docs/superpowers/specs/2026-08-03-nazar-foundation-design.md §2.
 
-export const colors = {
-  // Backgrounds
-  bgPrimary: '#0c1222',
-  bgAlt: '#1a1145',
-  surface: 'rgba(255,255,255,0.04)',
-  surfaceBorder: 'rgba(255,255,255,0.06)',
-  surfaceHover: 'rgba(255,255,255,0.08)',
+const palette = {
+  // Brand
+  bgPrimary: '#0D2535',   // Deep Ocean Dark — main screen background
+  surface: '#1B3A4B',     // Deep Ocean — navigation headers, bottom nav
+  card: '#1E3A4F',        // Card background
+  elevated: '#243F55',    // Input fields, elevated cards
+  actionPrimary: '#F59E0B', // Amber Gate — CTA buttons, primary actions
 
-  // Gradients (arrays for LinearGradient)
-  gradientPrimary: ['#3b82f6', '#8b5cf6'] as const,
-  gradientAccent: ['#a855f7', '#ec4899'] as const,
-  gradientSuccess: ['#22c55e', '#10b981'] as const,
-  gradientDanger: ['#ef4444', '#dc2626'] as const,
-  gradientWarning: ['#f59e0b', '#eab308'] as const,
-  gradientBg: ['#0c1222', '#1a1145'] as const,
+  // Verification-layer accents
+  teal: '#00BFA6',   // Gate Teal — verified / FASTag layer
+  amber: '#F59E0B',  // ANPR layer / caution — same value as actionPrimary by design
+  purple: '#A78BFA', // Face recognition layer
+  green: '#34D399',  // AI anomaly / smart features
 
-  // Status
-  success: '#34d399',
-  successBg: 'rgba(34,197,94,0.2)',
-  successBorder: 'rgba(34,197,94,0.15)',
-  danger: '#f87171',
-  dangerBg: 'rgba(239,68,68,0.2)',
-  dangerBorder: 'rgba(239,68,68,0.15)',
-  warning: '#fbbf24',
-  warningBg: 'rgba(251,191,36,0.2)',
-  warningBorder: 'rgba(251,191,36,0.15)',
-  info: '#818cf8',
-  infoBg: 'rgba(99,102,241,0.2)',
+  danger: '#F87171', // Denied entry, emergency, alerts
+  border: '#2A4A5E', // All card / field borders
 
-  // Text
-  textPrimary: '#e2e8f0',
-  textSecondary: '#6366f1',
-  textMuted: '#475569',
+  textPrimary: '#F0F4F8',
+  textSecondary: '#8BAABB',
+  textTertiary: '#5A7A8A',
 
-  // Misc
   white: '#ffffff',
   transparent: 'transparent',
+} as const;
+
+// Back-compat aliases still used by several restyled-but-reused primitives
+// (e.g. SosBanner, PlateText). New components should use the palette keys
+// above directly.
+export const colors = {
+  ...palette,
+  bgAlt: palette.bgPrimary,
+  surfaceBorder: palette.border,
+  surfaceHover: palette.elevated,
+  textMuted: palette.textTertiary,
+
+  success: palette.teal,
+  successBg: 'rgba(0,191,166,0.15)',
+  successBorder: 'rgba(0,191,166,0.15)',
+  warning: palette.amber,
+  warningBg: 'rgba(245,158,11,0.15)',
+  warningBorder: 'rgba(245,158,11,0.15)',
+  dangerBg: 'rgba(248,113,113,0.15)',
+  dangerBorder: 'rgba(248,113,113,0.15)',
+  info: palette.purple,
+  infoBg: 'rgba(167,139,250,0.15)',
+
+  // Flat 2-stop "gradients" (Nazar's flat dark cards have no gradients) so
+  // existing LinearGradient call sites keep compiling unchanged.
+  gradientBg: [palette.bgPrimary, palette.bgPrimary] as const,
+  gradientPrimary: [palette.actionPrimary, palette.actionPrimary] as const,
+  gradientAccent: [palette.purple, palette.purple] as const,
+  gradientSuccess: [palette.teal, palette.teal] as const,
+  gradientDanger: [palette.danger, palette.danger] as const,
+  gradientWarning: [palette.amber, palette.amber] as const,
 } as const;

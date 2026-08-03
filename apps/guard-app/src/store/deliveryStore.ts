@@ -16,7 +16,7 @@ interface DeliveryState {
   active: Delivery[];
   logging: boolean;
   fetchActive: () => Promise<void>;
-  log: (unitNumber: string, company: string, note?: string) => Promise<void>;
+  log: (unitNumber: string, company: string, note?: string, photoUri?: string) => Promise<void>;
   updateStatus: (id: string, status: 'delivered' | 'left_at_gate') => Promise<void>;
   addArrived: (raw: any) => void;
   removeById: (id: string) => void;
@@ -43,10 +43,10 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
       set({ active: Array.isArray(raw) ? raw.map(mapDelivery) : [] });
     } catch { /* non-critical */ }
   },
-  log: async (unitNumber, company, note) => {
+  log: async (unitNumber, company, note, photoUri) => {
     set({ logging: true });
     try {
-      const res = await api.logDelivery(unitNumber, company, note);
+      const res = await api.logDelivery(unitNumber, company, note, photoUri);
       get().addArrived(res.data.data);
     } finally {
       set({ logging: false });

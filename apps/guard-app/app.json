@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "CommunityGate Guard",
+    "name": "Nazar",
     "slug": "communitygate-guard",
     "version": "0.1.1",
-    "orientation": "landscape",
+    "orientation": "portrait",
     "platforms": [
       "android",
       "web"
