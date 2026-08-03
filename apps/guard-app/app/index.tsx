@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
-import { ActivityIndicator } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { ActivityIndicator, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../src/store/authStore';
 import { useQueueStore, type QueueEntry } from '../src/store/queueStore';
 import { useApprovalStore } from '../src/store/approvalStore';
@@ -9,6 +9,7 @@ import { useSosStore } from '../src/store/sosStore';
 import { useDeliveryStore } from '../src/store/deliveryStore';
 import { getSocket } from '../src/api/socket';
 import { colors } from '../src/theme/colors';
+import { useAppFonts } from '../src/lib/fonts';
 import LoginScreen from '../src/screens/LoginScreen';
 import WorkstationScreen from '../src/screens/WorkstationScreen';
 
@@ -113,16 +114,21 @@ export default function Page() {
   const isLoading = useAuthStore((s) => s.isLoading);
   const rehydrate = useAuthStore((s) => s.rehydrate);
   const rehydrateLang = useLangStore((s) => s.rehydrate);
+  const fontsLoaded = useAppFonts();
 
   useEffect(() => { rehydrate(); rehydrateLang(); }, []);
 
-  if (isLoading) {
+  if (!fontsLoaded || isLoading) {
     return (
-      <LinearGradient colors={colors.gradientBg} style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={colors.info} />
-      </LinearGradient>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bgPrimary }}>
+        <ActivityIndicator size="large" color={colors.teal} />
+      </View>
     );
   }
 
-  return isAuthenticated ? <AuthenticatedApp /> : <LoginScreen />;
+  return (
+    <SafeAreaProvider>
+      {isAuthenticated ? <AuthenticatedApp /> : <LoginScreen />}
+    </SafeAreaProvider>
+  );
 }
