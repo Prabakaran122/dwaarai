@@ -1,5 +1,17 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { authenticateJWT, authenticateDevice, generateTestToken } from '../middleware/auth.js';
+
+vi.mock('../../src/db/queries.js', () => ({
+  query: vi.fn(),
+  queryOne: vi.fn(),
+  queryRows: vi.fn(),
+}));
+vi.mock('../../src/db/pool.js', () => ({
+  default: { query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }), on: vi.fn() },
+}));
+vi.mock('../../src/websocket.js', () => ({ broadcast: vi.fn(), initWebSocket: vi.fn(), getIO: vi.fn() }));
+vi.mock('../../src/lib/fcm.js', () => ({ sendNotification: vi.fn().mockResolvedValue({}), sendToMultiple: vi.fn(), sendVisitorAlert: vi.fn(), sendApprovalRequest: vi.fn() }));
+vi.mock('bcryptjs', () => ({ default: { compare: vi.fn().mockResolvedValue(true) } }));
 
 function mockReqRes(headers = {}) {
   const req = { headers };
@@ -42,6 +54,53 @@ describe('authenticateJWT', () => {
     const { req, res, next } = mockReqRes({ authorization: `Bearer ${token}` });
     authenticateJWT()(req, res, next);
     expect(next).toHaveBeenCalled();
+  });
+});
+
+describe('POST /auth/guard-login (NAZ-002 — gate + society name for the header)', () => {
+  let server, baseUrl;
+
+  beforeAll(async () => {
+    const { default: app } = await import('../index.js');
+    await new Promise((resolve) => {
+      server = app.listen(0, () => { baseUrl = `http://127.0.0.1:${server.address().port}`; resolve(); });
+    });
+    return () => server.close();
+  });
+
+  beforeEach(async () => {
+    const { queryOne } = await import('../db/queries.js');
+    queryOne.mockReset();
+  });
+
+  it('returns gateName and communityName alongside the existing user fields', async () => {
+    const { queryOne } = await import('../db/queries.js');
+    queryOne.mockResolvedValueOnce({
+      id: 'guard-1',
+      community_id: 'c1',
+      unit_id: null,
+      name: 'Ramesh',
+      mobile: '9900000000',
+      type: 'guard',
+      password_hash: 'hashed',
+      preferred_language: null,
+      community_config: {},
+      gate_id: 'gate-1',
+      gate_name: 'Main Gate',
+      community_name: 'Palm Meadows',
+    });
+
+    const res = await fetch(`${baseUrl}/api/v1/auth/guard-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'Ramesh', password: 'whatever' }),
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.data.user.gateName).toBe('Main Gate');
+    expect(json.data.user.communityName).toBe('Palm Meadows');
+    expect(json.data.user.name).toBe('Ramesh');
   });
 });
 
