@@ -40,6 +40,8 @@ describe('Nazar home/nav translations (BRD 8.4 — en/hi/kn complete on Day 1)',
     'callResident',
     'allowEntry',
     'holdVehicle',
+    // Delivery overstay (NAZ-045)
+    'overstayed',
   ];
 
   it.each(requiredKeys)('%s has non-empty en, hi, and kn strings', (key) => {

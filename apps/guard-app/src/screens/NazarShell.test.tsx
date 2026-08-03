@@ -21,4 +21,11 @@ describe('NazarShell', () => {
     expect(getByText('Coming in this redesign')).toBeTruthy();
     expect(queryByText('Ramesh')).toBeNull();
   });
+
+  it('shows the real Parcels screen, not a placeholder', () => {
+    const { getByTestId, getByText, queryByText } = render(<NazarShell />);
+    fireEvent.press(getByTestId('tab-parcels'));
+    expect(getByText('Log Delivery')).toBeTruthy();
+    expect(queryByText('Coming in this redesign')).toBeNull();
+  });
 });

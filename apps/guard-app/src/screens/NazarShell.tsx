@@ -4,6 +4,7 @@ import { colors } from '../theme/colors';
 import TabBar, { TabKey } from '../components/TabBar';
 import TabPlaceholder from '../components/TabPlaceholder';
 import GateHomeScreen from './GateHomeScreen';
+import ParcelsScreen from './ParcelsScreen';
 import { useT } from '../store/langStore';
 
 // Nazar's portrait tab shell (NAZ-009). Visitors/Parcels/Incident are branded
@@ -18,7 +19,7 @@ export default function NazarShell() {
       <View style={styles.content}>
         {tab === 'gate' && <GateHomeScreen onNavigate={setTab} />}
         {tab === 'visitors' && <TabPlaceholder name={t('navVisitors')} icon="account-group" />}
-        {tab === 'parcels' && <TabPlaceholder name={t('navParcels')} icon="package-variant" />}
+        {tab === 'parcels' && <ParcelsScreen />}
         {tab === 'incident' && <TabPlaceholder name={t('navIncident')} icon="alert-circle" />}
       </View>
       <TabBar active={tab} onSelect={setTab} />

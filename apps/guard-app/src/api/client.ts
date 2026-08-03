@@ -42,8 +42,15 @@ export const getActiveSos = () => api.get('/sos/active');
 export const resolveSos = (id: string) => api.post(`/sos/${id}/resolve`);
 
 // Deliveries
-export const logDelivery = (unit_number: string, company: string, note?: string) =>
-  api.post('/deliveries', { unit_number, company, note });
+export const logDelivery = (unit_number: string, company: string, note?: string, photoUri?: string) => {
+  if (!photoUri) return api.post('/deliveries', { unit_number, company, note });
+  const form = new FormData();
+  form.append('unit_number', unit_number);
+  form.append('company', company);
+  if (note) form.append('note', note);
+  form.append('photo', { uri: photoUri, name: 'parcel.jpg', type: 'image/jpeg' } as any);
+  return api.post('/deliveries', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
 export const getActiveDeliveries = () => api.get('/deliveries/active');
 export const updateDeliveryStatus = (id: string, status: 'delivered' | 'left_at_gate') =>
   api.post(`/deliveries/${id}/status`, { status });

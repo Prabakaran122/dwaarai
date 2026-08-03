@@ -203,6 +203,9 @@ export const translations: Dict = {
   callResident: { en: 'Call resident', hi: 'निवासी को कॉल करें', kn: 'ನಿವಾಸಿಗೆ ಕರೆ ಮಾಡಿ' },
   allowEntry: { en: 'Allow entry', hi: 'प्रवेश की अनुमति दें', kn: 'ಪ್ರವೇಶ ಅನುಮತಿಸಿ' },
   holdVehicle: { en: 'Hold vehicle', hi: 'वाहन रोकें', kn: 'ವಾಹನ ತಡೆಹಿಡಿಯಿರಿ' },
+
+  // Delivery overstay (NAZ-045)
+  overstayed: { en: 'Overstayed', hi: 'अधिक समय से रुका', kn: 'ಹೆಚ್ಚು ಸಮಯ ಕಾದಿದೆ' },
 };
 
 export function translate(key: string, lang: Lang): string {
