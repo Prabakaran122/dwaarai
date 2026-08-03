@@ -156,6 +156,24 @@ export const translations: Dict = {
   restore: { en: 'Restore', hi: 'पुनर्स्थापित', kn: 'ಮರುಸ್ಥಾಪಿಸಿ' },
   evacuateConfirm: { en: 'Hold the barrier fully open for evacuation?', hi: 'निकासी के लिए बैरियर को पूरा खुला रखें?', kn: 'ಸ್ಥಳಾಂತರಕ್ಕಾಗಿ ಬ್ಯಾರಿಯರ್ ಅನ್ನು ಸಂಪೂರ್ಣ ತೆರೆದಿಡಬೇಕೆ?' },
   restoreConfirm: { en: 'Return the barrier to normal controlled mode?', hi: 'बैरियर को सामान्य नियंत्रित मोड में लौटाएं?', kn: 'ಬ್ಯಾರಿಯರ್ ಅನ್ನು ಸಾಮಾನ್ಯ ನಿಯಂತ್ರಿತ ಮೋಡ್‌ಗೆ ಹಿಂತಿರುಗಿಸಬೇಕೆ?' },
+
+  // Nazar bottom nav (NAZ-009)
+  navGate: { en: 'Gate', hi: 'गेट', kn: 'ಗೇಟ್' },
+  navVisitors: { en: 'Visitors', hi: 'आगंतुक', kn: 'ಭೇಟಿದಾರರು' },
+  navParcels: { en: 'Parcels', hi: 'पार्सल', kn: 'ಪಾರ್ಸೆಲ್‌ಗಳು' },
+  navIncident: { en: 'Incident', hi: 'घटना', kn: 'ಘಟನೆ' },
+
+  // Nazar gate home — quick actions grid (NAZ-006)
+  quickNewVisitor: { en: 'New visitor', hi: 'नया आगंतुक', kn: 'ಹೊಸ ಭೇಟಿದಾರ' },
+  quickVehicleEntry: { en: 'Vehicle entry', hi: 'वाहन प्रवेश', kn: 'ವಾಹನ ಪ್ರವೇಶ' },
+  quickDelivery: { en: 'Delivery', hi: 'डिलीवरी', kn: 'ಡೆಲಿವರಿ' },
+  quickIncident: { en: 'Incident', hi: 'घटना', kn: 'ಘಟನೆ' },
+
+  // Nazar gate home — smart alert banner (NAZ-004)
+  vehicleApproaching: { en: 'Vehicle approaching', hi: 'वाहन आ रहा है', kn: 'ವಾಹನ ಸಮೀಪಿಸುತ್ತಿದೆ' },
+
+  // Nazar — unbuilt tab placeholder
+  comingInThisRedesign: { en: 'Coming in this redesign', hi: 'इस नए डिज़ाइन में जल्द आ रहा है', kn: 'ಈ ಮರುವಿನ್ಯಾಸದಲ್ಲಿ ಶೀಘ್ರದಲ್ಲಿ ಬರಲಿದೆ' },
 };
 
 export function translate(key: string, lang: Lang): string {
