@@ -33,5 +33,9 @@ module.exports = {
     '^react-native$': require.resolve('react-native'),
     '^react-native-safe-area-context$': '<rootDir>/src/__mocks__/react-native-safe-area-context.js',
     '^expo-linear-gradient$': '<rootDir>/src/__mocks__/expo-linear-gradient.js',
+    // The real reanimated schedules entering/exiting animations on the (absent,
+    // in Jest) native UI thread, which hangs any AnimatedEntry-wrapped render
+    // for minutes. The library ships a synchronous Jest mock for exactly this.
+    '^react-native-reanimated$': require.resolve('react-native-reanimated/mock'),
   },
 };

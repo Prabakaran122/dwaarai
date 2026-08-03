@@ -10,6 +10,8 @@ interface AuthUser {
   role: string;
   gateId: string;
   language?: string;
+  gateName?: string;
+  communityName?: string;
 }
 
 interface AuthState {
