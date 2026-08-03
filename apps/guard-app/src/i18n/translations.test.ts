@@ -42,6 +42,18 @@ describe('Nazar home/nav translations (BRD 8.4 — en/hi/kn complete on Day 1)',
     'holdVehicle',
     // Delivery overstay (NAZ-045)
     'overstayed',
+    // Incident reporting (NAZ-056..061)
+    'incSpeeding',
+    'incUnauthorizedEntry',
+    'incTheftAttempt',
+    'incMedicalEmergency',
+    'incFight',
+    'incPropertyDamage',
+    'detailsMinLength',
+    'recordVoiceNote',
+    'stopRecording',
+    'transcriptionPending',
+    'submitIncident',
   ];
 
   it.each(requiredKeys)('%s has non-empty en, hi, and kn strings', (key) => {

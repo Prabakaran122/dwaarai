@@ -206,6 +206,19 @@ export const translations: Dict = {
 
   // Delivery overstay (NAZ-045)
   overstayed: { en: 'Overstayed', hi: 'अधिक समय से रुका', kn: 'ಹೆಚ್ಚು ಸಮಯ ಕಾದಿದೆ' },
+
+  // Incident reporting (NAZ-056..061)
+  incSpeeding: { en: 'Speeding vehicle', hi: 'तेज़ रफ़्तार वाहन', kn: 'ವೇಗದ ವಾಹನ' },
+  incUnauthorizedEntry: { en: 'Unauthorized entry', hi: 'अनधिकृत प्रवेश', kn: 'ಅನಧಿಕೃತ ಪ್ರವೇಶ' },
+  incTheftAttempt: { en: 'Theft attempt', hi: 'चोरी का प्रयास', kn: 'ಕಳ್ಳತನದ ಪ್ರಯತ್ನ' },
+  incMedicalEmergency: { en: 'Medical emergency', hi: 'चिकित्सा आपातकाल', kn: 'ವೈದ್ಯಕೀಯ ತುರ್ತುಸ್ಥಿತಿ' },
+  incFight: { en: 'Fight', hi: 'झगड़ा', kn: 'ಜಗಳ' },
+  incPropertyDamage: { en: 'Property damage', hi: 'संपत्ति को नुकसान', kn: 'ಆಸ್ತಿ ಹಾನಿ' },
+  detailsMinLength: { en: 'Details must be at least 20 characters', hi: 'विवरण कम से कम 20 अक्षर का होना चाहिए', kn: 'ವಿವರಗಳು ಕನಿಷ್ಠ 20 ಅಕ್ಷರಗಳಿರಬೇಕು' },
+  recordVoiceNote: { en: 'Record voice note', hi: 'आवाज़ रिकॉर्ड करें', kn: 'ಧ್ವನಿ ಟಿಪ್ಪಣಿ ರೆಕಾರ್ಡ್ ಮಾಡಿ' },
+  stopRecording: { en: 'Stop recording', hi: 'रिकॉर्डिंग रोकें', kn: 'ರೆಕಾರ್ಡಿಂಗ್ ನಿಲ್ಲಿಸಿ' },
+  transcriptionPending: { en: 'Voice recording attached — transcription vendor not yet selected, please type or edit the details below', hi: 'आवाज़ रिकॉर्डिंग जोड़ी गई — ट्रांसक्रिप्शन सेवा अभी तय नहीं — कृपया नीचे विवरण टाइप करें', kn: 'ಧ್ವನಿ ರೆಕಾರ್ಡಿಂಗ್ ಲಗತ್ತಿಸಲಾಗಿದೆ — ಪ್ರತಿಲಿಪಿ ಸೇವೆ ಇನ್ನೂ ನಿರ್ಧರಿತವಾಗಿಲ್ಲ — ದಯವಿಟ್ಟು ಕೆಳಗೆ ವಿವರ ಬರೆಯಿರಿ' },
+  submitIncident: { en: 'Submit incident', hi: 'घटना सबमिट करें', kn: 'ಘಟನೆ ಸಲ್ಲಿಸಿ' },
 };
 
 export function translate(key: string, lang: Lang): string {
