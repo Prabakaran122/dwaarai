@@ -138,10 +138,13 @@ export default function DashboardPage() {
     };
     const onStatus = () => { dirty.current = true; };
 
+    const onConnect = () => setLive(true);
+    const onDisconnect = () => setLive(false);
+
     socket.on('gate:event', onEvent);
     socket.on('gate:status', onStatus);
-    socket.on('connect', () => setLive(true));
-    socket.on('disconnect', () => setLive(false));
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
     setLive(socket.connected);
 
     // Re-aggregate at most every 20s, and only when something actually changed —
@@ -153,6 +156,8 @@ export default function DashboardPage() {
     return () => {
       socket.off('gate:event', onEvent);
       socket.off('gate:status', onStatus);
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
       clearInterval(t);
     };
   }, [load]);

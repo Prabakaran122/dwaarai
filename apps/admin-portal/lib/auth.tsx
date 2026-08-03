@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { disconnectSocket } from './socket';
 
 interface AuthUser {
   id: string;
@@ -61,6 +62,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    // Close the socket before the token is cleared, or it keeps streaming a
+    // former user's community until something happens to rebuild it.
+    disconnectSocket();
     setToken(null);
     setUser(null);
     setSelectedCommunityId(null);
