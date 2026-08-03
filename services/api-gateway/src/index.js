@@ -37,6 +37,7 @@ import communityFeedRoutes from './routes/community-feed.js';
 import communityEventRoutes from './routes/community-events.js';
 import dashboardRoutes from './routes/dashboard.js';
 import entitlementRoutes from './routes/entitlements.js';
+import unitRoutes from './routes/units.js';
 import { startVisitCron } from './cron/generate-visits.js';
 import { initWebSocket } from './websocket.js';
 
@@ -72,6 +73,7 @@ app.use('/api/v1', gateRoutes);
 app.use('/api/v1', eventRoutes);
 app.use('/api/v1', dashboardRoutes);
 app.use('/api/v1', entitlementRoutes);
+app.use('/api/v1', unitRoutes);
 app.use('/api/v1', adminRoutes);
 app.use('/api/v1', notificationRoutes);
 app.use('/api/v1', approvalRoutes);

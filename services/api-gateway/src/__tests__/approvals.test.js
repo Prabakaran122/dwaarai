@@ -62,4 +62,42 @@ describe('POST /approvals', () => {
     expect(windowMs).toBeGreaterThan(170_000);
     expect(windowMs).toBeLessThanOrEqual(181_000);
   });
+
+  // NAZ-020..023, NAZ-028: the new-vehicle-entry flow reuses this same
+  // endpoint but attaches vehicle_type/purpose/photo to the approval record.
+  it('accepts and stores vehicle_type and purpose for the new-vehicle-entry flow', async () => {
+    queryOne
+      .mockResolvedValueOnce({ id: 'u1', unit_number: 'A-204' })
+      .mockResolvedValueOnce({ id: '00000000-0000-0000-0000-000000100001', name: 'Main Gate' })
+      .mockImplementationOnce((sql, params) => Promise.resolve({
+        id: 'ap1', unit_id: 'u1', vehicle_type: params[7], purpose: params[8],
+      }));
+    queryRows.mockResolvedValueOnce([]);
+
+    const { status, json } = await request('POST', '/api/v1/approvals', {
+      headers: { Authorization: `Bearer ${guard}` },
+      body: {
+        unit_number: 'A-204', visitor_name: 'Unregistered vehicle', vehicle_plate: 'KA01AB1234',
+        gate_id: '00000000-0000-0000-0000-000000100001', vehicle_type: 'car', purpose: 'delivery',
+      },
+    });
+    expect(status).toBe(201);
+    expect(json.data.vehicle_type).toBe('car');
+    expect(json.data.purpose).toBe('delivery');
+  });
+});
+
+describe('GET /approvals/:id', () => {
+  // NAZ-029: after 3 minutes of silence, Nazar shows the resident's phone
+  // number so the guard can call directly.
+  it('includes the unit primary resident’s name and mobile for the phone fallback', async () => {
+    queryOne.mockResolvedValueOnce({
+      id: 'ap1', community_id: 'c1', unit_id: 'u1', status: 'pending',
+      expires_at: new Date(Date.now() + 60_000), resident_name: 'Asha Rao', resident_mobile: '9900000000',
+    });
+    const { status, json } = await request('GET', '/api/v1/approvals/ap1', { headers: { Authorization: `Bearer ${guard}` } });
+    expect(status).toBe(200);
+    expect(json.data.resident_name).toBe('Asha Rao');
+    expect(json.data.resident_mobile).toBe('9900000000');
+  });
 });

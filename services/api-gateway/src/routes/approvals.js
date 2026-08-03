@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import multer from 'multer';
+import path from 'path';
+import { existsSync, mkdirSync } from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
@@ -9,6 +12,27 @@ import { publishGateCommand } from '../mqtt.js';
 import { broadcast } from '../websocket.js';
 
 const router = Router();
+
+// Vehicle/visitor photo upload for the intake flows (NAZ-023) — same
+// <UPLOAD_BASE>/<feature>/<YYYY-MM>/<uuid>.jpg convention as deliveries.js.
+const UPLOAD_BASE = process.env.UPLOAD_DIR || '/opt/communitygate/uploads';
+const approvalStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const month = new Date().toISOString().slice(0, 7);
+    const dir = path.join(UPLOAD_BASE, 'approvals', month);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, _file, cb) => cb(null, `${uuidv4()}.jpg`),
+});
+const upload = multer({
+  storage: approvalStorage,
+  limits: { fileSize: 4 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files allowed'));
+  },
+});
 
 // NAZ-029: the guard is prompted to call the resident directly after 3
 // minutes of no response, so the approval window itself is 3 minutes.
@@ -24,6 +48,10 @@ const createSchema = z.object({
   visitor_name: z.string().min(1).max(200),
   vehicle_plate: z.string().max(20).optional(),
   gate_id: z.string().uuid(),
+  // NAZ-021/022 — only set for the new-vehicle-entry flow; absent for the
+  // generic "request approval" call sites (e.g. a known-plate mismatch).
+  vehicle_type: z.enum(['car', 'two_wheeler', 'goods_vehicle', 'other']).optional(),
+  purpose: z.enum(['delivery', 'guest_visit', 'service', 'contractor', 'other']).optional(),
 });
 
 const respondSchema = z.object({
@@ -62,14 +90,15 @@ function clearTimerFor(id) {
 
 // -- POST /approvals (guard JWT) ---------------------------------------------
 
-router.post('/approvals', authenticateJWT(['guard']), async (req, res) => {
+router.post('/approvals', authenticateJWT(['guard']), upload.single('photo'), async (req, res) => {
   try {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
       return error(res, 'Validation error', 400, parsed.error.issues);
     }
 
-    const { unit_number, visitor_name, vehicle_plate, gate_id } = parsed.data;
+    const { unit_number, visitor_name, vehicle_plate, gate_id, vehicle_type, purpose } = parsed.data;
+    const photoKey = req.file ? `/uploads/approvals/${new Date().toISOString().slice(0, 7)}/${req.file.filename}` : null;
     const user = req.user;
     const community_id = user.community_id;
 
@@ -95,10 +124,10 @@ router.post('/approvals', authenticateJWT(['guard']), async (req, res) => {
 
     const approval = await queryOne(
       `INSERT INTO approval_requests
-         (community_id, unit_id, gate_id, guard_id, visitor_name, vehicle_plate, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (community_id, unit_id, gate_id, guard_id, visitor_name, vehicle_plate, expires_at, vehicle_type, purpose, photo_s3_key)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [community_id, unit.id, gate_id, user.sub, visitor_name, vehicle_plate || null, expiresAt]
+      [community_id, unit.id, gate_id, user.sub, visitor_name, vehicle_plate || null, expiresAt, vehicle_type || null, purpose || null, photoKey]
     );
 
     // Send push to active residents in the unit who haven't opted out of
