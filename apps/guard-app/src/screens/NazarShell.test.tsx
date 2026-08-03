@@ -13,12 +13,13 @@ beforeEach(() => {
 });
 
 describe('NazarShell', () => {
-  it('shows Gate Home by default and switches to a placeholder tab', () => {
+  it('shows Gate Home by default and switches to the real Visitors screen, not a placeholder', () => {
     const { getByText, getByTestId, queryByText } = render(<NazarShell />);
     expect(getByText('Ramesh')).toBeTruthy();
 
     fireEvent.press(getByTestId('tab-visitors'));
-    expect(getByText('Coming in this redesign')).toBeTruthy();
+    expect(getByText('Visitor mobile number')).toBeTruthy();
+    expect(queryByText('Coming in this redesign')).toBeNull();
     expect(queryByText('Ramesh')).toBeNull();
   });
 

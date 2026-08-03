@@ -204,6 +204,23 @@ export const translations: Dict = {
   allowEntry: { en: 'Allow entry', hi: 'प्रवेश की अनुमति दें', kn: 'ಪ್ರವೇಶ ಅನುಮತಿಸಿ' },
   holdVehicle: { en: 'Hold vehicle', hi: 'वाहन रोकें', kn: 'ವಾಹನ ತಡೆಹಿಡಿಯಿರಿ' },
 
+  // Walk-in visitor intake (NAZ-030..043)
+  visitorMobile: { en: 'Visitor mobile number', hi: 'आगंतुक का मोबाइल नंबर', kn: 'ಭೇಟಿದಾರರ ಮೊಬೈಲ್ ಸಂಖ್ಯೆ' },
+  idType: { en: 'ID type', hi: 'पहचान पत्र का प्रकार', kn: 'ಗುರುತಿನ ಪ್ರಕಾರ' },
+  idAadhaar: { en: 'Aadhaar', hi: 'आधार', kn: 'ಆಧಾರ್' },
+  idDrivingLicense: { en: 'Driving licence', hi: 'ड्राइविंग लाइसेंस', kn: 'ಚಾಲನಾ ಪರವಾನಗಿ' },
+  idVoterId: { en: 'Voter ID', hi: 'मतदाता पहचान पत्र', kn: 'ಮತದಾರ ಗುರುತಿನ ಚೀಟಿ' },
+  idOther: { en: 'Other', hi: 'अन्य', kn: 'ಇತರೆ' },
+  takeIdPhoto: { en: 'Take ID photo', hi: 'पहचान पत्र की फ़ोटो लें', kn: 'ಗುರುತಿನ ಫೋಟೋ ತೆಗೆಯಿರಿ' },
+  retakeIdPhoto: { en: 'Retake ID photo', hi: 'पहचान पत्र की फ़ोटो फिर से लें', kn: 'ಗುರುತಿನ ಫೋಟೋ ಮತ್ತೆ ತೆಗೆಯಿರಿ' },
+  takeFacePhoto: { en: 'Take face photo', hi: 'चेहरे की फ़ोटो लें', kn: 'ಮುಖದ ಫೋಟೋ ತೆಗೆಯಿರಿ' },
+  retakeFacePhoto: { en: 'Retake face photo', hi: 'चेहरे की फ़ोटो फिर से लें', kn: 'ಮುಖದ ಫೋಟೋ ಮತ್ತೆ ತೆಗೆಯಿರಿ' },
+  vehiclePlateOptional: { en: 'Vehicle number (if any)', hi: 'वाहन नंबर (यदि हो)', kn: 'ವಾಹನ ಸಂಖ್ಯೆ (ಇದ್ದರೆ)' },
+  holdVisitor: { en: 'Hold visitor', hi: 'आगंतुक को रोकें', kn: 'ಭೇಟಿದಾರರನ್ನು ತಡೆಹಿಡಿಯಿರಿ' },
+  visitorPassIssued: { en: 'Entry pass issued', hi: 'प्रवेश पास जारी', kn: 'ಪ್ರವೇಶ ಪಾಸ್ ನೀಡಲಾಗಿದೆ' },
+  passValidUntil: { en: 'Valid until', hi: 'तक मान्य', kn: 'ವರೆಗೆ ಮಾನ್ಯ' },
+  relayCodeToVisitor: { en: 'SMS delivery is not yet configured — read this code to the visitor', hi: 'SMS सेवा अभी सेट नहीं है — यह कोड आगंतुक को बताएं', kn: 'SMS ಸೇವೆ ಇನ್ನೂ ಹೊಂದಿಸಿಲ್ಲ — ಈ ಕೋಡ್ ಅನ್ನು ಭೇಟಿದಾರರಿಗೆ ತಿಳಿಸಿ' },
+
   // Delivery overstay (NAZ-045)
   overstayed: { en: 'Overstayed', hi: 'अधिक समय से रुका', kn: 'ಹೆಚ್ಚು ಸಮಯ ಕಾದಿದೆ' },
 

@@ -125,12 +125,16 @@ export const createApproval = (data: {
   vehicle_type?: string;
   purpose?: string;
   photoUri?: string;
+  visitor_mobile?: string;
+  id_type?: string;
+  facePhotoUri?: string;
 }) => {
-  const { photoUri, ...fields } = data;
-  if (!photoUri) return api.post('/approvals', fields);
+  const { photoUri, facePhotoUri, ...fields } = data;
+  if (!photoUri && !facePhotoUri) return api.post('/approvals', fields);
   const form = new FormData();
   Object.entries(fields).forEach(([k, v]) => { if (v !== undefined) form.append(k, String(v)); });
-  form.append('photo', { uri: photoUri, name: 'vehicle.jpg', type: 'image/jpeg' } as any);
+  if (photoUri) form.append('photo', { uri: photoUri, name: 'vehicle.jpg', type: 'image/jpeg' } as any);
+  if (facePhotoUri) form.append('face_photo', { uri: facePhotoUri, name: 'face.jpg', type: 'image/jpeg' } as any);
   return api.post('/approvals', form, { headers: { 'Content-Type': 'multipart/form-data' } });
 };
 
