@@ -28,9 +28,9 @@ const palette = {
   transparent: 'transparent',
 } as const;
 
-// Back-compat aliases for the pre-Nazar dark-glow screens (ActionZone, VehicleCard,
-// ExpectedVisitors, DeliveryPanel, etc.) — removed as each is rebuilt in a later
-// sub-project. New components should use the palette keys above directly.
+// Back-compat aliases still used by several restyled-but-reused primitives
+// (e.g. SosBanner, PlateText). New components should use the palette keys
+// above directly.
 export const colors = {
   ...palette,
   bgAlt: palette.bgPrimary,
