@@ -1,28 +1,93 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # CommunityGate
 
-Vehicle access control platform for residential communities. Cloud microservices (Node.js/Express) manage residents, vehicles, visitors, and gate commands. Edge nodes (Raspberry Pi, Python) run ANPR cameras, RFID readers, and relay-controlled gates, syncing with the cloud over MQTT.
+Vehicle access control platform for residential communities. Cloud microservices (Node.js/Express) manage residents, vehicles, visitors, and gate commands. Edge nodes (Raspberry Pi, Python) run ANPR cameras, RFID/FASTag/UHF readers, and a ZKTeco C3-100 access controller, syncing with the cloud over MQTT.
 
-**Stack:** Node.js 20+ (ESM), Python 3.11+, PostgreSQL, Redis, MQTT (AWS IoT Core), pnpm monorepo, AWS CDK for infra.
+**Stack:** Node.js 20+ (ESM), Python 3.11+, PostgreSQL, Redis, MQTT (Mosquitto in dev / AWS IoT Core in prod), pnpm monorepo, AWS CDK for infra, Next.js 14 admin portal, React Native (Expo) guard + resident apps.
 
-## Build Step Checklist
+## Commands
 
-- [x] Step 1: Initialize Git Repo and Monorepo Scaffold
-- [x] Step 2: Docker Compose Dev Environment
-- [x] Step 3: PostgreSQL Schema and Migrations
-- [x] Step 4: Shared Utilities Package
-- [x] Step 5: API Gateway Service
-- [x] Step 6: Vehicle Service
-- [x] Step 7: Visitor/Pre-Approval Service
-- [x] Step 8: Gate Command Service + MQTT
-- [x] Step 9: Notification Service
-- [x] Step 10: Audit/Log Service
-- [x] Step 11: Edge Node -- Relay and RFID Drivers
-- [x] Step 12: Edge Node -- ANPR Camera Pipeline
-- [x] Step 13: Edge Node -- Local Decision Engine
-- [x] Step 14: Edge Node -- Offline Queue and Whitelist Sync
-- [x] Step 15: Guard App (React Native — Android tablet)
-- [x] Step 16: Resident App (React Native — iOS + Android)
-- [x] Step 17: Admin Portal (Next.js 14)
-- [x] Step 18: AWS CDK Infrastructure (6 stacks)
-- [x] Step 19: Pi Provisioning Script
-- [x] Step 20: CI/CD Pipeline (GitHub Actions)
+### Dev environment
+```
+pnpm dev                # docker compose up: postgres, redis, mosquitto, anpr-service, api-gateway, vehicle-service, gate-command-service, edge-emulator
+pnpm db:migrate         # apply services/api-gateway/migrations/*.sql against $DATABASE_URL
+```
+Note: `docker-compose.dev.yml` does not include `visitor-service`, `notification-service`, or `audit-service` — run those with `pnpm --filter <name> dev` alongside the compose stack when working on them.
+
+### Node services/apps (pnpm workspace: `apps/*`, `services/*`, `infra/cdk`)
+```
+pnpm --filter api-gateway dev        # node --watch, one service
+pnpm -r run test                     # all Node tests (vitest), repo-wide
+pnpm --filter vehicle-service test   # vitest for one service
+pnpm --filter api-gateway exec vitest run src/__tests__/gateway.test.js   # single test file
+pnpm --filter api-gateway migrate    # run pending SQL migrations, idempotent (re-run must print "up to date")
+```
+Each `services/*` has its own `vitest.config.js` and an `src/__tests__/` (or `src/routes/__tests__`) directory — there is no shared/root test runner config.
+
+### Python (edge + anpr-service)
+```
+pip install -r edge/requirements.txt
+pip install -r services/anpr-service/requirements.txt
+pytest tests/ -v --tb=short                          # all Python tests (unit + integration)
+pytest tests/unit/test_c3_controller.py -v            # single file
+pytest tests/unit/test_c3_controller.py::test_name -v # single test
+```
+Python tests need edge env vars set (mocks on): `USE_GPIO_MOCK=true USE_RFID_MOCK=true USE_CAMERA_MOCK=true GATE_ID=gate-test COMMUNITY_ID=test-community DEVICE_TOKEN=test-token MQTT_BROKER=localhost OFFLINE_DB_PATH=/tmp/test_whitelist.db OFFLINE_QUEUE_PATH=/tmp/test_queue.db` (see `.github/workflows/ci.yml` for the full list, including `DATABASE_URL` and `ANPR_SERVICE_URL`).
+
+### Frontend apps
+```
+pnpm --filter admin-portal dev        # Next.js 14, port 3100
+pnpm --filter admin-portal lint
+pnpm --filter guard-app start         # Expo (React Native, Android tablet)
+pnpm --filter resident-app start      # Expo (React Native, iOS + Android)
+pnpm --filter resident-app test       # jest
+pnpm --filter resident-app exec jest src/screens/DuesScreen.test.tsx   # single test file
+pnpm --filter resident-app typecheck  # tsc --noEmit
+```
+`guard-app` has no test script/config despite `.test.tsx`-style components existing elsewhere in the repo — don't assume it runs the same way as `resident-app`.
+
+### Infra (AWS CDK)
+```
+pnpm --filter communitygate-infra build   # tsc
+pnpm --filter communitygate-infra synth
+pnpm --filter communitygate-infra diff
+pnpm --filter communitygate-infra deploy  # cdk deploy --all — never run without explicit user request
+```
+
+### CI (`.github/workflows/ci.yml`)
+Four jobs: `test-python` (pytest against real postgres/redis/mosquitto containers), `test-node` (`pnpm -r run test`), `migrations` (applies all migrations to a fresh DB, then asserts a second run is a no-op), `arm-build` (cross-builds the edge Docker image for linux/arm64, since it ships on Raspberry Pi).
+
+## Architecture
+
+### Services (`services/*`, each an independent Express app + own Postgres migrations/tables)
+- **api-gateway** (port 3000, `PORT_API_GATEWAY`) — the primary backend. Owns almost all domain routes (auth, vehicles, passes, dues, notices, facilities, community feed, guard/resident/admin views, face recognition, SOS, incidents, deliveries, handovers, etc.), the Postgres migration runner (`src/db/migrate.js`, 32+ sequential `migrations/*.sql` files), Socket.IO (`websocket.js`) for live dashboard/guard updates, and MQTT publish for gate commands (`mqtt.js`).
+- **vehicle-service** (3020), **visitor-service** (3030, OTP-based pre-approvals), **gate-command-service** (3050, mirrors the event-sync schema and publishes MQTT commands), **notification-service** (3004, FCM + SMS via `msg91`), **audit-service** (3005, PDF report generation) — smaller domain services split out of api-gateway, each with its own `src/routes.js` + `src/db.js`.
+- **anpr-service** (Python, FastAPI-style, port 8001) — plate detection/OCR (`detector.py`, `ocr_engine.py`, `normalizer.py`), called by both the edge node and the cloud.
+
+There is no shared Node package for cross-service code — each service duplicates its own `db/pool.js`-equivalent and route conventions rather than importing from a common library.
+
+### Edge node (`edge/`, Python, runs on the Raspberry Pi at each gate)
+`gate_controller.py` is the main entrypoint and decision loop. Key architectural points:
+- **C3 access controller integration is pluggable** via `USE_C3_MOCK` / `USE_C3_PUSH` env flags, selecting one of three interchangeable implementations: `emulators/c3_mock.py` (dev/CI), `c3_push_controller.py` (PUSH/ADMS — the panel dials into a server the edge hosts; required for card writes), or `c3_controller.py` (legacy PULL/TCP:4370 polling, read-only). See `edge/config.py` for the full flag set and `edge/C3_PUSH_SETUP.md` for the hardware setup.
+- **Entry vs exit gates behave differently**: entry gates resolve known cards locally via C3 and fall back to ANPR correlation for unknown cards; exit gates are camera-audit-only (no C3). Every event is stamped with `direction` (`entry`/`exit`) since occupancy/overstay logic on the cloud side depends on it.
+- **Offline-first**: `whitelist_sync.py` periodically pulls the resident/vehicle whitelist and blacklist into a local SQLite cache (`OFFLINE_DB_PATH`) so gate decisions work without connectivity; `offline_queue.py` buffers outgoing events in SQLite (`OFFLINE_QUEUE_PATH`) and syncs them to the cloud when back online, with a 3-attempt quarantine for permanently-rejected (400/422) events.
+- **UHF USB reader** (`uhf_usb_reader.py`) is a fallback for FASTag-style readers that emit the full 96-bit EPC over a USB-HID keyboard interface, since the C3's card field can only hold 32 bits. It hooks the OS-wide keyboard stream, so it filters strictly on EPC length + inter-keystroke timing to avoid mistaking human typing for a tag read.
+- Everything hardware-facing has a `emulators/*_mock.py` counterpart (camera, GPIO, RFID, UHF, C3 push device) so the edge runs fully mocked in Docker/CI (`edge/Dockerfile.dev`, the `edge-emulator` service in `docker-compose.dev.yml`).
+- `edge/tools/` holds interactive scripts for bring-up/debugging real hardware (`c3_console.py`, `c3_live_test.py`, `rfid_tap_test.py`, `provision_gate.py`, etc.) — not part of the runtime path.
+
+### The edge ↔ cloud contract
+`POST /events/sync` is the single channel edge nodes use to report gate activity to the cloud, and it's intentionally pinned in three places that must be changed together: the zod schema in `services/api-gateway/src/schemas/event-sync.js`, the mirrored schema in `services/gate-command-service/src/routes.js`, and the `gate_events` table (currently through migration 031). `tests/fixtures/edge-event-sync.json` is the golden payload both `tests/unit/test_event_sync_contract.py` (Python/edge side) and `services/api-gateway/src/__tests__/event-sync-contract.test.js` (Node/cloud side) validate against — when the edge starts emitting a new field, widen all three plus the fixture.
+
+### Frontend apps (`apps/*`)
+- **admin-portal** — Next.js 14 App Router (`app/<section>/page.tsx` per feature: gates, communities, units, vehicles, guards, incidents, sos, reports, etc.), talks to api-gateway via `lib/api.ts` and live updates via `lib/socket.ts`.
+- **guard-app** — Expo/React Native, Android tablet at the gate. Zustand stores per domain in `src/store/` (queue, approvals, SOS, handover, staff, deliveries), i18n via `src/i18n/translations.ts` (guards may not read English).
+- **resident-app** — Expo/React Native, iOS + Android. Same store-per-domain + screen-per-feature pattern as guard-app, but with much heavier Jest test coverage (most screens/components have a co-located `.test.tsx`).
+
+### Infra (`infra/cdk`)
+Six CDK stacks wired together in `bin/app.ts`: `NetworkStack` (VPC/cluster) → `DataStack` (RDS + Redis + S3, depends on VPC) → `AuthStack` (Cognito) → `IotStack` (AWS IoT Core, replaces Mosquitto in prod) → `ServicesStack` (ECS services, depends on all of the above) → `FrontendStack`. Region is hardcoded to `ap-south-1`.
+
+### Database migrations
+Sequential, numbered SQL files in `services/api-gateway/migrations/` (`001_core.sql` ... `032_gate_telemetry.sql`), applied in order by `src/db/migrate.js` and tracked so re-application is a no-op (CI enforces this in the `migrations` job). This is the only migration path in the repo — other Node services read/write the same Postgres database but don't own migrations themselves.
