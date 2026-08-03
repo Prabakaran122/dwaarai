@@ -4,6 +4,7 @@ import multer from 'multer';
 import path from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
 import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { authenticateJWT } from '../middleware/auth.js';
@@ -33,6 +34,9 @@ const upload = multer({
     else cb(new Error('Only image files allowed'));
   },
 });
+// NAZ-032/033 — walk-in visitors additionally capture a face photo alongside
+// the ID photo (sent as 'photo', same as the vehicle-intake flow's field name).
+const approvalUpload = upload.fields([{ name: 'photo', maxCount: 1 }, { name: 'face_photo', maxCount: 1 }]);
 
 // NAZ-029: the guard is prompted to call the resident directly after 3
 // minutes of no response, so the approval window itself is 3 minutes.
@@ -52,6 +56,9 @@ const createSchema = z.object({
   // generic "request approval" call sites (e.g. a known-plate mismatch).
   vehicle_type: z.enum(['car', 'two_wheeler', 'goods_vehicle', 'other']).optional(),
   purpose: z.enum(['delivery', 'guest_visit', 'service', 'contractor', 'other']).optional(),
+  // NAZ-030..036 — only set for the walk-in-visitor flow.
+  visitor_mobile: z.string().min(7).max(15).optional(),
+  id_type: z.enum(['aadhaar', 'driving_license', 'voter_id', 'other']).optional(),
 });
 
 const respondSchema = z.object({
@@ -80,6 +87,14 @@ async function autoExpireIfNeeded(approval) {
   return approval;
 }
 
+function generateVisitorOTP(length = 6) {
+  const digits = '0123456789';
+  let otp = '';
+  const bytes = crypto.randomBytes(length);
+  for (let i = 0; i < length; i++) otp += digits[bytes[i] % 10];
+  return otp;
+}
+
 function clearTimerFor(id) {
   const timer = expiryTimers.get(id);
   if (timer) {
@@ -90,15 +105,19 @@ function clearTimerFor(id) {
 
 // -- POST /approvals (guard JWT) ---------------------------------------------
 
-router.post('/approvals', authenticateJWT(['guard']), upload.single('photo'), async (req, res) => {
+router.post('/approvals', authenticateJWT(['guard']), approvalUpload, async (req, res) => {
   try {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
       return error(res, 'Validation error', 400, parsed.error.issues);
     }
 
-    const { unit_number, visitor_name, vehicle_plate, gate_id, vehicle_type, purpose } = parsed.data;
-    const photoKey = req.file ? `/uploads/approvals/${new Date().toISOString().slice(0, 7)}/${req.file.filename}` : null;
+    const { unit_number, visitor_name, vehicle_plate, gate_id, vehicle_type, purpose, visitor_mobile, id_type } = parsed.data;
+    const month = new Date().toISOString().slice(0, 7);
+    const photoFile = req.files?.photo?.[0];
+    const facePhotoFile = req.files?.face_photo?.[0];
+    const photoKey = photoFile ? `/uploads/approvals/${month}/${photoFile.filename}` : null;
+    const facePhotoKey = facePhotoFile ? `/uploads/approvals/${month}/${facePhotoFile.filename}` : null;
     const user = req.user;
     const community_id = user.community_id;
 
@@ -124,10 +143,10 @@ router.post('/approvals', authenticateJWT(['guard']), upload.single('photo'), as
 
     const approval = await queryOne(
       `INSERT INTO approval_requests
-         (community_id, unit_id, gate_id, guard_id, visitor_name, vehicle_plate, expires_at, vehicle_type, purpose, photo_s3_key)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         (community_id, unit_id, gate_id, guard_id, visitor_name, vehicle_plate, expires_at, vehicle_type, purpose, photo_s3_key, visitor_mobile, id_type, face_photo_s3_key)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING *`,
-      [community_id, unit.id, gate_id, user.sub, visitor_name, vehicle_plate || null, expiresAt, vehicle_type || null, purpose || null, photoKey]
+      [community_id, unit.id, gate_id, user.sub, visitor_name, vehicle_plate || null, expiresAt, vehicle_type || null, purpose || null, photoKey, visitor_mobile || null, id_type || null, facePhotoKey]
     );
 
     // Send push to active residents in the unit who haven't opted out of
@@ -231,27 +250,50 @@ router.post('/approvals/:id/respond', authenticateJWT(['resident']), async (req,
     // Clear the expiry timer
     clearTimerFor(approvalId);
 
-    // If approved, open the gate
+    let visitorPass = null;
+
     if (action === 'approve') {
-      const eventId = uuidv4();
-      const ttl = Math.floor(Date.now() / 1000) + (parseInt(process.env.MQTT_COMMAND_TTL_SECONDS) || 30);
+      // Vehicle intake/mismatch flows carry a plate and need the barrier
+      // opened; a walk-in visitor (NAZ-030..043) has no vehicle and is let
+      // in on the guard's own judgement, so skip the gate command for them.
+      if (updated.vehicle_plate) {
+        const eventId = uuidv4();
+        const ttl = Math.floor(Date.now() / 1000) + (parseInt(process.env.MQTT_COMMAND_TTL_SECONDS) || 30);
 
-      await query(
-        `INSERT INTO gate_events
-           (id, community_id, gate_id, detection_method, raw_value, access_decision, event_ts)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        [eventId, updated.community_id, updated.gate_id, 'approval', updated.visitor_name, 'allow']
-      );
+        await query(
+          `INSERT INTO gate_events
+             (id, community_id, gate_id, detection_method, raw_value, access_decision, event_ts)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+          [eventId, updated.community_id, updated.gate_id, 'approval', updated.visitor_name, 'allow']
+        );
 
-      try {
-        await publishGateCommand(updated.community_id, updated.gate_id, {
-          event_id: eventId,
-          action: 'open',
-          ttl,
-          ts: Date.now() / 1000,
-        });
-      } catch (mqttErr) {
-        console.error('MQTT publish failed (event still recorded):', mqttErr);
+        try {
+          await publishGateCommand(updated.community_id, updated.gate_id, {
+            event_id: eventId,
+            action: 'open',
+            ttl,
+            ts: Date.now() / 1000,
+          });
+        } catch (mqttErr) {
+          console.error('MQTT publish failed (event still recorded):', mqttErr);
+        }
+      }
+
+      // NAZ-037..043: approving a walk-in visitor issues a one-time pass,
+      // valid 4 hours. SMS delivery is an open BRD vendor decision (§10) —
+      // the code is handed back to the guard to relay rather than pretending
+      // to send it.
+      if (updated.visitor_mobile) {
+        const otp = generateVisitorOTP();
+        const validFrom = new Date();
+        const validUntil = new Date(validFrom.getTime() + 4 * 60 * 60 * 1000);
+        visitorPass = await queryOne(
+          `INSERT INTO visitor_passes
+             (community_id, unit_id, created_by, visitor_name, visitor_mobile, otp, valid_from, valid_until, max_uses)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           RETURNING id, otp, valid_until`,
+          [updated.community_id, updated.unit_id, user.sub, updated.visitor_name, updated.visitor_mobile, otp, validFrom, validUntil, 1]
+        );
       }
     }
 
@@ -261,10 +303,11 @@ router.post('/approvals/:id/respond', authenticateJWT(['resident']), async (req,
       status: newStatus,
       responded_by: user.sub,
       responded_by_name: user.name || null,
+      visitor_pass: visitorPass,
       ts: new Date().toISOString(),
     });
 
-    return success(res, updated);
+    return success(res, { ...updated, visitor_pass: visitorPass });
   } catch (err) {
     console.error('POST /approvals/:id/respond error:', err);
     return error(res, 'Internal server error', 500);

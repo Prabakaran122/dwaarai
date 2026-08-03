@@ -34,6 +34,7 @@ async function request(method, path, { headers, body } = {}) {
 }
 
 const guard = generateTestToken({ sub: 'g1', role: 'guard', community_id: 'c1', gate_id: '00000000-0000-0000-0000-000000100001', name: 'Ramesh' });
+const resident = generateTestToken({ sub: 'r1', role: 'resident', community_id: 'c1', unit_id: 'u1', name: 'Asha Rao' });
 
 describe('POST /approvals', () => {
   // NAZ-029: "If resident does not respond within 3 minutes, Nazar prompts
@@ -84,6 +85,82 @@ describe('POST /approvals', () => {
     expect(status).toBe(201);
     expect(json.data.vehicle_type).toBe('car');
     expect(json.data.purpose).toBe('delivery');
+  });
+
+  // NAZ-030..036: walk-in visitor intake reuses this endpoint with the
+  // visitor's mobile + ID type instead of vehicle details.
+  it('accepts and stores visitor_mobile and id_type for the walk-in-visitor flow', async () => {
+    queryOne
+      .mockResolvedValueOnce({ id: 'u1', unit_number: 'A-204' })
+      .mockResolvedValueOnce({ id: '00000000-0000-0000-0000-000000100001', name: 'Main Gate' })
+      .mockImplementationOnce((sql, params) => Promise.resolve({
+        id: 'ap1', unit_id: 'u1', visitor_mobile: params[10], id_type: params[11],
+      }));
+    queryRows.mockResolvedValueOnce([]);
+
+    const { status, json } = await request('POST', '/api/v1/approvals', {
+      headers: { Authorization: `Bearer ${guard}` },
+      body: {
+        unit_number: 'A-204', visitor_name: 'Rahul Sharma', gate_id: '00000000-0000-0000-0000-000000100001',
+        visitor_mobile: '9900011122', id_type: 'aadhaar',
+      },
+    });
+    expect(status).toBe(201);
+    expect(json.data.visitor_mobile).toBe('9900011122');
+    expect(json.data.id_type).toBe('aadhaar');
+  });
+});
+
+describe('POST /approvals/:id/respond — walk-in visitor pass (NAZ-037..043)', () => {
+  it('issues a one-time visitor pass valid 4 hours when approving a walk-in visitor', async () => {
+    queryOne
+      .mockResolvedValueOnce({
+        id: 'ap1', community_id: 'c1', unit_id: 'u1', gate_id: 'g1', status: 'pending',
+        expires_at: new Date(Date.now() + 60_000), visitor_name: 'Rahul Sharma', visitor_mobile: '9900011122',
+        vehicle_plate: null,
+      })
+      .mockImplementationOnce((sql, params) => Promise.resolve({
+        id: 'ap1', community_id: 'c1', unit_id: 'u1', gate_id: 'g1', status: 'approved',
+        visitor_name: 'Rahul Sharma', visitor_mobile: '9900011122', vehicle_plate: null,
+      }))
+      .mockImplementationOnce((sql, params) => Promise.resolve({
+        id: 'pass1', otp: params[5], valid_until: params[7],
+      }));
+
+    const before = Date.now();
+    const { status, json } = await request('POST', '/api/v1/approvals/ap1/respond', {
+      headers: { Authorization: `Bearer ${resident}` },
+      body: { action: 'approve' },
+    });
+    expect(status).toBe(200);
+    expect(json.data.visitor_pass).toBeTruthy();
+    expect(json.data.visitor_pass.otp).toMatch(/^\d{6}$/);
+    const validWindowMs = new Date(json.data.visitor_pass.valid_until).getTime() - before;
+    expect(validWindowMs).toBeGreaterThan(3.9 * 60 * 60 * 1000);
+    expect(validWindowMs).toBeLessThanOrEqual(4.1 * 60 * 60 * 1000);
+  });
+
+  it('does not attempt to open the vehicle gate for a walk-in visitor with no plate', async () => {
+    const { publishGateCommand } = await import('../mqtt.js');
+    publishGateCommand.mockClear();
+    queryOne
+      .mockResolvedValueOnce({
+        id: 'ap2', community_id: 'c1', unit_id: 'u1', gate_id: 'g1', status: 'pending',
+        expires_at: new Date(Date.now() + 60_000), visitor_name: 'Rahul Sharma', visitor_mobile: '9900011122',
+        vehicle_plate: null,
+      })
+      .mockImplementationOnce(() => Promise.resolve({
+        id: 'ap2', community_id: 'c1', unit_id: 'u1', gate_id: 'g1', status: 'approved',
+        visitor_name: 'Rahul Sharma', visitor_mobile: '9900011122', vehicle_plate: null,
+      }))
+      .mockImplementationOnce((sql, params) => Promise.resolve({ id: 'pass2', otp: params[5], valid_until: params[7] }));
+
+    const { status } = await request('POST', '/api/v1/approvals/ap2/respond', {
+      headers: { Authorization: `Bearer ${resident}` },
+      body: { action: 'approve' },
+    });
+    expect(status).toBe(200);
+    expect(publishGateCommand).not.toHaveBeenCalled();
   });
 });
 
