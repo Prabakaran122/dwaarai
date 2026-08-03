@@ -89,7 +89,17 @@ export const createIncident = (data: {
   description: string;
   type: string;
   gateId: string;
-}) => api.post('/incidents', data);
+  photoUri?: string;
+  audioUri?: string;
+}) => {
+  const { photoUri, audioUri, ...fields } = data;
+  if (!photoUri && !audioUri) return api.post('/incidents', fields);
+  const form = new FormData();
+  Object.entries(fields).forEach(([k, v]) => { if (v !== undefined) form.append(k, String(v)); });
+  if (photoUri) form.append('photo', { uri: photoUri, name: 'incident.jpg', type: 'image/jpeg' } as any);
+  if (audioUri) form.append('audio', { uri: audioUri, name: 'incident.m4a', type: 'audio/m4a' } as any);
+  return api.post('/incidents', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
 
 // FASTag — Register vehicle at gate (guard action)
 export const registerVehicleAtGate = (data: {
