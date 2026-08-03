@@ -11,7 +11,7 @@ import { getSocket } from '../src/api/socket';
 import { colors } from '../src/theme/colors';
 import { useAppFonts } from '../src/lib/fonts';
 import LoginScreen from '../src/screens/LoginScreen';
-import WorkstationScreen from '../src/screens/WorkstationScreen';
+import NazarShell from '../src/screens/NazarShell';
 
 function AuthenticatedApp() {
   const addEntry = useQueueStore((s) => s.addEntry);
@@ -106,7 +106,7 @@ function AuthenticatedApp() {
     };
   }, [addEntry, updateApproval, addSos, removeSos, addDelivery, removeDelivery]);
 
-  return <WorkstationScreen />;
+  return <NazarShell />;
 }
 
 export default function Page() {
