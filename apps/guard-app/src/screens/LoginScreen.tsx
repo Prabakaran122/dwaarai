@@ -56,7 +56,7 @@ export default function LoginScreen() {
               <MaterialCommunityIcons name="shield-check" size={32} color={colors.white} />
             </LinearGradient>
           </View>
-          <Text style={styles.title}>CommunityGate</Text>
+          <Text style={styles.title}>Nazar</Text>
           <Text style={styles.subtitle}>{t('guardStation')}</Text>
 
           {errorMsg ? (
