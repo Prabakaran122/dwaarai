@@ -170,7 +170,7 @@ describe('Driver facial verification', () => {
   it('confirms when the driver matches an enrolled resident', async () => {
     isRecognitionConfigured.mockReturnValue(true);
     queryOne.mockResolvedValueOnce({ id: 'unit1' }); // unit
-    queryRows.mockResolvedValueOnce([{ resident_id: 'r9', name: 'Priya', vector: Buffer.from('v') }]); // candidates
+    queryRows.mockResolvedValueOnce([{ resident_id: 'r9', name: 'Priya', type: 'tenant', vector: Buffer.from('v') }]); // candidates
     matchFace.mockResolvedValueOnce({ available: true, matched: true, resident_id: 'r9', name: 'Priya', confidence: 0.93 });
     const { status, json } = await request('POST', '/api/v1/face/verify-driver', {
       headers: { Authorization: `Bearer ${guard}` },
@@ -179,6 +179,8 @@ describe('Driver facial verification', () => {
     expect(status).toBe(200);
     expect(json.data.status).toBe('confirmed');
     expect(json.data.resident_name).toBe('Priya');
+    // NAZ-013: verification screen shows the matched driver's relationship to the unit.
+    expect(json.data.relationship).toBe('tenant');
   });
 
   it('flags when the driver does not match', async () => {

@@ -52,6 +52,22 @@ describe('Incident reporting', () => {
     expect(broadcast.mock.calls[0][1]).toBe('incident:reported');
   });
 
+  // NAZ-059/060: photo and voice-note attachments.
+  it('accepts optional photo_s3_key and audio_s3_key and returns them', async () => {
+    queryOne.mockResolvedValueOnce({
+      id: 'i1', type: 'fight', description: 'two residents arguing at the gate', status: 'open',
+      gate_id: 'gate1', reported_by_name: 'Ramesh', created_at: new Date(),
+      photo_s3_key: '/uploads/incidents/2026-08/a.jpg', audio_s3_key: '/uploads/incidents/2026-08/a.m4a',
+    });
+    const { status, json } = await request('POST', '/api/v1/incidents', {
+      headers: { Authorization: `Bearer ${guard}` },
+      body: { type: 'fight', description: 'two residents arguing at the gate', gateId: 'gate1' },
+    });
+    expect(status).toBe(201);
+    expect(json.data.photo_url).toBe('/uploads/incidents/2026-08/a.jpg');
+    expect(json.data.audio_url).toBe('/uploads/incidents/2026-08/a.m4a');
+  });
+
   it('GET /incidents requires admin', async () => {
     expect((await request('GET', '/api/v1/incidents', { headers: { Authorization: `Bearer ${guard}` } })).status).toBe(403);
   });

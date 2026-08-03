@@ -11,6 +11,7 @@ export interface QueueEntry {
   fastagTidHash?: string;
   unitNumber?: string;
   residentName?: string;
+  anprConfidence?: number;
   autoPaired?: boolean;
   alertType?: 'unknown_vehicle' | 'auto_paired' | 'fastag_mismatch';
 }

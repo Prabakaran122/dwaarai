@@ -42,8 +42,15 @@ export const getActiveSos = () => api.get('/sos/active');
 export const resolveSos = (id: string) => api.post(`/sos/${id}/resolve`);
 
 // Deliveries
-export const logDelivery = (unit_number: string, company: string, note?: string) =>
-  api.post('/deliveries', { unit_number, company, note });
+export const logDelivery = (unit_number: string, company: string, note?: string, photoUri?: string) => {
+  if (!photoUri) return api.post('/deliveries', { unit_number, company, note });
+  const form = new FormData();
+  form.append('unit_number', unit_number);
+  form.append('company', company);
+  if (note) form.append('note', note);
+  form.append('photo', { uri: photoUri, name: 'parcel.jpg', type: 'image/jpeg' } as any);
+  return api.post('/deliveries', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
 export const getActiveDeliveries = () => api.get('/deliveries/active');
 export const updateDeliveryStatus = (id: string, status: 'delivered' | 'left_at_gate') =>
   api.post(`/deliveries/${id}/status`, { status });
@@ -59,6 +66,9 @@ export const verifyDriver = (data: { unit_number?: string; plate?: string; scan_
 // Daily staff roster
 export const getStaff = () => api.get('/staff');
 export const checkinStaff = (passId: string) => api.post(`/staff/${passId}/checkin`);
+
+// Verification-layer entitlements
+export const getEntitlements = () => api.get('/entitlements');
 
 // Gate operations
 export const getGates = () => api.get('/gates');
@@ -79,7 +89,17 @@ export const createIncident = (data: {
   description: string;
   type: string;
   gateId: string;
-}) => api.post('/incidents', data);
+  photoUri?: string;
+  audioUri?: string;
+}) => {
+  const { photoUri, audioUri, ...fields } = data;
+  if (!photoUri && !audioUri) return api.post('/incidents', fields);
+  const form = new FormData();
+  Object.entries(fields).forEach(([k, v]) => { if (v !== undefined) form.append(k, String(v)); });
+  if (photoUri) form.append('photo', { uri: photoUri, name: 'incident.jpg', type: 'image/jpeg' } as any);
+  if (audioUri) form.append('audio', { uri: audioUri, name: 'incident.m4a', type: 'audio/m4a' } as any);
+  return api.post('/incidents', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
 
 // FASTag — Register vehicle at gate (guard action)
 export const registerVehicleAtGate = (data: {
@@ -102,9 +122,26 @@ export const createApproval = (data: {
   visitor_name: string;
   vehicle_plate?: string;
   gate_id: string;
-}) => api.post('/approvals', data);
+  vehicle_type?: string;
+  purpose?: string;
+  photoUri?: string;
+  visitor_mobile?: string;
+  id_type?: string;
+  facePhotoUri?: string;
+}) => {
+  const { photoUri, facePhotoUri, ...fields } = data;
+  if (!photoUri && !facePhotoUri) return api.post('/approvals', fields);
+  const form = new FormData();
+  Object.entries(fields).forEach(([k, v]) => { if (v !== undefined) form.append(k, String(v)); });
+  if (photoUri) form.append('photo', { uri: photoUri, name: 'vehicle.jpg', type: 'image/jpeg' } as any);
+  if (facePhotoUri) form.append('face_photo', { uri: facePhotoUri, name: 'face.jpg', type: 'image/jpeg' } as any);
+  return api.post('/approvals', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
 
 export const getApproval = (id: string) => api.get(`/approvals/${id}`);
+
+// Unit/resident lookup (new-vehicle-entry + walk-in-visitor intake)
+export const lookupUnits = (q: string) => api.get('/units/lookup', { params: { q } });
 
 // Expected visits (recurring visitors)
 export const getExpectedVisits = (date?: string) =>

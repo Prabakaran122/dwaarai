@@ -156,6 +156,86 @@ export const translations: Dict = {
   restore: { en: 'Restore', hi: 'पुनर्स्थापित', kn: 'ಮರುಸ್ಥಾಪಿಸಿ' },
   evacuateConfirm: { en: 'Hold the barrier fully open for evacuation?', hi: 'निकासी के लिए बैरियर को पूरा खुला रखें?', kn: 'ಸ್ಥಳಾಂತರಕ್ಕಾಗಿ ಬ್ಯಾರಿಯರ್ ಅನ್ನು ಸಂಪೂರ್ಣ ತೆರೆದಿಡಬೇಕೆ?' },
   restoreConfirm: { en: 'Return the barrier to normal controlled mode?', hi: 'बैरियर को सामान्य नियंत्रित मोड में लौटाएं?', kn: 'ಬ್ಯಾರಿಯರ್ ಅನ್ನು ಸಾಮಾನ್ಯ ನಿಯಂತ್ರಿತ ಮೋಡ್‌ಗೆ ಹಿಂತಿರುಗಿಸಬೇಕೆ?' },
+
+  // Nazar bottom nav (NAZ-009)
+  navGate: { en: 'Gate', hi: 'गेट', kn: 'ಗೇಟ್' },
+  navVisitors: { en: 'Visitors', hi: 'आगंतुक', kn: 'ಭೇಟಿದಾರರು' },
+  navParcels: { en: 'Parcels', hi: 'पार्सल', kn: 'ಪಾರ್ಸೆಲ್‌ಗಳು' },
+  navIncident: { en: 'Incident', hi: 'घटना', kn: 'ಘಟನೆ' },
+
+  // Nazar gate home — quick actions grid (NAZ-006)
+  quickNewVisitor: { en: 'New visitor', hi: 'नया आगंतुक', kn: 'ಹೊಸ ಭೇಟಿದಾರ' },
+  quickVehicleEntry: { en: 'Vehicle entry', hi: 'वाहन प्रवेश', kn: 'ವಾಹನ ಪ್ರವೇಶ' },
+  quickDelivery: { en: 'Delivery', hi: 'डिलीवरी', kn: 'ಡೆಲಿವರಿ' },
+  quickIncident: { en: 'Incident', hi: 'घटना', kn: 'ಘಟನೆ' },
+
+  // Nazar gate home — smart alert banner (NAZ-004)
+  vehicleApproaching: { en: 'Vehicle approaching', hi: 'वाहन आ रहा है', kn: 'ವಾಹನ ಸಮೀಪಿಸುತ್ತಿದೆ' },
+
+  // Nazar — unbuilt tab placeholder
+  comingInThisRedesign: { en: 'Coming in this redesign', hi: 'इस नए डिज़ाइन में जल्द आ रहा है', kn: 'ಈ ಮರುವಿನ್ಯಾಸದಲ್ಲಿ ಶೀಘ್ರದಲ್ಲಿ ಬರಲಿದೆ' },
+
+  // New vehicle entry intake (NAZ-019..029)
+  plateNotFoundWarning: { en: 'Plate not found in registry — do not allow entry without logging', hi: 'प्लेट रजिस्ट्री में नहीं मिली — बिना दर्ज किए प्रवेश न दें', kn: 'ಪ್ಲೇಟ್ ನೋಂದಣಿಯಲ್ಲಿ ಕಂಡುಬಂದಿಲ್ಲ — ದಾಖಲಿಸದೆ ಪ್ರವೇಶ ನೀಡಬೇಡಿ' },
+  plateNumber: { en: 'Plate number', hi: 'प्लेट नंबर', kn: 'ಪ್ಲೇಟ್ ಸಂಖ್ಯೆ' },
+  vehicleType: { en: 'Vehicle type', hi: 'वाहन प्रकार', kn: 'ವಾಹನ ಪ್ರಕಾರ' },
+  vehicleTypeCar: { en: 'Car/SUV', hi: 'कार/एसयूवी', kn: 'ಕಾರ್/ಎಸ್‌ಯುವಿ' },
+  vehicleTypeTwoWheeler: { en: 'Two-wheeler', hi: 'दोपहिया', kn: 'ದ್ವಿಚಕ್ರ ವಾಹನ' },
+  vehicleTypeGoods: { en: 'Goods vehicle', hi: 'माल वाहन', kn: 'ಸರಕು ವಾಹನ' },
+  vehicleTypeOther: { en: 'Other', hi: 'अन्य', kn: 'ಇತರೆ' },
+  purposeOfVisit: { en: 'Purpose of visit', hi: 'यात्रा का उद्देश्य', kn: 'ಭೇಟಿಯ ಉದ್ದೇಶ' },
+  purposeDelivery: { en: 'Delivery', hi: 'डिलीवरी', kn: 'ಡೆಲಿವರಿ' },
+  purposeGuestVisit: { en: 'Guest visit', hi: 'अतिथि यात्रा', kn: 'ಅತಿಥಿ ಭೇಟಿ' },
+  purposeService: { en: 'Service', hi: 'सेवा', kn: 'ಸೇವೆ' },
+  purposeContractor: { en: 'Contractor', hi: 'ठेकेदार', kn: 'ಗುತ್ತಿಗೆದಾರ' },
+  purposeOther: { en: 'Other', hi: 'अन्य', kn: 'ಇತರೆ' },
+  takePhoto: { en: 'Take photo', hi: 'फ़ोटो लें', kn: 'ಫೋಟೋ ತೆಗೆಯಿರಿ' },
+  retakePhoto: { en: 'Retake photo', hi: 'फिर से फ़ोटो लें', kn: 'ಮತ್ತೆ ಫೋಟೋ ತೆಗೆಯಿರಿ' },
+  next: { en: 'Next', hi: 'आगे', kn: 'ಮುಂದೆ' },
+  back: { en: 'Back', hi: 'पीछे', kn: 'ಹಿಂದೆ' },
+  searchUnitPlaceholder: { en: 'Search unit number or resident name', hi: 'यूनिट नंबर या निवासी का नाम खोजें', kn: 'ಯೂನಿಟ್ ಸಂಖ್ಯೆ ಅಥವಾ ನಿವಾಸಿಯ ಹೆಸರು ಹುಡುಕಿ' },
+  noUnitsFound: { en: 'No matching units', hi: 'कोई मिलती यूनिट नहीं', kn: 'ಹೊಂದಾಣಿಕೆಯ ಯೂನಿಟ್ ಇಲ್ಲ' },
+  sendForApproval: { en: 'Send for approval', hi: 'स्वीकृति हेतु भेजें', kn: 'ಅನುಮೋದನೆಗೆ ಕಳುಹಿಸಿ' },
+  awaitingApproval: { en: 'Awaiting resident approval', hi: 'निवासी की स्वीकृति की प्रतीक्षा', kn: 'ನಿವಾಸಿಯ ಅನುಮೋದನೆಗಾಗಿ ಕಾಯಲಾಗುತ್ತಿದೆ' },
+  residentApproved: { en: 'Resident approved', hi: 'निवासी ने स्वीकृत किया', kn: 'ನಿವಾಸಿ ಅನುಮೋದಿಸಿದ್ದಾರೆ' },
+  residentDenied: { en: 'Resident denied', hi: 'निवासी ने अस्वीकृत किया', kn: 'ನಿವಾಸಿ ನಿರಾಕರಿಸಿದ್ದಾರೆ' },
+  noResponseCallResident: { en: 'No response — call the resident directly', hi: 'कोई प्रतिक्रिया नहीं — निवासी को सीधे कॉल करें', kn: 'ಪ್ರತಿಕ್ರಿಯೆ ಇಲ್ಲ — ನಿವಾಸಿಗೆ ನೇರವಾಗಿ ಕರೆ ಮಾಡಿ' },
+  callResident: { en: 'Call resident', hi: 'निवासी को कॉल करें', kn: 'ನಿವಾಸಿಗೆ ಕರೆ ಮಾಡಿ' },
+  allowEntry: { en: 'Allow entry', hi: 'प्रवेश की अनुमति दें', kn: 'ಪ್ರವೇಶ ಅನುಮತಿಸಿ' },
+  holdVehicle: { en: 'Hold vehicle', hi: 'वाहन रोकें', kn: 'ವಾಹನ ತಡೆಹಿಡಿಯಿರಿ' },
+
+  // Walk-in visitor intake (NAZ-030..043)
+  visitorMobile: { en: 'Visitor mobile number', hi: 'आगंतुक का मोबाइल नंबर', kn: 'ಭೇಟಿದಾರರ ಮೊಬೈಲ್ ಸಂಖ್ಯೆ' },
+  idType: { en: 'ID type', hi: 'पहचान पत्र का प्रकार', kn: 'ಗುರುತಿನ ಪ್ರಕಾರ' },
+  idAadhaar: { en: 'Aadhaar', hi: 'आधार', kn: 'ಆಧಾರ್' },
+  idDrivingLicense: { en: 'Driving licence', hi: 'ड्राइविंग लाइसेंस', kn: 'ಚಾಲನಾ ಪರವಾನಗಿ' },
+  idVoterId: { en: 'Voter ID', hi: 'मतदाता पहचान पत्र', kn: 'ಮತದಾರ ಗುರುತಿನ ಚೀಟಿ' },
+  idOther: { en: 'Other', hi: 'अन्य', kn: 'ಇತರೆ' },
+  takeIdPhoto: { en: 'Take ID photo', hi: 'पहचान पत्र की फ़ोटो लें', kn: 'ಗುರುತಿನ ಫೋಟೋ ತೆಗೆಯಿರಿ' },
+  retakeIdPhoto: { en: 'Retake ID photo', hi: 'पहचान पत्र की फ़ोटो फिर से लें', kn: 'ಗುರುತಿನ ಫೋಟೋ ಮತ್ತೆ ತೆಗೆಯಿರಿ' },
+  takeFacePhoto: { en: 'Take face photo', hi: 'चेहरे की फ़ोटो लें', kn: 'ಮುಖದ ಫೋಟೋ ತೆಗೆಯಿರಿ' },
+  retakeFacePhoto: { en: 'Retake face photo', hi: 'चेहरे की फ़ोटो फिर से लें', kn: 'ಮುಖದ ಫೋಟೋ ಮತ್ತೆ ತೆಗೆಯಿರಿ' },
+  vehiclePlateOptional: { en: 'Vehicle number (if any)', hi: 'वाहन नंबर (यदि हो)', kn: 'ವಾಹನ ಸಂಖ್ಯೆ (ಇದ್ದರೆ)' },
+  holdVisitor: { en: 'Hold visitor', hi: 'आगंतुक को रोकें', kn: 'ಭೇಟಿದಾರರನ್ನು ತಡೆಹಿಡಿಯಿರಿ' },
+  visitorPassIssued: { en: 'Entry pass issued', hi: 'प्रवेश पास जारी', kn: 'ಪ್ರವೇಶ ಪಾಸ್ ನೀಡಲಾಗಿದೆ' },
+  passValidUntil: { en: 'Valid until', hi: 'तक मान्य', kn: 'ವರೆಗೆ ಮಾನ್ಯ' },
+  relayCodeToVisitor: { en: 'SMS delivery is not yet configured — read this code to the visitor', hi: 'SMS सेवा अभी सेट नहीं है — यह कोड आगंतुक को बताएं', kn: 'SMS ಸೇವೆ ಇನ್ನೂ ಹೊಂದಿಸಿಲ್ಲ — ಈ ಕೋಡ್ ಅನ್ನು ಭೇಟಿದಾರರಿಗೆ ತಿಳಿಸಿ' },
+
+  // Delivery overstay (NAZ-045)
+  overstayed: { en: 'Overstayed', hi: 'अधिक समय से रुका', kn: 'ಹೆಚ್ಚು ಸಮಯ ಕಾದಿದೆ' },
+
+  // Incident reporting (NAZ-056..061)
+  incSpeeding: { en: 'Speeding vehicle', hi: 'तेज़ रफ़्तार वाहन', kn: 'ವೇಗದ ವಾಹನ' },
+  incUnauthorizedEntry: { en: 'Unauthorized entry', hi: 'अनधिकृत प्रवेश', kn: 'ಅನಧಿಕೃತ ಪ್ರವೇಶ' },
+  incTheftAttempt: { en: 'Theft attempt', hi: 'चोरी का प्रयास', kn: 'ಕಳ್ಳತನದ ಪ್ರಯತ್ನ' },
+  incMedicalEmergency: { en: 'Medical emergency', hi: 'चिकित्सा आपातकाल', kn: 'ವೈದ್ಯಕೀಯ ತುರ್ತುಸ್ಥಿತಿ' },
+  incFight: { en: 'Fight', hi: 'झगड़ा', kn: 'ಜಗಳ' },
+  incPropertyDamage: { en: 'Property damage', hi: 'संपत्ति को नुकसान', kn: 'ಆಸ್ತಿ ಹಾನಿ' },
+  detailsMinLength: { en: 'Details must be at least 20 characters', hi: 'विवरण कम से कम 20 अक्षर का होना चाहिए', kn: 'ವಿವರಗಳು ಕನಿಷ್ಠ 20 ಅಕ್ಷರಗಳಿರಬೇಕು' },
+  recordVoiceNote: { en: 'Record voice note', hi: 'आवाज़ रिकॉर्ड करें', kn: 'ಧ್ವನಿ ಟಿಪ್ಪಣಿ ರೆಕಾರ್ಡ್ ಮಾಡಿ' },
+  stopRecording: { en: 'Stop recording', hi: 'रिकॉर्डिंग रोकें', kn: 'ರೆಕಾರ್ಡಿಂಗ್ ನಿಲ್ಲಿಸಿ' },
+  transcriptionPending: { en: 'Voice recording attached — transcription vendor not yet selected, please type or edit the details below', hi: 'आवाज़ रिकॉर्डिंग जोड़ी गई — ट्रांसक्रिप्शन सेवा अभी तय नहीं — कृपया नीचे विवरण टाइप करें', kn: 'ಧ್ವನಿ ರೆಕಾರ್ಡಿಂಗ್ ಲಗತ್ತಿಸಲಾಗಿದೆ — ಪ್ರತಿಲಿಪಿ ಸೇವೆ ಇನ್ನೂ ನಿರ್ಧರಿತವಾಗಿಲ್ಲ — ದಯವಿಟ್ಟು ಕೆಳಗೆ ವಿವರ ಬರೆಯಿರಿ' },
+  submitIncident: { en: 'Submit incident', hi: 'घटना सबमिट करें', kn: 'ಘಟನೆ ಸಲ್ಲಿಸಿ' },
 };
 
 export function translate(key: string, lang: Lang): string {

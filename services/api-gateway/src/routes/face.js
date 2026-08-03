@@ -282,7 +282,7 @@ router.post('/face/verify-driver', authenticateJWT(['guard']), async (req, res) 
 
     // Candidate vectors = actively enrolled residents of this unit.
     const candidates = await queryRows(
-      `SELECT fe.resident_id, r.name, fe.vector
+      `SELECT fe.resident_id, r.name, r.type, fe.vector
          FROM face_enrollments fe
          JOIN residents r ON r.id = fe.resident_id
         WHERE fe.unit_id = $1 AND fe.status = 'active' AND fe.vector IS NOT NULL`,
@@ -304,6 +304,7 @@ router.post('/face/verify-driver', authenticateJWT(['guard']), async (req, res) 
     }
 
     const status = result.matched ? 'confirmed' : 'flagged';
+    const matchedCandidate = result.matched ? candidates.find((c) => c.resident_id === result.resident_id) : null;
 
     // Log the verification for transparency (resident sees it in their audit trail).
     await query(
@@ -315,6 +316,8 @@ router.post('/face/verify-driver', authenticateJWT(['guard']), async (req, res) 
     return success(res, {
       status,
       resident_name: result.matched ? result.name : null,
+      // NAZ-013: relationship to unit (owner/tenant/family), shown next to the matched name.
+      relationship: matchedCandidate?.type || null,
       confidence: result.confidence,
     });
   } catch (err) {
