@@ -4,7 +4,7 @@ import { z } from 'zod';
 import multer from 'multer';
 import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
-import { authenticateJWT, authenticateDevice } from '../middleware/auth.js';
+import { authenticateJWT, authenticateDevice, isAdminUser } from '../middleware/auth.js';
 import { deviceLimiter } from '../middleware/rateLimit.js';
 import { getCache, setCache, delCachePattern, getCacheStats } from '../db/redis.js';
 import { broadcast } from '../websocket.js';
@@ -115,7 +115,7 @@ router.get('/vehicles', authenticateJWT(['resident', 'admin']), async (req, res)
     const plateSearch = req.query.plate || null;
 
     let sql, params;
-    if (user.role === 'admin') {
+    if (isAdminUser(user)) {
       sql = `SELECT v.*,
                (SELECT ge.event_ts FROM gate_events ge
                 WHERE ge.matched_vehicle_id = v.id
@@ -182,7 +182,7 @@ router.put('/vehicles/:id', authenticateJWT(['resident', 'admin']), async (req, 
     if (existing.community_id !== user.community_id) {
       return error(res, 'Forbidden', 403);
     }
-    if (user.role !== 'admin' && existing.unit_id !== user.unit_id) {
+    if (!isAdminUser(user) && existing.unit_id !== user.unit_id) {
       return error(res, 'Forbidden', 403);
     }
 

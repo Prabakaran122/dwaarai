@@ -3,7 +3,7 @@ import { z } from 'zod';
 import crypto from 'crypto';
 import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
-import { authenticateJWT, authenticateDevice } from '../middleware/auth.js';
+import { authenticateJWT, authenticateDevice, isAdminUser } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -85,7 +85,7 @@ router.get('/passes', authenticateJWT(['resident', 'admin']), async (req, res) =
     const dateTo = req.query.date_to || null;
 
     let sql, params;
-    if (user.role === 'admin') {
+    if (isAdminUser(user)) {
       sql = 'SELECT * FROM visitor_passes WHERE community_id = $1';
       params = [community_id];
     } else {

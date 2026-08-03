@@ -6,6 +6,7 @@ import { buildEvent } from './event.js';
 import { ratePerHour, nextGapMs, mulberry32, istClock } from './rhythm.js';
 import { newDelivery, newPass, insertTrickle } from './trickle.js';
 import { buildPopulation } from './population.js';
+import { buildHeartbeat, postHeartbeat, pendingOpenCommands, OPEN_HOLD_MS } from './edge.js';
 
 const TOKEN_TTL_SECONDS = 24 * 3600;
 const TOKEN_REFRESH_MS = 12 * 3600 * 1000;
@@ -97,6 +98,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // How long to wait before trying to re-open a dropped database connection.
 const DB_RETRY_MS = 60 * 1000;
+// Real edge boxes beat about twice a minute; matching that keeps telemetry_at
+// fresh so the Edge Health panel never shows the gates as stale.
+const HEARTBEAT_MS = 30 * 1000;
 
 /**
  * A pg.Client with an 'error' listener attached.
@@ -155,6 +159,70 @@ async function main() {
   let tokens = Object.fromEntries(GATES.map((g) => [g.id, deviceToken(g.id, jwtSecret)]));
   let tokensMintedAt = Date.now();
   let nextDbRetryAt = 0;
+
+  // -- virtual edge node -----------------------------------------------------
+  // Without it the gates report no telemetry at all (panel NULL, telemetry_at
+  // never), so the Edge Health panel is blank and a manual "Open" is recorded
+  // but never visibly opens anything.
+  //
+  // This runs on its OWN timer, deliberately not inside the traffic loop below.
+  // That loop sleeps for the Poisson gap — around half an hour at 3am — so
+  // sharing its clock would let telemetry go stale overnight and make an
+  // operator wait that long for the boom to answer.
+  const startedAt = Date.now();
+  let lastCommandCheck = new Date();
+  const openUntil = new Map();   // gateId -> ms timestamp the boom drops again
+  let edgeBusy = false;          // guards against overlapping ticks
+  let nextBeatAt = 0;
+
+  async function edgeTick() {
+    if (edgeBusy) return;
+    edgeBusy = true;
+    try {
+      // Pick up any manual "Open" pressed since the last check.
+      if (db && dbUp) {
+        try {
+          const commands = await pendingOpenCommands(db, lastCommandCheck);
+          lastCommandCheck = new Date();
+          for (const cmd of commands) {
+            if (tokens[cmd.gate_id]) openUntil.set(cmd.gate_id, Date.now() + OPEN_HOLD_MS);
+          }
+        } catch (err) {
+          console.error('[demo-traffic] open-command poll failed:', err.message);
+        }
+      }
+
+      // Any boom whose hold has expired needs a closing beat right away, so the
+      // door is seen to shut rather than waiting for the next scheduled beat.
+      const dropped = [];
+      for (const [gateId, until] of openUntil) {
+        if (until <= Date.now()) { openUntil.delete(gateId); dropped.push(gateId); }
+      }
+
+      const due = Date.now() >= nextBeatAt;
+      if (due) nextBeatAt = Date.now() + HEARTBEAT_MS;
+
+      for (const g of GATES) {
+        const isOpen = (openUntil.get(g.id) || 0) > Date.now();
+        // Beat this gate if the whole fleet is due, if its boom is currently
+        // up, or if it just dropped.
+        if (!due && !isOpen && !dropped.includes(g.id)) continue;
+        const beat = buildHeartbeat({ gate: g, startedAt, now: Date.now(), isOpen });
+        const res = await postHeartbeat(beat, { apiBase, token: tokens[g.id] });
+        if (!res.ok) logPostResult(res);
+      }
+    } finally {
+      edgeBusy = false;
+    }
+  }
+
+  if (!dryRun) {
+    // 3s cadence: fast enough that pressing Open feels immediate, cheap enough
+    // to run forever (it only beats when a beat is actually due).
+    const edgeTimer = setInterval(() => { edgeTick().catch(() => {}); }, 3000);
+    edgeTimer.unref?.();
+    await edgeTick();
+  }
 
   console.log(`[demo-traffic] started — ${dryRun ? 'DRY RUN' : apiBase}`);
 

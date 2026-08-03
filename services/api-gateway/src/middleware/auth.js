@@ -41,6 +41,24 @@ export function authenticateJWT(roles = []) {
   };
 }
 
+/**
+ * Is this token an administrator of some kind?
+ *
+ * `admin` is a ROLE GROUP, not a stored role: admin-login puts the row's real
+ * role in the JWT, which is `super_admin` or `community_admin` and never the
+ * literal 'admin'. Route bodies that compared `user.role === 'admin'` therefore
+ * matched no real admin and silently fell through to their resident branch —
+ * that is why the vehicle and pass lists came back empty for every admin.
+ * Use this instead of comparing the string.
+ */
+export function isAdminUser(user) {
+  return (
+    user?.role === 'admin' ||
+    user?.role === 'community_admin' ||
+    user?.role === 'super_admin'
+  );
+}
+
 export function authenticateDevice(req, res, next) {
   const token = req.headers['x-device-token'];
   if (!token) {

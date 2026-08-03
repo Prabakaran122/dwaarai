@@ -33,6 +33,7 @@ import facilityRoutes from './routes/facilities.js';
 import issueRoutes from './routes/issues.js';
 import pollRoutes from './routes/polls.js';
 import blockRoutes from './routes/blocks.js';
+import unitRoutes from './routes/units.js';
 import communityFeedRoutes from './routes/community-feed.js';
 import communityEventRoutes from './routes/community-events.js';
 import dashboardRoutes from './routes/dashboard.js';
@@ -96,6 +97,7 @@ app.use('/api/v1', communityEventRoutes);
 app.use('/api/v1', issueRoutes);
 app.use('/api/v1', pollRoutes);
 app.use('/api/v1', blockRoutes);
+app.use('/api/v1', unitRoutes);
 
 // Serve uploaded visit photos
 const UPLOAD_BASE = process.env.UPLOAD_DIR || '/opt/communitygate/uploads';
