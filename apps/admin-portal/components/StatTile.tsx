@@ -1,6 +1,7 @@
 'use client';
 
 import { ReactNode } from 'react';
+import Link from 'next/link';
 import { Sparkline } from './charts/Charts';
 
 /**
@@ -83,5 +84,8 @@ export default function StatTile({
     </div>
   );
 
-  return href ? <a href={href} className="block h-full">{body}</a> : body;
+  // next/link, NOT a raw <a>: the portal is served under basePath '/admin', and
+  // Next only prepends that for Link. A plain anchor sent every tile to
+  // /events instead of /admin/events — a 404 on the marketing site.
+  return href ? <Link href={href} className="block h-full">{body}</Link> : body;
 }
