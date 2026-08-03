@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { render, fireEvent } from '@testing-library/react-native';
 import AlertBanner from './AlertBanner';
 
 describe('AlertBanner', () => {
@@ -26,5 +26,16 @@ describe('AlertBanner', () => {
     expect(getByText('KA01AB1234')).toBeTruthy();
     expect(getByText(/A-204/)).toBeTruthy();
     expect(getByText(/Asha Rao/)).toBeTruthy();
+  });
+
+  it('calls onPress when tapped, entering the verification flow (BRD: guard taps the active vehicle card)', () => {
+    const onPress = jest.fn();
+    const entry = {
+      id: '1', plate: 'KA01AB1234', method: 'fastag' as const, decision: 'guard_review' as const,
+      timestamp: new Date().toISOString(),
+    };
+    const { getByTestId } = render(<AlertBanner entry={entry} onPress={onPress} />);
+    fireEvent.press(getByTestId('alert-banner'));
+    expect(onPress).toHaveBeenCalledTimes(1);
   });
 });

@@ -84,4 +84,21 @@ describe('GateHomeScreen', () => {
     fireEvent.press(getByTestId('logout-button'));
     expect(logout).toHaveBeenCalledTimes(1);
   });
+
+  it('opens the verification screen for the alert entry when its banner is tapped, and back returns home', () => {
+    useQueueStore.setState({
+      entries: [{
+        id: 'e1', plate: 'KA01AB1234', method: 'fastag' as const, decision: 'guard_review' as const,
+        timestamp: new Date().toISOString(), unitNumber: 'A-204', residentName: 'Asha Rao',
+      }],
+      shiftStats: { shiftStart: new Date().toISOString(), totalEntries: 1, totalDenied: 0, totalVisitors: 0 },
+    });
+    const { getByTestId, getByText, queryByTestId } = render(<GateHomeScreen onNavigate={() => {}} />);
+    fireEvent.press(getByTestId('alert-banner'));
+    expect(getByTestId('open-gate-button')).toBeTruthy();
+
+    fireEvent.press(getByTestId('back-button'));
+    expect(queryByTestId('open-gate-button')).toBeNull();
+    expect(getByText('Vehicle approaching')).toBeTruthy();
+  });
 });

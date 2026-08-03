@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -12,6 +12,7 @@ import AlertBanner from '../components/AlertBanner';
 import QuickActionGrid, { QuickAction } from '../components/QuickActionGrid';
 import LiveFeed from '../components/LiveFeed';
 import ShiftStats from '../components/ShiftStats';
+import VehicleVerificationScreen from './VehicleVerificationScreen';
 import { useAuthStore } from '../store/authStore';
 import { useQueueStore, selectPendingEntries } from '../store/queueStore';
 import { useSosStore } from '../store/sosStore';
@@ -30,11 +31,16 @@ export default function GateHomeScreen({ onNavigate }: Props) {
   const entries = useQueueStore((s) => s.entries);
   const fetchActiveSos = useSosStore((s) => s.fetchActive);
   const t = useT();
+  const [verifying, setVerifying] = useState(false);
 
   useEffect(() => { fetchActiveSos(); }, [fetchActiveSos]);
 
   const pending = selectPendingEntries(entries);
   const alertEntry = pending[0] ?? null;
+
+  if (verifying && alertEntry) {
+    return <VehicleVerificationScreen entry={alertEntry} onClose={() => setVerifying(false)} />;
+  }
 
   const quickActions: QuickAction[] = [
     { key: 'visitor', label: t('quickNewVisitor'), icon: 'account-plus', onPress: () => onNavigate('visitors') },
@@ -66,7 +72,7 @@ export default function GateHomeScreen({ onNavigate }: Props) {
 
       <SosBanner />
 
-      <AlertBanner entry={alertEntry} />
+      <AlertBanner entry={alertEntry} onPress={() => setVerifying(true)} />
 
       <View style={styles.quickActions}>
         <QuickActionGrid actions={quickActions} />

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
@@ -10,16 +10,19 @@ import type { QueueEntry } from '../store/queueStore';
 
 interface Props {
   entry: QueueEntry | null;
+  onPress?: () => void;
 }
 
 // Smart alert banner (NAZ-004) — surfaces the newest approaching vehicle
 // (FASTag/ANPR read) at the top of Gate Home. Renders nothing when idle.
-export default function AlertBanner({ entry }: Props) {
+// Tapping it opens the triple-layer verification screen (BRD: "the guard taps
+// the active vehicle card to enter the verification flow").
+export default function AlertBanner({ entry, onPress }: Props) {
   const t = useT();
   if (!entry) return null;
 
   return (
-    <View style={styles.banner}>
+    <Pressable testID="alert-banner" style={styles.banner} onPress={onPress}>
       <MaterialCommunityIcons name="car-connected" size={22} color={colors.actionPrimary} />
       <View style={styles.body}>
         <Text style={styles.title}>{t('vehicleApproaching')}</Text>
@@ -32,7 +35,8 @@ export default function AlertBanner({ entry }: Props) {
           )}
         </View>
       </View>
-    </View>
+      <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textTertiary} />
+    </Pressable>
   );
 }
 
