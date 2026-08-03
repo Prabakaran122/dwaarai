@@ -62,6 +62,36 @@ describe('GET /entitlements', () => {
   });
 });
 
+describe('GET /entitlements/:communityId (super_admin only, NAZ-050..055 admin UI)', () => {
+  it('rejects a guard token', async () => {
+    const { status } = await request('GET', '/api/v1/entitlements/c1', { headers: { Authorization: `Bearer ${guard}` } });
+    expect(status).toBe(403);
+  });
+
+  it('rejects a community_admin token', async () => {
+    const { status } = await request('GET', '/api/v1/entitlements/c1', { headers: { Authorization: `Bearer ${communityAdmin}` } });
+    expect(status).toBe(403);
+  });
+
+  it('lets super_admin fetch any community by id', async () => {
+    queryOne.mockResolvedValueOnce({
+      community_id: 'c2', fastag_enabled: true, anpr_enabled: true, face_enabled: true, ai_anomaly_enabled: false,
+      updated_at: new Date('2026-08-01T00:00:00Z'),
+    });
+    const { status, json } = await request('GET', '/api/v1/entitlements/c2', { headers: { Authorization: `Bearer ${superAdmin}` } });
+    expect(status).toBe(200);
+    expect(json.data.tier).toBe('Pro');
+    expect(queryOne).toHaveBeenCalledWith(expect.any(String), ['c2']);
+  });
+
+  it('degrades to Starter defaults when the community has no row yet', async () => {
+    queryOne.mockResolvedValueOnce(null);
+    const { status, json } = await request('GET', '/api/v1/entitlements/c3', { headers: { Authorization: `Bearer ${superAdmin}` } });
+    expect(status).toBe(200);
+    expect(json.data).toEqual({ fastag: true, anpr: false, face: false, aiAnomaly: false, tier: 'Starter', updatedAt: null });
+  });
+});
+
 describe('PUT /entitlements/:communityId', () => {
   it('rejects a guard token', async () => {
     const { status } = await request('PUT', '/api/v1/entitlements/c1', { headers: { Authorization: `Bearer ${guard}` }, body: {} });

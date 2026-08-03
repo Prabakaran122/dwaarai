@@ -44,6 +44,18 @@ router.get('/entitlements', authenticateJWT(), async (req, res) => {
   }
 });
 
+// -- GET /entitlements/:communityId (super_admin only) -- admin-portal UI ----
+
+router.get('/entitlements/:communityId', authenticateJWT(['super_admin']), async (req, res) => {
+  try {
+    const row = await queryOne('SELECT * FROM community_entitlements WHERE community_id = $1', [req.params.communityId]);
+    return success(res, shape(row));
+  } catch (err) {
+    console.error('GET /entitlements/:communityId error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
 // -- PUT /entitlements/:communityId (super_admin only, Dwaar AI ops) ---------
 
 router.put('/entitlements/:communityId', authenticateJWT(['super_admin']), async (req, res) => {
