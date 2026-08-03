@@ -10,7 +10,9 @@ import { broadcast } from '../websocket.js';
 
 const router = Router();
 
-const APPROVAL_TTL_MS = 60_000;
+// NAZ-029: the guard is prompted to call the resident directly after 3
+// minutes of no response, so the approval window itself is 3 minutes.
+const APPROVAL_TTL_MS = 180_000;
 
 // In-memory expiry timers — cleared when a response arrives before timeout
 const expiryTimers = new Map();
