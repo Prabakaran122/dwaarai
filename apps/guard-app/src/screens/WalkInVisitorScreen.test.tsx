@@ -10,6 +10,12 @@ import * as ImagePicker from 'expo-image-picker';
 import WalkInVisitorScreen from './WalkInVisitorScreen';
 import { useAuthStore } from '../store/authStore';
 
+// This suite renders a 3-step form with camera-permission/capture round trips
+// per step; under CI's heavier load the default 5s timeout is too tight even
+// though nothing here is actually slow logic (observed flaking in CI, not
+// locally). Matches no other guard-app suite needing this, so scoped here.
+jest.setTimeout(15000);
+
 beforeEach(() => {
   jest.clearAllMocks();
   jest.useFakeTimers();
