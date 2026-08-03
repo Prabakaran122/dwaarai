@@ -60,6 +60,9 @@ export const verifyDriver = (data: { unit_number?: string; plate?: string; scan_
 export const getStaff = () => api.get('/staff');
 export const checkinStaff = (passId: string) => api.post(`/staff/${passId}/checkin`);
 
+// Verification-layer entitlements
+export const getEntitlements = () => api.get('/entitlements');
+
 // Gate operations
 export const getGates = () => api.get('/gates');
 export const getGateStatus = (id: string) => api.get(`/gates/${id}/status`);

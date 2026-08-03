@@ -7,6 +7,7 @@ import { useApprovalStore } from '../src/store/approvalStore';
 import { useLangStore } from '../src/store/langStore';
 import { useSosStore } from '../src/store/sosStore';
 import { useDeliveryStore } from '../src/store/deliveryStore';
+import { useEntitlementStore } from '../src/store/entitlementStore';
 import { getSocket } from '../src/api/socket';
 import { colors } from '../src/theme/colors';
 import { useAppFonts } from '../src/lib/fonts';
@@ -20,6 +21,10 @@ function AuthenticatedApp() {
   const removeSos = useSosStore((s) => s.removeAlert);
   const addDelivery = useDeliveryStore((s) => s.addArrived);
   const removeDelivery = useDeliveryStore((s) => s.removeById);
+  const fetchEntitlements = useEntitlementStore((s) => s.fetch);
+  const applyEntitlementUpdate = useEntitlementStore((s) => s.applyUpdate);
+
+  useEffect(() => { fetchEntitlements(); }, [fetchEntitlements]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -94,6 +99,7 @@ function AuthenticatedApp() {
     socket.on('sos:resolved', (data: { id: string }) => removeSos(data.id));
     socket.on('delivery:arrived', (data: any) => addDelivery(data));
     socket.on('delivery:updated', (data: { id: string }) => removeDelivery(data.id));
+    socket.on('entitlement:updated', applyEntitlementUpdate);
     return () => {
       socket.off('gate:event', handleEvent);
       socket.off('fastag:paired');
@@ -103,8 +109,9 @@ function AuthenticatedApp() {
       socket.off('sos:resolved');
       socket.off('delivery:arrived');
       socket.off('delivery:updated');
+      socket.off('entitlement:updated', applyEntitlementUpdate);
     };
-  }, [addEntry, updateApproval, addSos, removeSos, addDelivery, removeDelivery]);
+  }, [addEntry, updateApproval, addSos, removeSos, addDelivery, removeDelivery, applyEntitlementUpdate]);
 
   return <NazarShell />;
 }
@@ -114,9 +121,10 @@ export default function Page() {
   const isLoading = useAuthStore((s) => s.isLoading);
   const rehydrate = useAuthStore((s) => s.rehydrate);
   const rehydrateLang = useLangStore((s) => s.rehydrate);
+  const rehydrateEntitlements = useEntitlementStore((s) => s.rehydrate);
   const fontsLoaded = useAppFonts();
 
-  useEffect(() => { rehydrate(); rehydrateLang(); }, []);
+  useEffect(() => { rehydrate(); rehydrateLang(); rehydrateEntitlements(); }, []);
 
   if (!fontsLoaded || isLoading) {
     return (
