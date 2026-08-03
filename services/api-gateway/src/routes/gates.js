@@ -82,9 +82,12 @@ router.get('/gates/:id/status', authenticateJWT(), async (req, res) => {
   }
 });
 
-// -- POST /gates/:id/command (JWT admin) -------------------------------------
+// -- POST /gates/:id/command (JWT guard or admin) ----------------------------
+// The guard app's Open gate / Deny actions call this directly (it is the
+// guard's primary function) -- admin can also send manual commands from the
+// Admin Portal.
 
-router.post('/gates/:id/command', authenticateJWT(['admin']), async (req, res) => {
+router.post('/gates/:id/command', authenticateJWT(['guard', 'admin']), async (req, res) => {
   try {
     const user = req.user;
     const parsed = commandSchema.safeParse(req.body);
