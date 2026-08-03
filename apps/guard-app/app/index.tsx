@@ -55,6 +55,7 @@ function AuthenticatedApp() {
         fastagTidHash: data.fastagTidHash,
         unitNumber: data.matchedUnitNumber,
         residentName: data.residentName,
+        anprConfidence: data.anprConfidence,
         autoPaired: data.autoPaired,
         alertType: data.alertType as QueueEntry['alertType'],
       };
