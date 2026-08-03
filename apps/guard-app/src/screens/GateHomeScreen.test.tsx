@@ -1,8 +1,10 @@
+jest.mock('../api/client');
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
 import GateHomeScreen from './GateHomeScreen';
 import { useAuthStore } from '../store/authStore';
 import { useQueueStore } from '../store/queueStore';
+import { useSosStore } from '../store/sosStore';
 
 const baseUser = {
   name: 'Ramesh',
@@ -18,6 +20,7 @@ beforeEach(() => {
     entries: [],
     shiftStats: { shiftStart: new Date().toISOString(), totalEntries: 0, totalDenied: 0, totalVisitors: 0 },
   });
+  useSosStore.setState({ active: [], raising: false });
 });
 
 describe('GateHomeScreen', () => {
@@ -63,5 +66,22 @@ describe('GateHomeScreen', () => {
     expect(onNavigate).toHaveBeenCalledWith('parcels');
     fireEvent.press(getByTestId('quick-action-incident'));
     expect(onNavigate).toHaveBeenCalledWith('incident');
+  });
+
+  it('shows the active SOS banner when one is raised', () => {
+    useSosStore.setState({
+      active: [{ id: 's1', type: 'security', note: null, gateId: 'g1', raisedByName: 'Ramesh', createdAt: new Date().toISOString() }],
+      raising: false,
+    });
+    const { getByText } = render(<GateHomeScreen onNavigate={() => {}} />);
+    expect(getByText(/EMERGENCY ACTIVE/i)).toBeTruthy();
+  });
+
+  it('logs out when the header logout icon is pressed', () => {
+    const logout = jest.fn();
+    useAuthStore.setState({ user: baseUser, isAuthenticated: true, isLoading: false, logout });
+    const { getByTestId } = render(<GateHomeScreen onNavigate={() => {}} />);
+    fireEvent.press(getByTestId('logout-button'));
+    expect(logout).toHaveBeenCalledTimes(1);
   });
 });

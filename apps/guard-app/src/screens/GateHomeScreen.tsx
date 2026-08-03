@@ -1,10 +1,12 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { type, font } from '../theme/typography';
 import SosButton from '../components/SosButton';
+import SosBanner from '../components/SosBanner';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import AlertBanner from '../components/AlertBanner';
 import QuickActionGrid, { QuickAction } from '../components/QuickActionGrid';
@@ -12,6 +14,7 @@ import LiveFeed from '../components/LiveFeed';
 import ShiftStats from '../components/ShiftStats';
 import { useAuthStore } from '../store/authStore';
 import { useQueueStore, selectPendingEntries } from '../store/queueStore';
+import { useSosStore } from '../store/sosStore';
 import { useT } from '../store/langStore';
 import type { TabKey } from '../components/TabBar';
 
@@ -23,8 +26,12 @@ interface Props {
 export default function GateHomeScreen({ onNavigate }: Props) {
   const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
   const entries = useQueueStore((s) => s.entries);
+  const fetchActiveSos = useSosStore((s) => s.fetchActive);
   const t = useT();
+
+  useEffect(() => { fetchActiveSos(); }, [fetchActiveSos]);
 
   const pending = selectPendingEntries(entries);
   const alertEntry = pending[0] ?? null;
@@ -50,9 +57,14 @@ export default function GateHomeScreen({ onNavigate }: Props) {
             </View>
           </View>
           <SosButton />
+          <TouchableOpacity testID="logout-button" onPress={logout} hitSlop={8}>
+            <MaterialCommunityIcons name="logout" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
         </View>
         <LanguageSwitcher compact />
       </View>
+
+      <SosBanner />
 
       <AlertBanner entry={alertEntry} />
 
