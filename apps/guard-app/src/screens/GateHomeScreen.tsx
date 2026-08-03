@@ -13,6 +13,8 @@ import QuickActionGrid, { QuickAction } from '../components/QuickActionGrid';
 import LiveFeed from '../components/LiveFeed';
 import ShiftStats from '../components/ShiftStats';
 import VehicleVerificationScreen from './VehicleVerificationScreen';
+import NewVehicleEntryScreen from './NewVehicleEntryScreen';
+import type { QueueEntry } from '../store/queueStore';
 import { useAuthStore } from '../store/authStore';
 import { useQueueStore, selectPendingEntries } from '../store/queueStore';
 import { useSosStore } from '../store/sosStore';
@@ -32,19 +34,36 @@ export default function GateHomeScreen({ onNavigate }: Props) {
   const fetchActiveSos = useSosStore((s) => s.fetchActive);
   const t = useT();
   const [verifying, setVerifying] = useState(false);
+  const [intakeEntry, setIntakeEntry] = useState<QueueEntry | 'manual' | null>(null);
 
   useEffect(() => { fetchActiveSos(); }, [fetchActiveSos]);
 
   const pending = selectPendingEntries(entries);
   const alertEntry = pending[0] ?? null;
+  const isUnmatched = (e: QueueEntry) => !e.unitNumber && !e.residentName;
 
   if (verifying && alertEntry) {
     return <VehicleVerificationScreen entry={alertEntry} onClose={() => setVerifying(false)} />;
   }
 
+  if (intakeEntry) {
+    return (
+      <NewVehicleEntryScreen
+        entry={intakeEntry === 'manual' ? null : intakeEntry}
+        onClose={() => setIntakeEntry(null)}
+      />
+    );
+  }
+
+  const openAlertEntry = () => {
+    if (!alertEntry) return;
+    if (isUnmatched(alertEntry)) setIntakeEntry(alertEntry);
+    else setVerifying(true);
+  };
+
   const quickActions: QuickAction[] = [
     { key: 'visitor', label: t('quickNewVisitor'), icon: 'account-plus', onPress: () => onNavigate('visitors') },
-    { key: 'vehicle', label: t('quickVehicleEntry'), icon: 'car', onPress: () => onNavigate('gate') },
+    { key: 'vehicle', label: t('quickVehicleEntry'), icon: 'car', onPress: () => setIntakeEntry('manual') },
     { key: 'delivery', label: t('quickDelivery'), icon: 'package-variant', onPress: () => onNavigate('parcels') },
     { key: 'incident', label: t('quickIncident'), icon: 'alert-circle', onPress: () => onNavigate('incident') },
   ];
@@ -72,7 +91,7 @@ export default function GateHomeScreen({ onNavigate }: Props) {
 
       <SosBanner />
 
-      <AlertBanner entry={alertEntry} onPress={() => setVerifying(true)} />
+      <AlertBanner entry={alertEntry} onPress={openAlertEntry} />
 
       <View style={styles.quickActions}>
         <QuickActionGrid actions={quickActions} />

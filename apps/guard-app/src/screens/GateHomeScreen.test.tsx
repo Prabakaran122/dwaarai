@@ -101,4 +101,26 @@ describe('GateHomeScreen', () => {
     expect(queryByTestId('open-gate-button')).toBeNull();
     expect(getByText('Vehicle approaching')).toBeTruthy();
   });
+
+  it('opens the mandatory new-vehicle-entry intake for a completely unmatched plate (BRD §5.3)', () => {
+    useQueueStore.setState({
+      entries: [{
+        id: 'e1', plate: 'KA07ZZ9999', method: 'anpr' as const, decision: 'guard_review' as const,
+        timestamp: new Date().toISOString(),
+      }],
+      shiftStats: { shiftStart: new Date().toISOString(), totalEntries: 1, totalDenied: 0, totalVisitors: 0 },
+    });
+    const { getByTestId, getByText, queryByTestId } = render(<GateHomeScreen onNavigate={() => {}} />);
+    fireEvent.press(getByTestId('alert-banner'));
+    // The intake screen, not the verification screen, for a plate with no unit/resident match at all.
+    expect(queryByTestId('open-gate-button')).toBeNull();
+    expect(getByText(/Plate not found in registry/i)).toBeTruthy();
+    expect(getByTestId('take-photo-button')).toBeTruthy();
+  });
+
+  it('opens the new-vehicle-entry intake manually via the Vehicle entry quick action', () => {
+    const { getByTestId } = render(<GateHomeScreen onNavigate={() => {}} />);
+    fireEvent.press(getByTestId('quick-action-vehicle'));
+    expect(getByTestId('plate-input')).toBeTruthy();
+  });
 });
