@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Pressable, Modal, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
-import { spacing } from '../theme/spacing';
+import { spacing, radius } from '../theme/spacing';
 import { type, font } from '../theme/typography';
 import SosButton from '../components/SosButton';
 import SosBanner from '../components/SosBanner';
+import HandoverCard from '../components/HandoverCard';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import AlertBanner from '../components/AlertBanner';
 import QuickActionGrid, { QuickAction } from '../components/QuickActionGrid';
@@ -18,6 +19,7 @@ import type { QueueEntry } from '../store/queueStore';
 import { useAuthStore } from '../store/authStore';
 import { useQueueStore, selectPendingEntries } from '../store/queueStore';
 import { useSosStore } from '../store/sosStore';
+import { useHandoverStore } from '../store/handoverStore';
 import { useT } from '../store/langStore';
 import type { TabKey } from '../components/TabBar';
 
@@ -32,9 +34,13 @@ export default function GateHomeScreen({ onNavigate }: Props) {
   const logout = useAuthStore((s) => s.logout);
   const entries = useQueueStore((s) => s.entries);
   const fetchActiveSos = useSosStore((s) => s.fetchActive);
+  const submitHandover = useHandoverStore((s) => s.submit);
   const t = useT();
   const [verifying, setVerifying] = useState(false);
   const [intakeEntry, setIntakeEntry] = useState<QueueEntry | 'manual' | null>(null);
+  const [showHandover, setShowHandover] = useState(false);
+  const [note, setNote] = useState('');
+  const [ending, setEnding] = useState(false);
 
   useEffect(() => { fetchActiveSos(); }, [fetchActiveSos]);
 
@@ -61,6 +67,18 @@ export default function GateHomeScreen({ onNavigate }: Props) {
     else setVerifying(true);
   };
 
+  const skipLogout = () => { setShowHandover(false); logout(); };
+
+  const endShift = async () => {
+    if (note.trim()) {
+      setEnding(true);
+      try { await submitHandover(note.trim()); } catch { /* still log out */ }
+      setEnding(false);
+    }
+    setShowHandover(false);
+    logout();
+  };
+
   const quickActions: QuickAction[] = [
     { key: 'visitor', label: t('quickNewVisitor'), icon: 'account-plus', onPress: () => onNavigate('visitors') },
     { key: 'vehicle', label: t('quickVehicleEntry'), icon: 'car', onPress: () => setIntakeEntry('manual') },
@@ -82,7 +100,7 @@ export default function GateHomeScreen({ onNavigate }: Props) {
             </View>
           </View>
           <SosButton />
-          <TouchableOpacity testID="logout-button" onPress={logout} hitSlop={8}>
+          <TouchableOpacity testID="logout-button" onPress={() => setShowHandover(true)} hitSlop={8}>
             <MaterialCommunityIcons name="logout" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
@@ -90,6 +108,8 @@ export default function GateHomeScreen({ onNavigate }: Props) {
       </View>
 
       <SosBanner />
+
+      <HandoverCard />
 
       <AlertBanner entry={alertEntry} onPress={openAlertEntry} />
 
@@ -102,6 +122,33 @@ export default function GateHomeScreen({ onNavigate }: Props) {
       <View style={styles.shiftStats}>
         <ShiftStats />
       </View>
+
+      <Modal visible={showHandover} transparent animationType="fade" onRequestClose={() => setShowHandover(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{t('handoverTitle')}</Text>
+            <TextInput
+              testID="handover-note-input"
+              style={styles.modalInput}
+              placeholder={t('handoverPrompt')}
+              placeholderTextColor={colors.textTertiary}
+              value={note}
+              onChangeText={setNote}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+            <View style={styles.modalActions}>
+              <Pressable testID="skip-logout-button" style={styles.modalSkipBtn} onPress={skipLogout} disabled={ending}>
+                <Text style={styles.modalSkipText}>{t('skipLogout')}</Text>
+              </Pressable>
+              <Pressable testID="end-shift-button" style={styles.modalEndBtn} onPress={endShift} disabled={ending}>
+                {ending ? <ActivityIndicator color={colors.white} /> : <Text style={styles.modalEndText}>{t('endShiftSubmit')}</Text>}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -122,4 +169,16 @@ const styles = StyleSheet.create({
   community: { ...font(400), fontSize: 12, color: colors.textSecondary },
   quickActions: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   shiftStats: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+  modalCard: { width: 420, maxWidth: '90%', backgroundColor: colors.card, borderRadius: radius.lg, padding: spacing.xl, borderWidth: 1, borderColor: colors.border },
+  modalTitle: { ...font(700), fontSize: 16, color: colors.textPrimary, marginBottom: spacing.md },
+  modalInput: {
+    backgroundColor: colors.elevated, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, fontSize: 14, color: colors.textPrimary, minHeight: 70, marginBottom: spacing.md,
+  },
+  modalActions: { flexDirection: 'row', gap: spacing.sm },
+  modalSkipBtn: { flex: 1, alignItems: 'center', padding: spacing.md },
+  modalSkipText: { ...font(500), fontSize: 13, color: colors.danger },
+  modalEndBtn: { flex: 1, alignItems: 'center', padding: spacing.md, backgroundColor: colors.teal, borderRadius: radius.md },
+  modalEndText: { ...font(700), fontSize: 13, color: colors.white },
 });

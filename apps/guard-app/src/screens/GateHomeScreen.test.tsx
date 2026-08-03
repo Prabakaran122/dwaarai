@@ -1,10 +1,11 @@
 jest.mock('../api/client');
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react-native';
+import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import GateHomeScreen from './GateHomeScreen';
 import { useAuthStore } from '../store/authStore';
 import { useQueueStore } from '../store/queueStore';
 import { useSosStore } from '../store/sosStore';
+import { useHandoverStore } from '../store/handoverStore';
 
 const baseUser = {
   name: 'Ramesh',
@@ -21,6 +22,7 @@ beforeEach(() => {
     shiftStats: { shiftStart: new Date().toISOString(), totalEntries: 0, totalDenied: 0, totalVisitors: 0 },
   });
   useSosStore.setState({ active: [], raising: false });
+  useHandoverStore.setState({ latest: null, openItems: { sosActive: 0, deliveriesWaiting: 0 } });
 });
 
 describe('GateHomeScreen', () => {
@@ -77,11 +79,35 @@ describe('GateHomeScreen', () => {
     expect(getByText(/EMERGENCY ACTIVE/i)).toBeTruthy();
   });
 
-  it('logs out when the header logout icon is pressed', () => {
+  it('shows the previous guard’s handover note (NAZ-068)', () => {
+    useHandoverStore.setState({
+      latest: { note: 'Watch for the plumber van after 6pm', guardName: 'Suresh', createdAt: new Date().toISOString() },
+      openItems: { sosActive: 0, deliveriesWaiting: 0 },
+    });
+    const { getByText } = render(<GateHomeScreen onNavigate={() => {}} />);
+    expect(getByText(/Watch for the plumber van/)).toBeTruthy();
+  });
+
+  it('opens a handover-note prompt before logging out, and skip logs out without one', () => {
     const logout = jest.fn();
     useAuthStore.setState({ user: baseUser, isAuthenticated: true, isLoading: false, logout });
     const { getByTestId } = render(<GateHomeScreen onNavigate={() => {}} />);
     fireEvent.press(getByTestId('logout-button'));
+    expect(logout).not.toHaveBeenCalled();
+    fireEvent.press(getByTestId('skip-logout-button'));
+    expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  it('submits the handover note before logging out (NAZ-068)', async () => {
+    const logout = jest.fn();
+    const submit = jest.fn().mockResolvedValue(undefined);
+    useAuthStore.setState({ user: baseUser, isAuthenticated: true, isLoading: false, logout });
+    useHandoverStore.setState({ latest: null, openItems: { sosActive: 0, deliveriesWaiting: 0 }, submit });
+    const { getByTestId } = render(<GateHomeScreen onNavigate={() => {}} />);
+    fireEvent.press(getByTestId('logout-button'));
+    fireEvent.changeText(getByTestId('handover-note-input'), 'Gate 2 light is out');
+    fireEvent.press(getByTestId('end-shift-button'));
+    await waitFor(() => expect(submit).toHaveBeenCalledWith('Gate 2 light is out'));
     expect(logout).toHaveBeenCalledTimes(1);
   });
 
