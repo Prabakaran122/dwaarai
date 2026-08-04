@@ -87,6 +87,48 @@ describe('POST /notices — committee-only, with priority', () => {
     expect(sendToMultiple).toHaveBeenCalledTimes(1);
   });
 
+  // posted_by_role is NOT NULL and the shipped resident app renders the "RWA"
+  // badge on the literal 'admin', so these two assert the value actually bound
+  // to the INSERT. The DB is mocked, so a canned response row would happily
+  // hide both a constraint violation and a changed vocabulary.
+  it('stores posted_by_role as the literal "admin" the resident app matches on', async () => {
+    queryOne.mockResolvedValueOnce({
+      id: 'n1', category: 'official', title: 'AGM', body: 'Sunday 11am',
+      author_name: 'RWA Office', author_unit: null, posted_by_role: 'admin',
+      is_pinned: true, priority: 'normal', author_resident_id: null,
+      created_at: new Date(), last_activity_at: new Date(),
+    });
+    queryRows.mockResolvedValueOnce([]);
+    await request('POST', '/api/v1/notices', {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: { title: 'AGM', body: 'Sunday 11am' },
+    });
+    const insert = queryOne.mock.calls.find(([sql]) => /INSERT INTO notices/i.test(sql));
+    expect(insert[1]).toContain('admin');
+  });
+
+  it('never binds a null posted_by_role for a plain resident starting a discussion', async () => {
+    queryOne
+      .mockResolvedValueOnce({ id: 'r1', name: 'Asha', resident_type: 'owner', committee_role: null }) // actor
+      .mockResolvedValueOnce({ unit_number: 'A-704' }) // unit
+      .mockResolvedValueOnce({
+        id: 'n9', category: 'discussion', title: 'Lift noise', body: 'Anyone else?',
+        author_name: 'Asha', author_unit: 'A-704', posted_by_role: 'resident',
+        is_pinned: false, priority: 'normal', author_resident_id: 'r1',
+        created_at: new Date(), last_activity_at: new Date(),
+      });
+    const { status } = await request('POST', '/api/v1/notices', {
+      headers: { Authorization: `Bearer ${ownerToken}` },
+      body: { title: 'Lift noise', body: 'Anyone else?', category: 'discussion' },
+    });
+    expect(status).toBe(201);
+    const insert = queryOne.mock.calls.find(([sql]) => /INSERT INTO notices/i.test(sql));
+    const postedByRole = insert[1][7];
+    expect(postedByRole).not.toBeNull();
+    expect(typeof postedByRole).toBe('string');
+    expect(postedByRole).toBe('resident');
+  });
+
   it('a resident committee member can post, and the row records their real role label', async () => {
     queryOne
       .mockResolvedValueOnce({ id: 'r3', name: 'Meena', resident_type: 'owner', committee_role: 'secretary' }) // actor lookup

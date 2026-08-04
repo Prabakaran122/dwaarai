@@ -138,9 +138,14 @@ router.post('/notices', authenticateJWT(['resident', 'admin']), async (req, res)
     let authorUnit = null;
     let role;
 
+    // posted_by_role is NOT NULL (014_notice_board.sql) and its existing
+    // vocabulary is 'admin' | 'resident'. The shipped Basera app compares it to
+    // the literal 'admin' to render the "· RWA" badge, so those two values must
+    // survive verbatim; a committee member's label is the only new value, and
+    // it is additive — it simply doesn't match 'admin', which renders fine.
     if (admin) {
       authorName = user.name || 'Management';
-      role = 'Admin';
+      role = 'admin';
     } else {
       // The actor's committee role comes from the database, never the token —
       // a token issued before someone left the committee must not still work.
@@ -165,7 +170,9 @@ router.post('/notices', authenticateJWT(['resident', 'admin']), async (req, res)
       const unit = await queryOne('SELECT unit_number FROM units WHERE id = $1', [user.unit_id]);
       authorName = actor.name || user.name || 'Resident';
       authorUnit = unit?.unit_number || null;
-      role = roleLabel(actor.committee_role) || null;
+      // Never null: the column rejects it, and a plain resident starting a
+      // discussion has no committee label to fall back on.
+      role = roleLabel(actor.committee_role) || 'resident';
     }
 
     const isPinned = category === 'official';
