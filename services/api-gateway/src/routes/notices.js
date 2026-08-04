@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
-import { canAnnounce, roleLabel } from '../lib/committee.js';
+import { canAnnounce, isGuard, roleLabel } from '../lib/committee.js';
 import { sendToMultiple } from '../lib/fcm.js';
 
 const router = Router();
@@ -126,6 +126,13 @@ router.post('/notices', authenticateJWT(['resident', 'admin']), async (req, res)
     const user = req.user;
     const admin = isAdminUser(user);
 
+    // This route serves two different posts with two different permissions
+    // (BRD role table): an ANNOUNCEMENT is official, pinned and committee-only,
+    // while a DISCUSSION is open to any owner or tenant. Gating both on
+    // committee membership would take discussion posting away from ordinary
+    // residents, who can do it today.
+    const category = parsed.data.category === 'discussion' ? 'discussion' : 'official';
+
     let authorResidentId = null;
     let authorName;
     let authorUnit = null;
@@ -142,8 +149,17 @@ router.post('/notices', authenticateJWT(['resident', 'admin']), async (req, res)
            FROM residents WHERE id = $1 AND community_id = $2 AND is_active = true`,
         [user.sub, user.community_id]
       );
-      if (!canAnnounce({ ...actor, role: user.role })) {
-        return error(res, 'Only committee members can post announcements', 403);
+      const permitted = category === 'official'
+        ? canAnnounce({ ...actor, role: user.role })
+        : Boolean(actor) && !isGuard({ ...actor, role: user.role });
+      if (!permitted) {
+        return error(
+          res,
+          category === 'official'
+            ? 'Only committee members can post announcements'
+            : 'Only residents can start a discussion',
+          403
+        );
       }
       authorResidentId = actor.id;
       const unit = await queryOne('SELECT unit_number FROM units WHERE id = $1', [user.unit_id]);
@@ -152,10 +168,6 @@ router.post('/notices', authenticateJWT(['resident', 'admin']), async (req, res)
       role = roleLabel(actor.committee_role) || null;
     }
 
-    // Every announcement posted through this route is official and pinned —
-    // it's committee/admin gated, so there is no "resident discussion" branch
-    // left to distinguish.
-    const category = parsed.data.category === 'discussion' ? 'discussion' : 'official';
     const isPinned = category === 'official';
 
     const notice = await queryOne(

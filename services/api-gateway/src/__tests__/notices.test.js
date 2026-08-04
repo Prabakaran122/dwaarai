@@ -69,18 +69,32 @@ describe('Notice board', () => {
     expect(json.data[0].is_pinned).toBe(true);
   });
 
-  // Task 11 (committee-only announcements, see notice-priority.test.js) gated
-  // POST /notices to portal admins and resident committee members only. A
-  // plain (non-committee) resident, who previously could post a forced
-  // 'discussion' notice, is now 403 — this test is re-aligned to that, and
-  // the committee-posting path is covered in notice-priority.test.js.
-  it('a plain (non-committee) resident is 403 posting a notice', async () => {
+  // This route carries two posts with two permissions (BRD role table): an
+  // announcement is committee-only, a discussion is open to any owner or
+  // tenant. The pair below pins both halves so neither drifts into the other.
+  it('a plain (non-committee) resident is 403 posting an ANNOUNCEMENT', async () => {
     queryOne.mockResolvedValueOnce({ id: 'r1', name: 'Asha', resident_type: 'owner', committee_role: null }); // actor lookup
     const { status } = await request('POST', '/api/v1/notices', {
       headers: { Authorization: `Bearer ${residentToken}` },
       body: { title: 'Lift noise', body: 'Anyone else?', category: 'official' },
     });
     expect(status).toBe(403);
+    expect(sendToMultiple).not.toHaveBeenCalled();
+  });
+
+  it('a plain (non-committee) resident CAN still start a discussion', async () => {
+    queryOne
+      .mockResolvedValueOnce({ id: 'r1', name: 'Asha', resident_type: 'owner', committee_role: null }) // actor lookup
+      .mockResolvedValueOnce({ unit_number: 'A-704' }) // unit lookup
+      .mockResolvedValueOnce({ id: 'n2', category: 'discussion', title: 'Lift noise', body: 'Anyone else?', author_name: 'Asha', author_unit: 'A-704', posted_by_role: null, is_pinned: false, author_resident_id: 'r1', created_at: new Date(), last_activity_at: new Date() });
+    const { status, json } = await request('POST', '/api/v1/notices', {
+      headers: { Authorization: `Bearer ${residentToken}` },
+      body: { title: 'Lift noise', body: 'Anyone else?', category: 'discussion' },
+    });
+    expect(status).toBe(201);
+    expect(json.data.category).toBe('discussion');
+    expect(json.data.is_pinned).toBe(false);
+    // Discussions never push to the whole community — only official notices do.
     expect(sendToMultiple).not.toHaveBeenCalled();
   });
 
