@@ -109,6 +109,18 @@ describe('PUT /admin/residents/:id/committee-role', () => {
     expect(json.error).toBeTruthy();
   });
 
+  // Without the guard this ran `AND community_id = NULL`, matched nothing, and
+  // reported "Resident not found" — sending the admin after the wrong problem.
+  it('returns 400, not a misleading 404, when no community is selected', async () => {
+    const { status, json } = await request('PUT', '/api/v1/admin/residents/r1/committee-role', {
+      headers: { Authorization: `Bearer ${superAdminNoCommunity}` },
+      body: { committee_role: 'secretary' },
+    });
+    expect(status).toBe(400);
+    expect(json.error.message).toMatch(/no community selected/i);
+    expect(queryOne).not.toHaveBeenCalled();
+  });
+
   it('sets committee_role and keeps is_committee in sync', async () => {
     queryOne.mockResolvedValueOnce({ id: 'r1', name: 'Asha', committee_role: 'secretary' });
     const { status, json } = await request('PUT', '/api/v1/admin/residents/r1/committee-role', {

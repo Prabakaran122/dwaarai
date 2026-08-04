@@ -55,7 +55,12 @@ router.put('/admin/residents/:id/committee-role', authenticateJWT(['admin']), as
     }).safeParse(req.body);
     if (!parsed.success) return error(res, 'Validation error', 400, parsed.error.issues);
 
+    // Same guard as the GET. Without it a super_admin whose X-Community-Id
+    // never arrived would run `AND community_id = NULL`, match no rows, and be
+    // told "Resident not found" — which points the admin at the wrong problem.
     const communityId = req.user.community_id;
+    if (!communityId) return error(res, 'No community selected', 400);
+
     const row = await queryOne(
       `UPDATE residents SET committee_role = $1, is_committee = ($1 IS NOT NULL)
         WHERE id = $2 AND community_id = $3
