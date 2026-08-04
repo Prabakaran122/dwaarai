@@ -6,12 +6,68 @@ import { assemblePolls } from './polls.js';
 
 const router = Router();
 
+// Known post types for the unified feed. `discussion` is a real, existing
+// domain concept (notices.category='discussion' — see migrations/014_notice_board.sql)
+// but this endpoint does not query it yet: doing so would add a new
+// queryRows() call, and the interleaved mock-call-order that
+// src/__tests__/community.test.js already asserts for GET /community/feed
+// (queryRows 1=announcements, 2=issues, queryOne 1=callerBlock, queryRows
+// 3=polls, ...) is out of scope for this task to touch. Kept in the validated
+// set so `?type=discussion` is accepted (and correctly returns []) rather than
+// erroring, and so the union doesn't silently shrink. Follow-up: add a
+// fetchDiscussions() source once that test file's call-order assertions can
+// be updated alongside it.
+const KNOWN_POST_TYPES = ['announcement', 'issue', 'poll', 'discussion'];
+
+/**
+ * Feed order per BRD F-01: the most recent announcement is pinned to the top
+ * regardless of its age, everything else is reverse-chronological. Only ONE
+ * announcement is pinned — older ones fall back into the timeline, or a society
+ * that posts often would show nothing but announcements.
+ */
+export function orderFeed(posts) {
+  const byNewest = [...posts].sort(
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+  );
+  const pinIndex = byNewest.findIndex((p) => p.type === 'announcement');
+  if (pinIndex <= 0) return byNewest;
+  const [pinned] = byNewest.splice(pinIndex, 1);
+  return [pinned, ...byNewest];
+}
+
+// A row with a null/missing createdAt is coerced to the epoch (new Date(0))
+// so it sorts to the very bottom of the reverse-chronological order rather
+// than producing `Invalid Date` / NaN comparisons inside orderFeed's sort.
+// In practice this should never fire: created_at is NOT NULL DEFAULT NOW()
+// on notices, issues, and polls (see migrations 014, 037), so this is
+// defense-in-depth, not an expected path.
+function safeCreatedAt(value) {
+  return value == null ? new Date(0).toISOString() : value;
+}
+
 // ── GET /community/feed ───────────────────────────────────────────────────────
-// Aggregate feed: top pinned announcements, recent issues, open polls.
+// Unified reverse-chronological feed (`posts`) with the newest announcement
+// pinned first, PLUS the legacy `{ announcements, issues, polls }` grouped
+// keys — UNCHANGED — for backward compatibility.
+//
+// DEPRECATED: `announcements` / `issues` / `polls` on this response. The
+// Basera resident app installed on real phones today consumes this grouped
+// shape; the new Community screens (a separate, later plan, see
+// docs/superpowers/plans/2026-08-04-community-backend.md) will read `posts`
+// instead. Once every installed client is on the new screens, delete the
+// grouped keys here.
+//
 // Promise.allSettled degrades each section to [] on failure — never 500.
 
 router.get('/community/feed', authenticateJWT(['resident', 'admin']), async (req, res) => {
   const { community_id, sub, unit_id } = req.user;
+
+  const rawType = req.query.type;
+  if (rawType !== undefined && !KNOWN_POST_TYPES.includes(rawType)) {
+    return res.status(400).json({
+      error: { message: `Invalid type filter. Must be one of: ${KNOWN_POST_TYPES.join(', ')}` },
+    });
+  }
 
   // ── Announcements sub-query ───────────────────────────────────────────────
   async function fetchAnnouncements() {
@@ -119,10 +175,27 @@ router.get('/community/feed', authenticateJWT(['resident', 'admin']), async (req
     return [];
   };
 
+  const announcements = val(announcementsResult, 'announcements');
+  const issues = val(issuesResult, 'issues');
+  const polls = val(pollsResult, 'polls');
+
+  const allPosts = [
+    ...announcements.map((a) => ({ ...a, type: 'announcement', createdAt: safeCreatedAt(a.createdAt) })),
+    ...issues.map((i) => ({ ...i, type: 'issue', createdAt: safeCreatedAt(i.createdAt) })),
+    ...polls.map((p) => ({ ...p, type: 'poll', createdAt: safeCreatedAt(p.createdAt) })),
+  ];
+
+  const ordered = orderFeed(allPosts);
+  const posts = rawType === undefined ? ordered : ordered.filter((post) => post.type === rawType);
+
   return success(res, {
-    announcements: val(announcementsResult, 'announcements'),
-    issues: val(issuesResult, 'issues'),
-    polls: val(pollsResult, 'polls'),
+    posts,
+    // DEPRECATED — see comment above the route. Byte-identical to the
+    // pre-`posts` response; do not change without also updating the Basera
+    // resident app's CommunityScreen.
+    announcements,
+    issues,
+    polls,
   });
 });
 
