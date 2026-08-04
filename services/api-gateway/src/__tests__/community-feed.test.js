@@ -42,12 +42,12 @@ describe('orderFeed', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /community/feed — route-level tests for the new `posts` shape.
 //
-// Mock call order (unchanged from the pre-existing handler, see community.test.js
-// for the authoritative note): Promise.allSettled fires fetchAnnouncements,
-// fetchIssues, fetchPolls in parallel; each hits its first await in declaration
-// order, so queryRows call 1 = announcements, queryRows call 2 = issues,
-// queryOne call 1 = fetchPolls callerBlock lookup, then queryRows call 3 = polls
-// list (plus 2 more queryRows if polls are non-empty).
+// Mock call order (see community.test.js for the authoritative note):
+// Promise.allSettled fires fetchAnnouncements, fetchIssues, fetchDiscussions,
+// fetchPolls in parallel; each hits its first await in declaration order, so
+// queryRows call 1 = announcements, queryRows call 2 = issues, queryRows
+// call 3 = discussions, queryOne call 1 = fetchPolls callerBlock lookup, then
+// queryRows call 4 = polls list (plus 2 more queryRows if polls are non-empty).
 // ─────────────────────────────────────────────────────────────────────────────
 
 vi.mock('../../src/db/queries.js', () => ({
@@ -124,6 +124,7 @@ describe('GET /community/feed — unified posts shape (additive)', () => {
     queryRows
       .mockResolvedValueOnce([{ id: 'n1', title: 'AGM Notice', body: 'See you Sunday', author_name: 'RWA', created_at: newest }]) // announcements
       .mockResolvedValueOnce([{ id: 'i1', title: 'Lift broken', body: 'B Block', category: 'maintenance', status: 'open', author_name: 'Asha', author_unit: 'A-704', upvote_count: '2', my_upvoted: false, created_at: older }]) // issues
+      .mockResolvedValueOnce([]) // discussions (empty)
       .mockResolvedValueOnce([{ id: 'p1', question: 'Best time?', status: 'open', closes_at: null, target_block_id: null, author_name: 'RWA', created_at: middle }]) // polls
       .mockResolvedValueOnce([{ id: 'o1', poll_id: 'p1', label: 'Morning', position: 0, votes: '1' }]) // options
       .mockResolvedValueOnce([]); // myVotes
@@ -153,6 +154,7 @@ describe('GET /community/feed — unified posts shape (additive)', () => {
     queryRows
       .mockResolvedValueOnce([{ id: 'n1', title: 'AGM Notice', body: 'x', author_name: 'RWA', created_at: now }])
       .mockResolvedValueOnce([{ id: 'i1', title: 'Lift broken', body: 'x', category: 'maintenance', status: 'open', author_name: 'Asha', author_unit: 'A-704', upvote_count: '0', my_upvoted: false, created_at: now }])
+      .mockResolvedValueOnce([]) // discussions empty
       .mockResolvedValueOnce([]); // polls empty
 
     const { status, json } = await request('GET', '/api/v1/community/feed?type=issue', { headers: authR });
@@ -177,6 +179,7 @@ describe('GET /community/feed — unified posts shape (additive)', () => {
     queryRows
       .mockResolvedValueOnce([{ id: 'n1', title: 'Water cut', body: 'Tomorrow', author_name: 'RWA', created_at: now }]) // announcements ok
       .mockRejectedValueOnce(new Error('DB timeout')) // issues fail
+      .mockResolvedValueOnce([]) // discussions ok (empty)
       .mockResolvedValueOnce([]); // polls ok (empty)
 
     const { status, json } = await request('GET', '/api/v1/community/feed', { headers: authR });

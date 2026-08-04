@@ -20,14 +20,17 @@
  *   3. queryRows → options with vote counts (skipped if no polls)
  *   4. queryRows → caller's votes by unit_id (skipped if no polls)
  *
- * GET /community/feed runs Promise.allSettled([announcements, issues, polls]) in parallel.
- * Each async section hits its first await in declaration order, so the interleaved
- * mock-queue consumption is:
+ * GET /community/feed runs Promise.allSettled([announcements, issues, discussions, polls])
+ * in parallel. Each async section hits its first await in declaration order, so the
+ * interleaved mock-queue consumption is:
  *   queryRows call 1 → fetchAnnouncements notices query
  *   queryRows call 2 → fetchIssues issues query
+ *   queryRows call 3 → fetchDiscussions notices query (category='discussion')
  *   queryOne  call 1 → fetchPolls callerBlock lookup (SELECT block_id FROM units)
- *   queryRows call 3 → fetchPolls polls query  (if polls returned, +2 more queryRows for opts/votes)
- * The existing feed tests are updated to seed queryOne for the callerBlock lookup.
+ *   queryRows call 4 → fetchPolls polls query  (if polls returned, +2 more queryRows for opts/votes)
+ * The existing feed tests are updated to seed queryOne for the callerBlock lookup and
+ * a queryRows call for discussions (typically empty, since these tests predate the
+ * discussion source and don't assert on it).
  */
 
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
@@ -1097,15 +1100,16 @@ describe('POST /polls/:id/close', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /community/feed
 // ─────────────────────────────────────────────────────────────────────────────
-// New call order (after committee-polls upgrade):
-//   Promise.allSettled fires all three fetchXxx() in parallel.
+// Call order (after adding the discussions source):
+//   Promise.allSettled fires all four fetchXxx() in parallel.
 //   Each hits its first await in declaration order:
 //     fetchAnnouncements → queryRows (call 1 in queryRows queue)
 //     fetchIssues        → queryRows (call 2 in queryRows queue)
+//     fetchDiscussions   → queryRows (call 3 in queryRows queue)
 //     fetchPolls         → queryOne  (call 1 in queryOne queue — callerBlock)
 //   After the first awaits resolve, continuations run:
-//     fetchPolls (cont.) → queryRows (call 3 in queryRows queue — polls list)
-//                          If polls found: queryRows 4 (options), queryRows 5 (myVotes)
+//     fetchPolls (cont.) → queryRows (call 4 in queryRows queue — polls list)
+//                          If polls found: queryRows 5 (options), queryRows 6 (myVotes)
 
 describe('GET /community/feed', () => {
   it('returns 401 without auth', async () => {
@@ -1118,11 +1122,13 @@ describe('GET /community/feed', () => {
     // queryOne  1: fetchPolls callerBlock lookup → { block_id: 'blk1' }
     // queryRows 1: fetchAnnouncements notices
     // queryRows 2: fetchIssues
-    // queryRows 3: fetchPolls polls (empty → no further queries)
+    // queryRows 3: fetchDiscussions (empty)
+    // queryRows 4: fetchPolls polls (empty → no further queries)
     queryOne.mockResolvedValueOnce({ block_id: 'blk1' }); // callerBlock
     queryRows
       .mockResolvedValueOnce([{ id: 'n1', title: 'AGM Notice', body: 'See you Sunday', author_name: 'RWA', created_at: now }])  // announcements
       .mockResolvedValueOnce([{ id: 'i1', title: 'Lift broken', body: 'B Block', category: 'maintenance', status: 'open', author_name: 'Asha', author_unit: 'A-704', upvote_count: '2', my_upvoted: false, created_at: now }])  // issues
+      .mockResolvedValueOnce([]) // discussions (empty)
       .mockResolvedValueOnce([]); // polls (empty)
 
     const { status, json } = await request('GET', '/api/v1/community/feed', { headers: authR });
@@ -1132,6 +1138,8 @@ describe('GET /community/feed', () => {
     expect(json.data.issues).toHaveLength(1);
     expect(json.data.issues[0].upvoteCount).toBe(2);
     expect(json.data.polls).toEqual([]);
+    // discussions do NOT leak into any legacy grouped key.
+    expect(json.data.discussions).toBeUndefined();
   });
 
   it('degrades a failed section to [] and returns 200 (not 500)', async () => {
@@ -1139,11 +1147,13 @@ describe('GET /community/feed', () => {
     // queryOne  1: fetchPolls callerBlock lookup
     // queryRows 1: fetchAnnouncements succeeds
     // queryRows 2: fetchIssues rejects
-    // queryRows 3: fetchPolls polls (empty)
+    // queryRows 3: fetchDiscussions (empty)
+    // queryRows 4: fetchPolls polls (empty)
     queryOne.mockResolvedValueOnce({ block_id: 'blk1' }); // callerBlock
     queryRows
       .mockResolvedValueOnce([{ id: 'n1', title: 'Water cut', body: 'Tomorrow', author_name: 'RWA', created_at: now }]) // announcements ok
       .mockRejectedValueOnce(new Error('DB timeout'))  // issues fail
+      .mockResolvedValueOnce([])                       // discussions ok (empty)
       .mockResolvedValueOnce([]);                      // polls ok (empty)
 
     const { status, json } = await request('GET', '/api/v1/community/feed', { headers: authR });
@@ -1151,6 +1161,30 @@ describe('GET /community/feed', () => {
     expect(json.data.announcements).toHaveLength(1);
     expect(json.data.issues).toEqual([]);   // degraded to []
     expect(json.data.polls).toEqual([]);
+  });
+
+  it('a failing discussions query degrades to no discussions rather than emptying the feed', async () => {
+    const now = new Date().toISOString();
+    // queryOne  1: fetchPolls callerBlock lookup
+    // queryRows 1: fetchAnnouncements succeeds
+    // queryRows 2: fetchIssues succeeds
+    // queryRows 3: fetchDiscussions rejects
+    // queryRows 4: fetchPolls polls (empty)
+    queryOne.mockResolvedValueOnce({ block_id: 'blk1' });
+    queryRows
+      .mockResolvedValueOnce([{ id: 'n1', title: 'AGM Notice', body: 'x', author_name: 'RWA', created_at: now }]) // announcements
+      .mockResolvedValueOnce([{ id: 'i1', title: 'Lift broken', body: 'x', category: 'maintenance', status: 'open', author_name: 'Asha', author_unit: 'A-704', upvote_count: '0', my_upvoted: false, created_at: now }]) // issues
+      .mockRejectedValueOnce(new Error('DB timeout')) // discussions fail
+      .mockResolvedValueOnce([]); // polls (empty)
+
+    const { status, json } = await request('GET', '/api/v1/community/feed', { headers: authR });
+    expect(status).toBe(200);
+    // Announcements and issues are unaffected by the discussions failure.
+    expect(json.data.announcements).toHaveLength(1);
+    expect(json.data.issues).toHaveLength(1);
+    // No discussion post made it into posts, but the rest of the feed survives.
+    expect(json.data.posts.some((p) => p.type === 'discussion')).toBe(false);
+    expect(json.data.posts).toHaveLength(2);
   });
 
   it('includes open polls in the feed with audience filter applied', async () => {
@@ -1167,13 +1201,15 @@ describe('GET /community/feed', () => {
     // queryOne  1: callerBlock
     // queryRows 1: announcements (empty)
     // queryRows 2: issues (empty)
-    // queryRows 3: polls list (one poll)
-    // queryRows 4: options
-    // queryRows 5: myVotes
+    // queryRows 3: discussions (empty)
+    // queryRows 4: polls list (one poll)
+    // queryRows 5: options
+    // queryRows 6: myVotes
     queryOne.mockResolvedValueOnce({ block_id: 'blk1' });
     queryRows
       .mockResolvedValueOnce([])       // announcements
       .mockResolvedValueOnce([])       // issues
+      .mockResolvedValueOnce([])       // discussions
       .mockResolvedValueOnce([pollRow]) // polls
       .mockResolvedValueOnce([
         { id: 'o1', poll_id: 'p1', label: 'Morning', position: 0, votes: '2' },
@@ -1186,6 +1222,51 @@ describe('GET /community/feed', () => {
     expect(json.data.polls).toHaveLength(1);
     expect(json.data.polls[0].totalVotes).toBe(3);
     expect(json.data.polls[0].canManage).toBe(false);
+  });
+
+  it('surfaces a discussion post in posts with type "discussion", scoped to the caller community', async () => {
+    const now = new Date().toISOString();
+    // queryOne  1: callerBlock
+    // queryRows 1: announcements (empty)
+    // queryRows 2: issues (empty)
+    // queryRows 3: discussions (one row)
+    // queryRows 4: polls (empty)
+    queryOne.mockResolvedValueOnce({ block_id: 'blk1' });
+    queryRows
+      .mockResolvedValueOnce([]) // announcements
+      .mockResolvedValueOnce([]) // issues
+      .mockResolvedValueOnce([{ id: 'd1', title: 'Any recommendations for painters?', body: 'Looking for one in the area', author_name: 'Asha', created_at: now }]) // discussions
+      .mockResolvedValueOnce([]); // polls
+
+    const { status, json } = await request('GET', '/api/v1/community/feed', { headers: authR });
+    expect(status).toBe(200);
+    expect(json.data.posts).toHaveLength(1);
+    expect(json.data.posts[0]).toMatchObject({ id: 'd1', type: 'discussion', authorName: 'Asha' });
+
+    // Verify the query is scoped to the caller's community — 'c1' from the resident token.
+    const discussionsCall = queryRows.mock.calls.find(
+      ([sql]) => typeof sql === 'string' && sql.includes("category = 'discussion'")
+    );
+    expect(discussionsCall).toBeDefined();
+    expect(discussionsCall[1]).toEqual(['c1']);
+  });
+
+  it('?type=discussion returns only discussion posts', async () => {
+    const now = new Date().toISOString();
+    queryOne.mockResolvedValueOnce({ block_id: 'blk1' });
+    queryRows
+      .mockResolvedValueOnce([{ id: 'n1', title: 'AGM Notice', body: 'x', author_name: 'RWA', created_at: now }]) // announcements
+      .mockResolvedValueOnce([]) // issues
+      .mockResolvedValueOnce([{ id: 'd1', title: 'Painters?', body: 'x', author_name: 'Asha', created_at: now }]) // discussions
+      .mockResolvedValueOnce([]); // polls
+
+    const { status, json } = await request('GET', '/api/v1/community/feed?type=discussion', { headers: authR });
+    expect(status).toBe(200);
+    expect(json.data.posts).toHaveLength(1);
+    expect(json.data.posts[0]).toMatchObject({ id: 'd1', type: 'discussion' });
+    // Discussions never leak into the legacy announcements key, filtered or not.
+    expect(json.data.announcements).toHaveLength(1);
+    expect(json.data.announcements.every((a) => a.id !== 'd1')).toBe(true);
   });
 });
 

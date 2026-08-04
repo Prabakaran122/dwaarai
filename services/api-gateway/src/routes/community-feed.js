@@ -6,17 +6,12 @@ import { assemblePolls } from './polls.js';
 
 const router = Router();
 
-// Known post types for the unified feed. `discussion` is a real, existing
-// domain concept (notices.category='discussion' — see migrations/014_notice_board.sql)
-// but this endpoint does not query it yet: doing so would add a new
-// queryRows() call, and the interleaved mock-call-order that
-// src/__tests__/community.test.js already asserts for GET /community/feed
-// (queryRows 1=announcements, 2=issues, queryOne 1=callerBlock, queryRows
-// 3=polls, ...) is out of scope for this task to touch. Kept in the validated
-// set so `?type=discussion` is accepted (and correctly returns []) rather than
-// erroring, and so the union doesn't silently shrink. Follow-up: add a
-// fetchDiscussions() source once that test file's call-order assertions can
-// be updated alongside it.
+// Known post types for the unified feed. `discussion` is backed by
+// notices.category='discussion' (see migrations/014_notice_board.sql) —
+// residents post discussion threads via POST /notices with that category,
+// same table as the pinned `official` notices fetchAnnouncements() already
+// reads. fetchDiscussions() below queries the same table with the opposite
+// category filter and no is_pinned/is_pinned requirement.
 const KNOWN_POST_TYPES = ['announcement', 'issue', 'poll', 'discussion'];
 
 /**
@@ -58,6 +53,17 @@ function safeCreatedAt(value) {
 // grouped keys here.
 //
 // Promise.allSettled degrades each section to [] on failure — never 500.
+//
+// Call order (fetchAnnouncements, fetchIssues, fetchDiscussions, fetchPolls
+// all start synchronously in that array order; each one's first await lands
+// in the shared queryRows/queryOne mock queue in that same order — see
+// src/__tests__/community.test.js and community-feed.test.js for the
+// authoritative positional-mock notes):
+//   queryRows 1: fetchAnnouncements notices query
+//   queryRows 2: fetchIssues issues query
+//   queryRows 3: fetchDiscussions notices query
+//   queryOne  1: fetchPolls callerBlock lookup
+//   queryRows 4: fetchPolls polls list  (+ queryRows 5, 6 for options/myVotes if non-empty)
 
 router.get('/community/feed', authenticateJWT(['resident', 'admin']), async (req, res) => {
   const { community_id, sub, unit_id } = req.user;
@@ -117,12 +123,38 @@ router.get('/community/feed', authenticateJWT(['resident', 'admin']), async (req
     }));
   }
 
+  // ── Discussions sub-query (notices.category='discussion', LIMIT 10) ──────
+  // Same table as fetchAnnouncements(), opposite category, no is_pinned
+  // filter — discussion threads are not pinnable, they're plain
+  // reverse-chronological posts like issues.
+  async function fetchDiscussions() {
+    const rows = await queryRows(
+      `SELECT id, title, body, author_name, created_at
+         FROM notices
+        WHERE community_id = $1
+          AND is_removed = false
+          AND category = 'discussion'
+        ORDER BY last_activity_at DESC
+        LIMIT 10`,
+      [community_id]
+    );
+    return rows.map((n) => ({
+      id: n.id,
+      title: n.title,
+      body: n.body,
+      authorName: n.author_name,
+      createdAt: n.created_at,
+    }));
+  }
+
   // ── Polls sub-query (top 5 open polls, audience-filtered) ────────────────
-  // Query order within fetchPolls:
+  // Query order within fetchPolls, relative to the other three sub-queries
+  // running concurrently under Promise.allSettled (see the call-order note
+  // above the router handler below):
   //   queryOne  1: SELECT block_id FROM units WHERE id=$1  (caller's block)
-  //   queryRows 2: polls list (audience-filtered, only open)
-  //   queryRows 3: options with vote counts (only if polls found)
-  //   queryRows 4: caller's votes by unit_id (only if polls found)
+  //   queryRows 4: polls list (audience-filtered, only open)
+  //   queryRows 5: options with vote counts (only if polls found)
+  //   queryRows 6: caller's votes by unit_id (only if polls found)
   async function fetchPolls() {
     // Resolve the caller's block for audience filter
     const callerBlockRow = await queryOne('SELECT block_id FROM units WHERE id=$1', [unit_id]);
@@ -163,9 +195,10 @@ router.get('/community/feed', authenticateJWT(['resident', 'admin']), async (req
     return assemblePolls(polls, options, myVotes, false);
   }
 
-  const [announcementsResult, issuesResult, pollsResult] = await Promise.allSettled([
+  const [announcementsResult, issuesResult, discussionsResult, pollsResult] = await Promise.allSettled([
     fetchAnnouncements(),
     fetchIssues(),
+    fetchDiscussions(),
     fetchPolls(),
   ]);
 
@@ -177,11 +210,13 @@ router.get('/community/feed', authenticateJWT(['resident', 'admin']), async (req
 
   const announcements = val(announcementsResult, 'announcements');
   const issues = val(issuesResult, 'issues');
+  const discussions = val(discussionsResult, 'discussions');
   const polls = val(pollsResult, 'polls');
 
   const allPosts = [
     ...announcements.map((a) => ({ ...a, type: 'announcement', createdAt: safeCreatedAt(a.createdAt) })),
     ...issues.map((i) => ({ ...i, type: 'issue', createdAt: safeCreatedAt(i.createdAt) })),
+    ...discussions.map((d) => ({ ...d, type: 'discussion', createdAt: safeCreatedAt(d.createdAt) })),
     ...polls.map((p) => ({ ...p, type: 'poll', createdAt: safeCreatedAt(p.createdAt) })),
   ];
 
