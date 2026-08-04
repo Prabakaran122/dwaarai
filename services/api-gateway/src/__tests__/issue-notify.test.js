@@ -197,6 +197,32 @@ describe('PUT /issues/:id/status → resolved dispatches a resolve notification'
     expect(queryRows).not.toHaveBeenCalled();
   });
 
+  // An already-resolved issue must never notify a second time. Today the
+  // forward-only guard rejects resolved -> resolved with a 422 before COMMIT,
+  // so this is safe by construction — but that guarantee lives in the status
+  // transition rules, not here. Asserted directly so a future change to those
+  // rules cannot silently start re-notifying every upvoter on an old issue.
+  it('does NOT re-notify when an already-resolved issue is resolved again', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({
+        rows: [{ id: 'i1', status: 'resolved', author_resident_id: 'r1', reference: 'IQ-2026-007', title: 'Water leak' }],
+      }) // SELECT ... FOR UPDATE — already resolved
+      .mockResolvedValueOnce({}) // ROLLBACK
+      .mockResolvedValueOnce({});
+
+    const { status } = await request('PUT', '/api/v1/issues/i1/status', {
+      headers: authA,
+      body: { status: 'resolved' },
+    });
+
+    expect(status).toBe(422);
+    expect(sendToMultiple).not.toHaveBeenCalled();
+    expect(queryRows).not.toHaveBeenCalled();
+    expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+    expect(mockClient.query).not.toHaveBeenCalledWith('COMMIT');
+  });
+
   it('a throwing notification dispatch still returns the normal success response, and the status stays committed', async () => {
     mockClient.query
       .mockResolvedValueOnce({}) // BEGIN
