@@ -8,7 +8,10 @@
 export const COMMITTEE_ROLES = ['president', 'secretary', 'treasurer', 'member'];
 
 export function isCommittee(actor) {
-  return COMMITTEE_ROLES.includes(actor?.committee_role);
+  // Guard-safe on its own: routes use isCommittee directly to decide things like
+  // the "Official response" badge, so it must not depend on the caller having
+  // already excluded guards.
+  return !isGuard(actor) && COMMITTEE_ROLES.includes(actor?.committee_role);
 }
 
 export function roleLabel(role) {
@@ -16,8 +19,13 @@ export function roleLabel(role) {
   return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
-/** Guards read the feed and nothing else. */
-function isGuard(actor) {
+/**
+ * Guards read the feed and nothing else.
+ *
+ * Exported because the discussion, poll and vote routes need the same
+ * exclusion and must not each grow their own copy of it.
+ */
+export function isGuard(actor) {
   return actor?.role === 'guard' || actor?.resident_type === 'guard';
 }
 

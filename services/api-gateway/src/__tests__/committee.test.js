@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  COMMITTEE_ROLES, isCommittee, roleLabel,
+  COMMITTEE_ROLES, isCommittee, isGuard, roleLabel,
   canPostIssue, canAnnounce, canChangeStatus,
 } from '../lib/committee.js';
 
@@ -46,5 +46,19 @@ describe('permissions matrix from the BRD', () => {
 
   it('never grants a guard anything', () => {
     expect(canPostIssue(guard) || canAnnounce(guard) || canChangeStatus(guard)).toBe(false);
+  });
+
+  it('identifies guards by either field, for routes that only need the exclusion', () => {
+    expect(isGuard(guard)).toBe(true);
+    expect(isGuard({ role: 'guard' })).toBe(true);
+    expect(isGuard({ resident_type: 'guard' })).toBe(true);
+    expect(isGuard(owner)).toBe(false);
+    expect(isGuard(undefined)).toBe(false);
+  });
+
+  // Bad data must not buy authority: a guard row carrying a committee_role is
+  // still a guard, so the "Official response" badge can never attach to one.
+  it('does not treat a guard with a committee_role as committee', () => {
+    expect(isCommittee({ ...guard, committee_role: 'president' })).toBe(false);
   });
 });
