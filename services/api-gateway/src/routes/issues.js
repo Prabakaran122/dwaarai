@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { query, queryOne, queryRows } from '../db/queries.js';
+import { queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
 import pool from '../db/pool.js';
@@ -41,6 +41,15 @@ function istYear(date = new Date()) {
   return Number(
     new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', year: 'numeric' }).format(date)
   );
+}
+
+// The count at which an issue is treated as a community-wide concern. Crossing
+// it writes a system timeline entry, which is what turns a pile of upvotes
+// into visible pressure on the RWA.
+export const UPVOTE_THRESHOLD = 20;
+
+export function crossedThreshold(before, after) {
+  return before < UPVOTE_THRESHOLD && after >= UPVOTE_THRESHOLD;
 }
 
 // ── Shape helper ──────────────────────────────────────────────────────────────
@@ -152,48 +161,81 @@ router.post('/issues', authenticateJWT(['resident', 'admin']), async (req, res) 
 // ── POST /issues/:id/upvote ───────────────────────────────────────────────────
 // Toggle upvote: remove if already upvoted, add if not.
 
+// Locking the issues row for the duration of the upvote, recount and threshold
+// check is what makes the crossing detection correct under concurrency: two
+// residents upvoting at once would otherwise both read the same "before"
+// count and either double-write the system entry or miss the crossing
+// entirely (see crossedThreshold above).
 router.post('/issues/:id/upvote', authenticateJWT(['resident', 'admin']), async (req, res) => {
+  const client = await pool.connect();
   try {
     const { community_id, sub } = req.user;
     const issueId = req.params.id;
 
-    // Query 1: verify issue exists in this community
-    const issue = await queryOne(
-      'SELECT id FROM issues WHERE id = $1 AND community_id = $2 AND is_removed = false',
+    await client.query('BEGIN');
+
+    const issueResult = await client.query(
+      `SELECT id FROM issues
+        WHERE id = $1 AND community_id = $2 AND is_removed = false FOR UPDATE`,
       [issueId, community_id]
     );
-    if (!issue) {
+    if (!issueResult.rows.length) {
+      await client.query('ROLLBACK');
       return error(res, 'Issue not found', 404);
     }
 
-    // Query 2: check if the caller has already upvoted
-    const existing = await queryOne(
+    const existing = await client.query(
       'SELECT 1 FROM issue_upvotes WHERE issue_id = $1 AND resident_id = $2',
       [issueId, sub]
     );
 
-    if (existing) {
-      // Toggle off: delete the upvote
-      await query(
+    let upvoted;
+    if (existing.rows.length) {
+      await client.query(
         'DELETE FROM issue_upvotes WHERE issue_id = $1 AND resident_id = $2',
         [issueId, sub]
       );
-      return success(res, { upvoted: false });
+      upvoted = false;
     } else {
-      // Toggle on: insert upvote and bump last_activity_at
-      await query(
+      await client.query(
         'INSERT INTO issue_upvotes (issue_id, resident_id) VALUES ($1, $2)',
         [issueId, sub]
       );
-      await query(
-        'UPDATE issues SET last_activity_at = NOW() WHERE id = $1',
-        [issueId]
-      );
-      return success(res, { upvoted: true });
+      await client.query('UPDATE issues SET last_activity_at = NOW() WHERE id = $1', [issueId]);
+      upvoted = true;
     }
+
+    // Recount under the same lock, then test the crossing before COMMIT.
+    const countResult = await client.query(
+      'SELECT COUNT(*)::int AS n FROM issue_upvotes WHERE issue_id = $1',
+      [issueId]
+    );
+    const after = countResult.rows[0].n;
+    const before = upvoted ? after - 1 : after + 1;
+
+    if (crossedThreshold(before, after)) {
+      // Upvotes toggle, so the count can fall below the threshold and cross it
+      // again later — WHERE NOT EXISTS enforces at most one system entry per
+      // issue, ever, as a single atomic statement rather than a read-then-decide
+      // that would itself race under concurrent upvotes.
+      await client.query(
+        `INSERT INTO issue_status_events (issue_id, community_id, kind, detail)
+         SELECT $1, $2, 'system', $3
+          WHERE NOT EXISTS (
+            SELECT 1 FROM issue_status_events WHERE issue_id = $1 AND kind = 'system'
+          )`,
+        [issueId, community_id, `${after} residents affected — community upvote threshold crossed`]
+      );
+    }
+
+    await client.query('COMMIT');
+    return success(res, { upvoted });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('POST /issues/:id/upvote error:', err);
     return error(res, 'Internal server error', 500);
+  } finally {
+    client.release();
   }
 });
 

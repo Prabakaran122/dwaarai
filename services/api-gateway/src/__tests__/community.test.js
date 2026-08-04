@@ -396,44 +396,138 @@ describe('POST /issues', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /issues/:id/upvote — toggle
+// POST /issues/:id/upvote — toggle, plus the upvote-threshold system entry
 // ─────────────────────────────────────────────────────────────────────────────
+// Handler acquires a client via pool.connect() and runs the whole toggle
+// under a lock (BEGIN / SELECT ... FOR UPDATE / [DELETE|INSERT+UPDATE] /
+// recount / [threshold INSERT] / COMMIT):
+//   client.query 1: BEGIN
+//   client.query 2: SELECT id FROM issues ... FOR UPDATE
+//   client.query 3: SELECT 1 FROM issue_upvotes ... (existing upvote check)
+//   client.query 4: DELETE (toggle off) OR INSERT (toggle on)
+//   client.query 5: UPDATE last_activity_at (toggle on only)
+//   client.query N: SELECT COUNT(*)::int AS n FROM issue_upvotes ... (recount)
+//   client.query N+1: INSERT INTO issue_status_events ... WHERE NOT EXISTS (only if threshold crossed)
+//   client.query last: COMMIT
 
 describe('POST /issues/:id/upvote', () => {
-  it('returns 404 when issue not in community', async () => {
-    // queryOne 1: issue not found
-    queryOne.mockResolvedValueOnce(null);
+  it('returns 404 when issue not in community and rolls back', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [] }) // SELECT ... FOR UPDATE (not found)
+      .mockResolvedValueOnce({}); // ROLLBACK
+
     const { status } = await request('POST', '/api/v1/issues/no-such/upvote', { headers: authR });
     expect(status).toBe(404);
+    expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
   });
 
-  it('toggles OFF (existing upvote → deletes → { upvoted: false })', async () => {
-    // queryOne 1: issue found
-    // queryOne 2: existing upvote found (row truthy)
-    // query 3: DELETE
-    queryOne
-      .mockResolvedValueOnce({ id: 'i1' })  // issue exists
-      .mockResolvedValueOnce({ 1: 1 });      // existing upvote found
-    query.mockResolvedValue({ rowCount: 1 });
+  it('toggles OFF (existing upvote → deletes → { upvoted: false }), below threshold writes no system entry', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({ rows: [{ 1: 1 }] }) // existing upvote found
+      .mockResolvedValueOnce({}) // DELETE
+      .mockResolvedValueOnce({ rows: [{ n: 4 }] }) // recount
+      .mockResolvedValueOnce({}); // COMMIT
 
     const { status, json } = await request('POST', '/api/v1/issues/i1/upvote', { headers: authR });
     expect(status).toBe(200);
     expect(json.data.upvoted).toBe(false);
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(0);
   });
 
-  it('toggles ON (no existing upvote → inserts → { upvoted: true })', async () => {
-    // queryOne 1: issue found
-    // queryOne 2: no existing upvote
-    // query 3: INSERT upvote
-    // query 4: UPDATE last_activity_at
-    queryOne
-      .mockResolvedValueOnce({ id: 'i1' }) // issue exists
-      .mockResolvedValueOnce(null);         // no existing upvote
-    query.mockResolvedValue({ rowCount: 1 });
+  it('toggles ON below threshold (no existing upvote → inserts → { upvoted: true }), writes no system entry', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({ rows: [] }) // no existing upvote
+      .mockResolvedValueOnce({}) // INSERT upvote
+      .mockResolvedValueOnce({}) // UPDATE last_activity_at
+      .mockResolvedValueOnce({ rows: [{ n: 5 }] }) // recount, well below UPVOTE_THRESHOLD (20)
+      .mockResolvedValueOnce({}); // COMMIT
 
     const { status, json } = await request('POST', '/api/v1/issues/i1/upvote', { headers: authR });
     expect(status).toBe(200);
     expect(json.data.upvoted).toBe(true);
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  it('crossing the threshold (19 -> 20) writes exactly one issue_status_events row with kind=system and NULL actor columns', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({ rows: [] }) // no existing upvote
+      .mockResolvedValueOnce({}) // INSERT upvote
+      .mockResolvedValueOnce({}) // UPDATE last_activity_at
+      .mockResolvedValueOnce({ rows: [{ n: 20 }] }) // recount: crosses UPVOTE_THRESHOLD
+      .mockResolvedValueOnce({}) // INSERT issue_status_events (threshold)
+      .mockResolvedValueOnce({}); // COMMIT
+
+    const { status, json } = await request('POST', '/api/v1/issues/i1/upvote', { headers: authR });
+    expect(status).toBe(200);
+    expect(json.data.upvoted).toBe(true);
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(1);
+    const [sql, params] = insertCalls[0];
+    expect(sql).toMatch(/WHERE NOT EXISTS/i);
+    expect(sql).toMatch(/'system'/);
+    // (issue_id, community_id, detail) — kind and the NULL actor columns are
+    // either literals or simply absent from the column list, so there is no
+    // param binding NULL onto changed_by_* here; the columns default to NULL.
+    expect(params[0]).toBe('i1');
+    expect(params[1]).toBe('c1');
+    expect(params[2]).toMatch(/20 residents affected/i);
+  });
+
+  it('an upvote when a threshold entry already exists issues the guarded INSERT but the DB-side NOT EXISTS is what prevents a duplicate row', async () => {
+    // The mock cannot express "the second INSERT no-ops because a row already
+    // exists" (that's real Postgres semantics for WHERE NOT EXISTS), so this
+    // asserts the handler still issues a single, correctly-guarded INSERT
+    // attempt per crossing rather than skipping it in JS. The NOT EXISTS
+    // clause itself is what a real database enforces at most once.
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({ rows: [] }) // no existing upvote
+      .mockResolvedValueOnce({}) // INSERT upvote
+      .mockResolvedValueOnce({}) // UPDATE last_activity_at
+      .mockResolvedValueOnce({ rows: [{ n: 20 }] }) // recount: back up to 20 after toggling down and up
+      .mockResolvedValueOnce({}) // INSERT issue_status_events (guarded by WHERE NOT EXISTS)
+      .mockResolvedValueOnce({}); // COMMIT
+
+    const { status } = await request('POST', '/api/v1/issues/i1/upvote', { headers: authR });
+    expect(status).toBe(200);
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0][0]).toMatch(/WHERE NOT EXISTS/i);
+  });
+
+  it('rolls back and returns 500 when the upvote insert fails', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({ rows: [] }) // no existing upvote
+      .mockRejectedValueOnce(new Error('DB error')) // INSERT upvote fails
+      .mockResolvedValueOnce({}); // ROLLBACK
+
+    const { status } = await request('POST', '/api/v1/issues/i1/upvote', { headers: authR });
+    expect(status).toBe(500);
+    expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
   });
 });
 
