@@ -193,6 +193,18 @@ describe('GET /issues', () => {
 // POST /issues
 // ─────────────────────────────────────────────────────────────────────────────
 
+// POST /issues handler acquires a client via pool.connect() unconditionally
+// (matching PUT /issues/:id/status), then:
+//   queryOne 1: residents actor lookup (SELECT id, name, type, committee_role FROM residents ...)
+//   [403 return here if canPostIssue(actor) is false — before BEGIN, so no
+//    ROLLBACK is issued; the transaction never opened.]
+//   queryOne 2: unit lookup (SELECT unit_number FROM units WHERE id = $1)
+//   client.query 1: BEGIN
+//   client.query 2: allocateReference upsert (INSERT INTO issue_reference_seq ...)
+//   client.query 3: INSERT INTO issues ... RETURNING
+//   client.query 4: INSERT INTO issue_status_events ... (same transaction)
+//   client.query 5: COMMIT
+
 describe('POST /issues', () => {
   it('rejects an invalid category with 400', async () => {
     const { status, json } = await request('POST', '/api/v1/issues', {
@@ -211,24 +223,57 @@ describe('POST /issues', () => {
     expect(status).toBe(400);
   });
 
-  it('creates an issue and returns 201 with correct shape (upvoteCount 0, myUpvoted false)', async () => {
-    // Call order:
-    //  1. queryOne → unit lookup (SELECT unit_number FROM units WHERE id = $1)
-    //  2. queryOne → INSERT RETURNING
+  it('rejects a tenant (non-owner, non-committee) with 403 and never opens a transaction', async () => {
+    queryOne.mockResolvedValueOnce({
+      id: 'r-tenant',
+      name: 'Ravi',
+      resident_type: 'tenant',
+      committee_role: null,
+    });
+
+    const { status, json } = await request('POST', '/api/v1/issues', {
+      headers: authR,
+      body: { title: 'Test', body: 'Test body', category: 'general' },
+    });
+    expect(status).toBe(403);
+    expect(json.error.message).toMatch(/owners and committee members/i);
+    // Rejected before BEGIN — the transaction never opened, so nothing to roll back.
+    expect(mockClient.query).not.toHaveBeenCalled();
+  });
+
+  it('rejects a portal admin token with 403 (no residents row to look up)', async () => {
+    // Default queryOne mock resolves null — canPostIssue({ role: 'community_admin' }) is false.
+    const { status, json } = await request('POST', '/api/v1/issues', {
+      headers: authA,
+      body: { title: 'Test', body: 'Test body', category: 'general' },
+    });
+    expect(status).toBe(403);
+    expect(json.error.message).toMatch(/owners and committee members/i);
+    expect(mockClient.query).not.toHaveBeenCalled();
+  });
+
+  it('creates an issue and returns 201 with correct shape (upvoteCount 0, myUpvoted false, reference set)', async () => {
     queryOne
-      .mockResolvedValueOnce({ unit_number: 'A-704' }) // unit lookup
-      .mockResolvedValueOnce({                          // insert result
-        id: 'i-new',
-        title: 'Water seepage',
-        body: 'Ceiling leaking',
-        category: 'maintenance',
-        status: 'open',
-        author_name: 'Asha',
-        author_unit: 'A-704',
-        upvote_count: 0,
-        my_upvoted: false,
-        created_at: new Date().toISOString(),
-      });
+      .mockResolvedValueOnce({ id: 'r1', name: 'Asha', resident_type: 'owner', committee_role: null }) // actor lookup
+      .mockResolvedValueOnce({ unit_number: 'A-704' }); // unit lookup
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ last_value: 1 }] }) // allocateReference upsert
+      .mockResolvedValueOnce({
+        rows: [{                          // INSERT ... RETURNING
+          id: 'i-new',
+          title: 'Water seepage',
+          body: 'Ceiling leaking',
+          category: 'maintenance',
+          status: 'open',
+          author_name: 'Asha',
+          author_unit: 'A-704',
+          reference: 'IQ-2026-001',
+          created_at: new Date().toISOString(),
+        }],
+      })
+      .mockResolvedValueOnce({}) // INSERT issue_status_events
+      .mockResolvedValueOnce({}); // COMMIT
 
     const { status, json } = await request('POST', '/api/v1/issues', {
       headers: authR,
@@ -239,21 +284,51 @@ describe('POST /issues', () => {
     expect(json.data.title).toBe('Water seepage');
     expect(json.data.upvoteCount).toBe(0);
     expect(json.data.myUpvoted).toBe(false);
+    expect(json.data.reference).toMatch(/^IQ-\d{4}-\d{3}$/);
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(1);
+    const [sql, params] = insertCalls[0];
+    // from_status (NULL) and to_status ('open') are literals in the SQL text,
+    // not bound params, for the opening timeline entry.
+    expect(sql).toMatch(/NULL,'open'/);
+    // (issue_id, community_id, changed_by_resident_id, changed_by_name, changed_by_role)
+    expect(params[0]).toBe('i-new');
+    expect(params[1]).toBe('c1');
+    expect(params[2]).toBe('r1');
+    expect(params[3]).toBe('Asha');
+    expect(params[4]).toBeNull(); // roleLabel('') || null — non-committee owner, not the empty string
+
+    const seqCall = mockClient.query.mock.calls.find(([sql]) =>
+      typeof sql === 'string' && sql.includes('issue_reference_seq')
+    );
+    expect(seqCall[0]).toMatch(/ON CONFLICT/i);
   });
 
   it('defaults category to general when omitted', async () => {
     queryOne
-      .mockResolvedValueOnce({ unit_number: 'A-704' })
+      .mockResolvedValueOnce({ id: 'r1', name: 'Asha', resident_type: 'owner', committee_role: null })
+      .mockResolvedValueOnce({ unit_number: 'A-704' });
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ last_value: 2 }] }) // allocateReference upsert
       .mockResolvedValueOnce({
-        id: 'i-gen',
-        title: 'General issue',
-        body: 'Some text',
-        category: 'general',
-        status: 'open',
-        author_name: 'Asha',
-        author_unit: 'A-704',
-        created_at: new Date().toISOString(),
-      });
+        rows: [{
+          id: 'i-gen',
+          title: 'General issue',
+          body: 'Some text',
+          category: 'general',
+          status: 'open',
+          author_name: 'Asha',
+          author_unit: 'A-704',
+          reference: 'IQ-2026-002',
+          created_at: new Date().toISOString(),
+        }],
+      })
+      .mockResolvedValueOnce({}) // INSERT issue_status_events
+      .mockResolvedValueOnce({}); // COMMIT
 
     const { status, json } = await request('POST', '/api/v1/issues', {
       headers: authR,
@@ -262,6 +337,61 @@ describe('POST /issues', () => {
 
     expect(status).toBe(201);
     expect(json.data.category).toBe('general');
+  });
+
+  it('a committee resident writes their capitalised role onto the opening timeline entry', async () => {
+    queryOne
+      .mockResolvedValueOnce({ id: 'c1', name: 'RWA', resident_type: 'owner', committee_role: 'secretary' })
+      .mockResolvedValueOnce({ unit_number: 'A-101' });
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ last_value: 3 }] }) // allocateReference upsert
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 'i-committee',
+          title: 'Gate light out',
+          body: 'Needs replacing',
+          category: 'maintenance',
+          status: 'open',
+          author_name: 'RWA',
+          author_unit: 'A-101',
+          reference: 'IQ-2026-003',
+          created_at: new Date().toISOString(),
+        }],
+      })
+      .mockResolvedValueOnce({}) // INSERT issue_status_events
+      .mockResolvedValueOnce({}); // COMMIT
+
+    const { status } = await request('POST', '/api/v1/issues', {
+      headers: authC,
+      body: { title: 'Gate light out', body: 'Needs replacing', category: 'maintenance' },
+    });
+    expect(status).toBe(201);
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    const [, params] = insertCalls[0];
+    expect(params[4]).toBe('Secretary');
+  });
+
+  it('rolls back and returns 500 when the issue INSERT fails', async () => {
+    queryOne
+      .mockResolvedValueOnce({ id: 'r1', name: 'Asha', resident_type: 'owner', committee_role: null })
+      .mockResolvedValueOnce({ unit_number: 'A-704' });
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ last_value: 4 }] }) // allocateReference upsert
+      .mockRejectedValueOnce(new Error('DB error')) // INSERT issues fails
+      .mockResolvedValueOnce({}); // ROLLBACK
+
+    const { status } = await request('POST', '/api/v1/issues', {
+      headers: authR,
+      body: { title: 'Water seepage', body: 'Ceiling leaking', category: 'maintenance' },
+    });
+
+    expect(status).toBe(500);
+    expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
   });
 });
 

@@ -4,7 +4,8 @@ import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
 import pool from '../db/pool.js';
-import { canChangeStatus, roleLabel } from '../lib/committee.js';
+import { canChangeStatus, canPostIssue, roleLabel } from '../lib/committee.js';
+import { allocateReference } from '../lib/issue-reference.js';
 
 const router = Router();
 
@@ -30,6 +31,16 @@ export function nextStatusIsValid(from, to) {
   const i = STATUS_ORDER.indexOf(from);
   const j = STATUS_ORDER.indexOf(to);
   return i !== -1 && j !== -1 && j === i + 1;
+}
+
+// Issue references are stamped IQ-<year>-NNN by calendar year. The server
+// runs UTC, but this is an Indian product: an issue reported at 05:15 IST on
+// 1 Jan is 23:45 UTC on 31 Dec, so the year must be read in Asia/Kolkata or
+// it would be filed under the previous year's sequence.
+function istYear(date = new Date()) {
+  return Number(
+    new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', year: 'numeric' }).format(date)
+  );
 }
 
 // ── Shape helper ──────────────────────────────────────────────────────────────
@@ -75,7 +86,12 @@ router.get('/issues', authenticateJWT(['resident', 'admin']), async (req, res) =
 // ── POST /issues ──────────────────────────────────────────────────────────────
 // Create a new issue; look up author's unit_number for author_unit.
 
+// Reporting is a resident action (owners + committee); portal admins have no
+// residents row so canPostIssue({}) correctly rejects them with 403. Reference
+// allocation and the opening timeline row share the same transaction as the
+// issue INSERT, so a rolled-back issue never burns (or keeps) a number.
 router.post('/issues', authenticateJWT(['resident', 'admin']), async (req, res) => {
+  const client = await pool.connect();
   try {
     const parsed = createIssueSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -84,23 +100,52 @@ router.post('/issues', authenticateJWT(['resident', 'admin']), async (req, res) 
     const { title, body, category } = parsed.data;
     const user = req.user;
 
+    // The actor's committee role and resident type come from the database,
+    // never the token. canPostIssue rejects tenants and admins server-side.
+    const actor = await queryOne(
+      `SELECT id, name, type AS resident_type, committee_role
+         FROM residents WHERE id = $1 AND community_id = $2 AND is_active = true`,
+      [user.sub, user.community_id]
+    );
+    if (!canPostIssue({ ...actor, role: user.role })) {
+      return error(res, 'Only owners and committee members can report issues', 403);
+    }
+
     // Look up unit number for author_unit (mirrors notices.js pattern)
     const unit = await queryOne('SELECT unit_number FROM units WHERE id = $1', [user.unit_id]);
     const authorName = user.name || 'Resident';
     const authorUnit = unit?.unit_number || null;
 
-    const issue = await queryOne(
-      `INSERT INTO issues
-         (community_id, unit_id, author_resident_id, author_name, author_unit, title, body, category)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING *`,
-      [user.community_id, user.unit_id, user.sub, authorName, authorUnit, title, body, category]
-    );
+    await client.query('BEGIN');
+    const reference = await allocateReference(client, user.community_id, istYear());
 
-    return success(res, { ...shapeIssue(issue), upvoteCount: 0, myUpvoted: false }, 201);
+    const insertResult = await client.query(
+      `INSERT INTO issues
+         (community_id, unit_id, author_resident_id, author_name, author_unit, title, body, category, reference)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
+      [user.community_id, user.unit_id, user.sub, authorName, authorUnit, title, body, category, reference]
+    );
+    const issue = insertResult.rows[0];
+
+    // Same transaction as the INSERT: an issue without its opening timeline
+    // row is exactly the gap this feature exists to close. Insert-only.
+    await client.query(
+      `INSERT INTO issue_status_events
+         (issue_id, community_id, from_status, to_status,
+          changed_by_resident_id, changed_by_name, changed_by_role, kind, detail)
+       VALUES ($1,$2,NULL,'open',$3,$4,$5,'status_change','Issue reported')`,
+      [issue.id, user.community_id, actor.id, actor.name, roleLabel(actor.committee_role) || null]
+    );
+    await client.query('COMMIT');
+
+    return success(res, { ...shapeIssue(issue), upvoteCount: 0, myUpvoted: false, reference: issue.reference }, 201);
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('POST /issues error:', err);
     return error(res, 'Internal server error', 500);
+  } finally {
+    client.release();
   }
 });
 
