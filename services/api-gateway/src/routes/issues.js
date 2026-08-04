@@ -1,13 +1,21 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { queryOne, queryRows } from '../db/queries.js';
+import multer from 'multer';
+import path from 'path';
+import { existsSync, mkdirSync } from 'fs';
+import { unlink } from 'fs/promises';
+import { v4 as uuidv4 } from 'uuid';
+import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
 import pool from '../db/pool.js';
-import { canChangeStatus, canPostIssue, roleLabel } from '../lib/committee.js';
+import { canChangeStatus, canPostIssue, isCommittee, roleLabel } from '../lib/committee.js';
 import { allocateReference } from '../lib/issue-reference.js';
 
 const router = Router();
+
+// Photo uploads, matching the incidents pattern (services/api-gateway/src/routes/incidents.js).
+const UPLOAD_BASE = process.env.UPLOAD_DIR || '/opt/communitygate/uploads';
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
@@ -52,8 +60,18 @@ export function crossedThreshold(before, after) {
   return before < UPVOTE_THRESHOLD && after >= UPVOTE_THRESHOLD;
 }
 
+// Up to 5 photos per issue (BRD). remainingPhotoSlots never goes negative so
+// callers can compare an upload's file count directly against it.
+export const MAX_ISSUE_PHOTOS = 5;
+
+export function remainingPhotoSlots(existingCount) {
+  return Math.max(0, MAX_ISSUE_PHOTOS - existingCount);
+}
+
 // ── Shape helper ──────────────────────────────────────────────────────────────
 
+// Never SELECT * onto the wire: is_removed and author_resident_id are internal
+// and must not leak to the client.
 function shapeIssue(i) {
   return {
     id: i.id,
@@ -63,6 +81,9 @@ function shapeIssue(i) {
     status: i.status,
     authorName: i.author_name,
     authorUnit: i.author_unit || null,
+    reference: i.reference ?? null,
+    assigneeName: i.assignee_name ?? null,
+    resolvedAt: i.resolved_at ?? null,
     upvoteCount: Number(i.upvote_count ?? 0),
     myUpvoted: Boolean(i.my_upvoted),
     createdAt: i.created_at,
@@ -336,5 +357,199 @@ router.put('/issues/:id/status', authenticateJWT(['resident', 'admin']), async (
     client.release();
   }
 });
+
+// ── GET /issues/:id ───────────────────────────────────────────────────────────
+// Post, photos, timeline and replies in one call. Explicitly shaped — never
+// SELECT * — so internal columns (is_removed, author_resident_id) never leak.
+
+router.get('/issues/:id', authenticateJWT(['resident', 'admin']), async (req, res) => {
+  try {
+    const { community_id, sub } = req.user;
+    const issue = await queryOne(
+      `SELECT id, title, body, category, status, author_name, author_unit,
+              reference, assignee_name, resolved_at, created_at
+         FROM issues WHERE id = $1 AND community_id = $2 AND is_removed = false`,
+      [req.params.id, community_id]
+    );
+    if (!issue) return error(res, 'Issue not found', 404);
+
+    const [photos, timeline, replies, counts] = await Promise.all([
+      queryRows('SELECT id, path, position FROM issue_photos WHERE issue_id = $1 ORDER BY position', [issue.id]),
+      queryRows(
+        `SELECT from_status, to_status, changed_by_name, changed_by_role, kind, detail, created_at
+           FROM issue_status_events WHERE issue_id = $1 ORDER BY created_at`, [issue.id]),
+      queryRows(
+        `SELECT id, author_name, author_unit, author_role, body, is_official, created_at
+           FROM issue_replies WHERE issue_id = $1 AND is_removed = false ORDER BY created_at`, [issue.id]),
+      queryOne(
+        `SELECT COUNT(*)::int AS total,
+                COUNT(*) FILTER (WHERE resident_id = $2)::int AS mine
+           FROM issue_upvotes WHERE issue_id = $1`, [issue.id, sub]),
+    ]);
+
+    const upvoteCount = counts?.total ?? 0;
+    const myUpvoted = (counts?.mine ?? 0) > 0;
+
+    return success(res, {
+      issue: shapeIssue({ ...issue, upvote_count: upvoteCount, my_upvoted: myUpvoted }),
+      photos,
+      timeline,
+      replies,
+      upvoteCount,
+      myUpvoted,
+    });
+  } catch (err) {
+    console.error('GET /issues/:id error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// ── POST /issues/:id/replies ──────────────────────────────────────────────────
+// Committee replies are flagged official at write time, so the flag reflects
+// the author's standing when they wrote it, not who they are now.
+
+router.post('/issues/:id/replies', authenticateJWT(['resident', 'admin']), async (req, res) => {
+  try {
+    const parsed = z.object({ body: z.string().min(1).max(2000) }).safeParse(req.body);
+    if (!parsed.success) return error(res, 'Validation error', 400, parsed.error.issues);
+
+    const { community_id } = req.user;
+
+    // Must exist, be in the caller's community, and not be removed — otherwise
+    // a reply can be attached to another community's issue or a hidden one.
+    const issue = await queryOne(
+      `SELECT id FROM issues WHERE id = $1 AND community_id = $2 AND is_removed = false`,
+      [req.params.id, community_id]
+    );
+    if (!issue) return error(res, 'Issue not found', 404);
+
+    const actor = await queryOne(
+      `SELECT id, name, committee_role,
+              (SELECT unit_number FROM units WHERE id = residents.unit_id) AS unit
+         FROM residents WHERE id = $1 AND community_id = $2 AND is_active = true`,
+      [req.user.sub, community_id]
+    );
+    if (!actor) return error(res, 'Resident not found', 404);
+
+    const official = isCommittee(actor);
+    const row = await queryOne(
+      `INSERT INTO issue_replies
+         (issue_id, community_id, author_resident_id, author_name, author_unit,
+          author_role, body, is_official)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       RETURNING id, author_name, author_unit, author_role, body, is_official, created_at`,
+      [req.params.id, community_id, actor.id, actor.name, actor.unit,
+       roleLabel(actor.committee_role) || null, parsed.data.body, official]
+    );
+    await query('UPDATE issues SET last_activity_at = NOW() WHERE id = $1', [req.params.id]);
+    return success(res, row, 201);
+  } catch (err) {
+    console.error('POST /issues/:id/replies error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// ── POST /issues/:id/photos ───────────────────────────────────────────────────
+// Multer writes files to disk before this handler runs (Express 4 multipart
+// parsing), so every rejection path below unlinks req.files — a 403/404/422/500
+// must never orphan an already-written file. The cap check is count-and-insert
+// in one transaction with the issue row locked (FOR UPDATE), so two concurrent
+// uploads cannot both see room for photos that only one of them can have.
+
+const issueStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const month = new Date().toISOString().slice(0, 7);
+    const dir = path.join(UPLOAD_BASE, 'issues', month);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, _file, cb) => {
+    cb(null, `${uuidv4()}.jpg`);
+  },
+});
+const uploadIssuePhotos = multer({
+  storage: issueStorage,
+  limits: { fileSize: 10 * 1024 * 1024, files: MAX_ISSUE_PHOTOS },
+  fileFilter: (_req, file, cb) => cb(null, /jpeg|jpg|png|heic/i.test(file.mimetype)),
+});
+
+async function unlinkAll(files) {
+  await Promise.all((files || []).map((f) => unlink(f.path).catch(() => {})));
+}
+
+router.post('/issues/:id/photos', authenticateJWT(['resident', 'admin']),
+  uploadIssuePhotos.array('photos', MAX_ISSUE_PHOTOS), async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const { community_id, sub } = req.user;
+
+      await client.query('BEGIN');
+
+      const issueResult = await client.query(
+        `SELECT id, author_resident_id FROM issues
+          WHERE id = $1 AND community_id = $2 AND is_removed = false FOR UPDATE`,
+        [req.params.id, community_id]
+      );
+      if (!issueResult.rows.length) {
+        await client.query('ROLLBACK');
+        await unlinkAll(req.files);
+        return error(res, 'Issue not found', 404);
+      }
+      const issue = issueResult.rows[0];
+
+      // The actor's committee role comes from the database, never the token.
+      const actorResult = await client.query(
+        `SELECT committee_role FROM residents WHERE id = $1 AND community_id = $2 AND is_active = true`,
+        [sub, community_id]
+      );
+      const actor = actorResult.rows[0] || null;
+      const isAuthor = issue.author_resident_id === sub;
+      if (!isAuthor && !isCommittee(actor)) {
+        await client.query('ROLLBACK');
+        await unlinkAll(req.files);
+        return error(res, 'Only the issue author or a committee member can attach photos', 403);
+      }
+
+      // Count and insert in the same transaction, under the row lock taken
+      // above — otherwise two concurrent uploads of, say, three photos each
+      // can both see room for three and land six.
+      const countResult = await client.query(
+        'SELECT COUNT(*)::int AS n FROM issue_photos WHERE issue_id = $1',
+        [req.params.id]
+      );
+      const existingCount = countResult.rows[0].n;
+      const slots = remainingPhotoSlots(existingCount);
+      const files = req.files || [];
+      if (files.length > slots) {
+        await client.query('ROLLBACK');
+        await unlinkAll(req.files);
+        return error(res, `This issue can take ${slots} more photo(s)`, 422);
+      }
+
+      const month = new Date().toISOString().slice(0, 7);
+      const inserted = [];
+      for (let idx = 0; idx < files.length; idx++) {
+        const file = files[idx];
+        const filePath = `/uploads/issues/${month}/${file.filename}`;
+        const insertResult = await client.query(
+          `INSERT INTO issue_photos (issue_id, path, position)
+           VALUES ($1, $2, $3) RETURNING id, path, position`,
+          [req.params.id, filePath, existingCount + idx]
+        );
+        inserted.push(insertResult.rows[0]);
+      }
+      await client.query('UPDATE issues SET last_activity_at = NOW() WHERE id = $1', [req.params.id]);
+      await client.query('COMMIT');
+
+      return success(res, inserted, 201);
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      await unlinkAll(req.files);
+      console.error('POST /issues/:id/photos error:', err);
+      return error(res, 'Internal server error', 500);
+    } finally {
+      client.release();
+    }
+  });
 
 export default router;
