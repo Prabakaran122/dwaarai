@@ -69,18 +69,18 @@ describe('Notice board', () => {
     expect(json.data[0].is_pinned).toBe(true);
   });
 
-  it('resident POST /notices is forced to a discussion (not official/pinned)', async () => {
-    queryOne
-      .mockResolvedValueOnce({ unit_number: 'A-704' }) // unit lookup
-      .mockResolvedValueOnce({ id: 'n2', category: 'discussion', title: 'Lift noise', body: 'Anyone else?', author_name: 'Asha', author_unit: 'A-704', posted_by_role: 'resident', is_pinned: false, author_resident_id: 'r1', created_at: new Date(), last_activity_at: new Date() });
-    const { status, json } = await request('POST', '/api/v1/notices', {
+  // Task 11 (committee-only announcements, see notice-priority.test.js) gated
+  // POST /notices to portal admins and resident committee members only. A
+  // plain (non-committee) resident, who previously could post a forced
+  // 'discussion' notice, is now 403 — this test is re-aligned to that, and
+  // the committee-posting path is covered in notice-priority.test.js.
+  it('a plain (non-committee) resident is 403 posting a notice', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'r1', name: 'Asha', resident_type: 'owner', committee_role: null }); // actor lookup
+    const { status } = await request('POST', '/api/v1/notices', {
       headers: { Authorization: `Bearer ${residentToken}` },
-      body: { title: 'Lift noise', body: 'Anyone else?', category: 'official' }, // tries to force official
+      body: { title: 'Lift noise', body: 'Anyone else?', category: 'official' },
     });
-    expect(status).toBe(201);
-    expect(json.data.category).toBe('discussion');
-    expect(json.data.is_pinned).toBe(false);
-    expect(json.data.author_unit).toBe('A-704');
+    expect(status).toBe(403);
     expect(sendToMultiple).not.toHaveBeenCalled();
   });
 
