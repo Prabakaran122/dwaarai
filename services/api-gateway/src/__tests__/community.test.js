@@ -491,7 +491,7 @@ describe('POST /issues/:id/upvote', () => {
     expect(params[2]).toMatch(/20 residents affected/i);
   });
 
-  it('an upvote when a threshold entry already exists issues the guarded INSERT but the DB-side NOT EXISTS is what prevents a duplicate row', async () => {
+  it('guards the threshold INSERT with WHERE NOT EXISTS rather than deciding in JS', async () => {
     // The mock cannot express "the second INSERT no-ops because a row already
     // exists" (that's real Postgres semantics for WHERE NOT EXISTS), so this
     // asserts the handler still issues a single, correctly-guarded INSERT

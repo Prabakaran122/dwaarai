@@ -218,6 +218,13 @@ router.post('/issues/:id/upvote', authenticateJWT(['resident', 'admin']), async 
       // again later — WHERE NOT EXISTS enforces at most one system entry per
       // issue, ever, as a single atomic statement rather than a read-then-decide
       // that would itself race under concurrent upvotes.
+      //
+      // INVARIANT: the threshold entry is currently the ONLY kind='system' row
+      // anyone writes, which is the only reason this predicate can identify it
+      // by kind alone. Anything that adds a second sort of system entry (issue
+      // auto-closed, issue merged) must give it a distinct `kind` AND narrow
+      // this predicate — otherwise the first such row silently suppresses the
+      // threshold entry forever, and no test would catch it.
       await client.query(
         `INSERT INTO issue_status_events (issue_id, community_id, kind, detail)
          SELECT $1, $2, 'system', $3
