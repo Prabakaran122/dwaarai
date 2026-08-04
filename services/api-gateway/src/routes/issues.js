@@ -9,8 +9,9 @@ import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
 import pool from '../db/pool.js';
-import { canChangeStatus, canPostIssue, isCommittee, roleLabel } from '../lib/committee.js';
+import { canChangeStatus, canPostIssue, isCommittee, isGuard, roleLabel } from '../lib/committee.js';
 import { allocateReference } from '../lib/issue-reference.js';
+import { sendToMultiple } from '../lib/fcm.js';
 
 const router = Router();
 
@@ -66,6 +67,49 @@ export const MAX_ISSUE_PHOTOS = 5;
 
 export function remainingPhotoSlots(existingCount) {
   return Math.max(0, MAX_ISSUE_PHOTOS - existingCount);
+}
+
+// ── Resolve notification ─────────────────────────────────────────────────────
+// Fired once per issue, on the transition INTO 'resolved' (forward-only
+// transitions mean that's the only time it can happen). Dispatched strictly
+// after the status-change transaction COMMITs: the status change is the
+// source of truth, so a failed or slow notification must never roll it back,
+// change the response, or throw out of the request handler.
+
+// Pure and exported so the dedup rule (reporter vs. upvoters) is unit-testable
+// without touching the database.
+export function resolveNotificationTargets(reporterId, upvoterIds) {
+  return [...new Set([reporterId, ...upvoterIds].filter(Boolean))];
+}
+
+// Looks up FCM tokens for the target ids, scoped to active residents of the
+// community and excluding guards (guards read the feed but are never a
+// notification target). The resident app has no deep-link scheme yet, so the
+// payload carries issueId + reference for a future handler to route on.
+async function notifyIssueResolved({ issueId, communityId, authorResidentId, reference, title }) {
+  const upvoters = await queryRows(
+    'SELECT resident_id FROM issue_upvotes WHERE issue_id = $1',
+    [issueId]
+  );
+  const targetIds = resolveNotificationTargets(authorResidentId, upvoters.map((u) => u.resident_id));
+  if (!targetIds.length) return;
+
+  const residents = await queryRows(
+    `SELECT id, fcm_token, type AS resident_type
+       FROM residents
+      WHERE id = ANY($1::uuid[]) AND community_id = $2 AND is_active = true`,
+    [targetIds, communityId]
+  );
+  const tokens = residents.filter((r) => !isGuard(r) && r.fcm_token).map((r) => r.fcm_token);
+  if (!tokens.length) return;
+
+  const label = reference || issueId;
+  await sendToMultiple(
+    tokens,
+    'Issue resolved',
+    `${label} — ${title || 'Your issue'} has been marked resolved.`,
+    { type: 'issue_resolved', issueId, reference: reference || null }
+  );
 }
 
 // ── Shape helper ──────────────────────────────────────────────────────────────
@@ -311,8 +355,11 @@ router.put('/issues/:id/status', authenticateJWT(['resident', 'admin']), async (
 
     await client.query('BEGIN');
     // Lock the row so two committee members cannot race the same transition.
+    // author_resident_id/reference/title are read here (not in a second query
+    // after COMMIT) so the resolve-notification dispatch below sees exactly
+    // the row this transaction locked, not one that changed underneath it.
     const current = await client.query(
-      `SELECT id, status FROM issues
+      `SELECT id, status, author_resident_id, reference, title FROM issues
         WHERE id = $1 AND community_id = $2 AND is_removed = false FOR UPDATE`,
       [req.params.id, community_id]
     );
@@ -320,7 +367,8 @@ router.put('/issues/:id/status', authenticateJWT(['resident', 'admin']), async (
       await client.query('ROLLBACK');
       return error(res, 'Issue not found', 404);
     }
-    const from = current.rows[0].status;
+    const issueRow = current.rows[0];
+    const from = issueRow.status;
     if (!nextStatusIsValid(from, status)) {
       await client.query('ROLLBACK');
       return error(res, `Cannot move an issue from ${from} to ${status}`, 422);
@@ -347,6 +395,22 @@ router.put('/issues/:id/status', authenticateJWT(['resident', 'admin']), async (
        changedByResidentId, changedByName, changedByRole]
     );
     await client.query('COMMIT');
+
+    // Only on the transition INTO 'resolved', and strictly after COMMIT — see
+    // notifyIssueResolved above for why. Never let this affect the response.
+    if (status === 'resolved') {
+      try {
+        await notifyIssueResolved({
+          issueId: req.params.id,
+          communityId: community_id,
+          authorResidentId: issueRow.author_resident_id,
+          reference: issueRow.reference,
+          title: issueRow.title,
+        });
+      } catch (notifyErr) {
+        console.error('[issues] resolve notification failed:', notifyErr.message);
+      }
+    }
 
     return success(res, { id: req.params.id, status, from });
   } catch (err) {
