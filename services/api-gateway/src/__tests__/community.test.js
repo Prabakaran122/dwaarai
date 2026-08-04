@@ -38,8 +38,16 @@ vi.mock('../../src/db/queries.js', () => ({
   queryRows: vi.fn().mockResolvedValue([]),
 }));
 
+// PUT /issues/:id/status runs its work through a pool-checked-out client
+// (BEGIN / SELECT ... FOR UPDATE / UPDATE / INSERT / COMMIT) so the mock pool
+// needs a working connect() that hands back a client with its own query/release.
+const mockClient = { query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }), release: vi.fn() };
 vi.mock('../../src/db/pool.js', () => ({
-  default: { query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }), on: vi.fn() },
+  default: {
+    query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+    connect: vi.fn(),
+    on: vi.fn(),
+  },
 }));
 
 vi.mock('../../src/lib/fcm.js', () => ({
@@ -58,6 +66,7 @@ vi.mock('../../src/websocket.js', () => ({
 const { default: app } = await import('../index.js');
 const { generateTestToken } = await import('../middleware/auth.js');
 const { query, queryOne, queryRows } = await import('../db/queries.js');
+const { default: pool } = await import('../db/pool.js');
 
 let server;
 let baseUrl;
@@ -80,6 +89,11 @@ beforeEach(() => {
   query.mockResolvedValue({ rows: [], rowCount: 0 });
   queryOne.mockResolvedValue(null);
   queryRows.mockResolvedValue([]);
+  mockClient.query.mockReset();
+  mockClient.query.mockResolvedValue({ rows: [], rowCount: 0 });
+  mockClient.release.mockReset();
+  pool.connect.mockReset();
+  pool.connect.mockResolvedValue(mockClient);
 });
 
 async function request(method, path, { body, headers } = {}) {
@@ -296,9 +310,17 @@ describe('POST /issues/:id/upvote', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // PUT /issues/:id/status
 // ─────────────────────────────────────────────────────────────────────────────
+// Handler acquires a client via pool.connect() unconditionally, then:
+//   Non-admin actor resolution: queryOne → residents lookup (skipped for admins)
+//   client.query 1: BEGIN
+//   client.query 2: SELECT id, status FROM issues ... FOR UPDATE
+//   client.query 3: UPDATE issues ...              (only if transition valid)
+//   client.query 4: INSERT INTO issue_status_events ... (same transaction)
+//   client.query 5: COMMIT
 
 describe('PUT /issues/:id/status', () => {
-  it('returns 403 for a resident token (role gate)', async () => {
+  it('returns 403 for a resident token with no committee role (role gate)', async () => {
+    // queryOne default (beforeEach) resolves null → actor is null → not committee.
     const { status } = await request('PUT', '/api/v1/issues/i1/status', {
       headers: authR,
       body: { status: 'resolved' },
@@ -307,7 +329,8 @@ describe('PUT /issues/:id/status', () => {
   });
 
   it('returns 404 when issue not found in community', async () => {
-    queryOne.mockResolvedValueOnce(null);
+    // Admin path skips the residents lookup; mockClient.query's default
+    // ({ rows: [] }) on the SELECT ... FOR UPDATE already yields "not found".
     const { status } = await request('PUT', '/api/v1/issues/no-such/status', {
       headers: authA,
       body: { status: 'resolved' },
@@ -316,7 +339,12 @@ describe('PUT /issues/:id/status', () => {
   });
 
   it('returns 200 with { id, status } for admin on valid update', async () => {
-    queryOne.mockResolvedValueOnce({ id: 'i1', status: 'in_progress' });
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1', status: 'open' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({}) // UPDATE issues
+      .mockResolvedValueOnce({}) // INSERT issue_status_events
+      .mockResolvedValueOnce({}); // COMMIT
 
     const { status, json } = await request('PUT', '/api/v1/issues/i1/status', {
       headers: authA,
@@ -333,6 +361,88 @@ describe('PUT /issues/:id/status', () => {
       body: { status: 'banana' },
     });
     expect(status).toBe(400);
+  });
+
+  it('rejects a backwards transition with 422 and does not write a timeline row', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1', status: 'resolved' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({}); // ROLLBACK
+
+    const { status, json } = await request('PUT', '/api/v1/issues/i1/status', {
+      headers: authA,
+      body: { status: 'open' },
+    });
+    expect(status).toBe(422);
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(0);
+    expect(json.error.message).toMatch(/cannot move an issue/i);
+  });
+
+  it('a committee resident forward transition writes exactly one issue_status_events row with their name and capitalised role', async () => {
+    queryOne.mockResolvedValueOnce({
+      id: 'r-committee',
+      name: 'Priya Sharma',
+      resident_type: 'owner',
+      committee_role: 'secretary',
+    });
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1', status: 'open' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({}) // UPDATE issues
+      .mockResolvedValueOnce({}) // INSERT issue_status_events
+      .mockResolvedValueOnce({}); // COMMIT
+
+    const { status, json } = await request('PUT', '/api/v1/issues/i1/status', {
+      headers: authC,
+      body: { status: 'in_progress' },
+    });
+
+    expect(status).toBe(200);
+    expect(json.data.status).toBe('in_progress');
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(1);
+    const [, params] = insertCalls[0];
+    // (issue_id, community_id, from_status, to_status, changed_by_resident_id, changed_by_name, changed_by_role)
+    expect(params[0]).toBe('i1');
+    expect(params[2]).toBe('open');
+    expect(params[3]).toBe('in_progress');
+    expect(params[4]).toBe('r-committee');
+    expect(params[5]).toBe('Priya Sharma');
+    expect(params[6]).toBe('Secretary');
+  });
+
+  it('a portal admin forward transition is permitted and writes a row with changed_by_resident_id NULL and changed_by_role Admin', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i2', status: 'in_progress' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({}) // UPDATE issues
+      .mockResolvedValueOnce({}) // INSERT issue_status_events
+      .mockResolvedValueOnce({}); // COMMIT
+
+    const { status, json } = await request('PUT', '/api/v1/issues/i2/status', {
+      headers: authA,
+      body: { status: 'resolved' },
+    });
+
+    expect(status).toBe(200);
+    expect(json.data.status).toBe('resolved');
+    // Admin path never looks the actor up in residents.
+    expect(queryOne).not.toHaveBeenCalled();
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(1);
+    const [, params] = insertCalls[0];
+    expect(params[4]).toBeNull(); // changed_by_resident_id
+    expect(params[5]).toBe('RWA'); // changed_by_name (admin token's name)
+    expect(params[6]).toBe('Admin'); // changed_by_role
   });
 });
 

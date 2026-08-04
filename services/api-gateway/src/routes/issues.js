@@ -2,7 +2,9 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
-import { authenticateJWT } from '../middleware/auth.js';
+import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
+import pool from '../db/pool.js';
+import { canChangeStatus, roleLabel } from '../lib/committee.js';
 
 const router = Router();
 
@@ -16,7 +18,19 @@ const createIssueSchema = z.object({
 
 const updateStatusSchema = z.object({
   status: z.enum(['open', 'in_progress', 'resolved']),
+  assignee_name: z.string().max(200).optional(),
 });
+
+// open -> in_progress -> resolved, and nothing else. The BRD is explicit that
+// there are no backwards transitions: a resolved issue that recurs is a new
+// issue, so the original's audit trail stays true.
+const STATUS_ORDER = ['open', 'in_progress', 'resolved'];
+
+export function nextStatusIsValid(from, to) {
+  const i = STATUS_ORDER.indexOf(from);
+  const j = STATUS_ORDER.indexOf(to);
+  return i !== -1 && j !== -1 && j === i + 1;
+}
 
 // ── Shape helper ──────────────────────────────────────────────────────────────
 
@@ -139,9 +153,12 @@ router.post('/issues/:id/upvote', authenticateJWT(['resident', 'admin']), async 
 });
 
 // ── PUT /issues/:id/status ────────────────────────────────────────────────────
-// Admin only: update the status of an issue.
+// Both portal admins and resident committee members may change issue status.
+// Forward-only transitions; every change writes an immutable timeline row in
+// the same transaction as the status update.
 
-router.put('/issues/:id/status', authenticateJWT(['admin']), async (req, res) => {
+router.put('/issues/:id/status', authenticateJWT(['resident', 'admin']), async (req, res) => {
+  const client = await pool.connect();
   try {
     const parsed = updateStatusSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -150,20 +167,79 @@ router.put('/issues/:id/status', authenticateJWT(['admin']), async (req, res) =>
     const { community_id } = req.user;
     const { status } = parsed.data;
 
-    const issue = await queryOne(
-      `UPDATE issues
-          SET status = $1, last_activity_at = NOW()
-        WHERE id = $2 AND community_id = $3 AND is_removed = false
-        RETURNING id, status`,
-      [status, req.params.id, community_id]
+    // Portal admins skip the residents lookup entirely — an admin token's
+    // `sub` is an admins.id, not a residents.id, so looking it up there would
+    // always come back empty and incorrectly lock admins out.
+    let changedByResidentId;
+    let changedByName;
+    let changedByRole;
+
+    if (isAdminUser(req.user)) {
+      changedByResidentId = null;
+      changedByName = req.user.name || 'Admin';
+      changedByRole = 'Admin';
+    } else {
+      // The actor's committee role comes from the database, never the token —
+      // a token issued before someone left the committee must not still work.
+      const actor = await queryOne(
+        `SELECT id, name, type AS resident_type, committee_role
+           FROM residents WHERE id = $1 AND community_id = $2 AND is_active = true`,
+        [req.user.sub, community_id]
+      );
+      if (!canChangeStatus({ ...actor, role: req.user.role })) {
+        return error(res, 'Only committee members can change issue status', 403);
+      }
+      changedByResidentId = actor.id;
+      changedByName = actor.name;
+      changedByRole = roleLabel(actor.committee_role);
+    }
+
+    await client.query('BEGIN');
+    // Lock the row so two committee members cannot race the same transition.
+    const current = await client.query(
+      `SELECT id, status FROM issues
+        WHERE id = $1 AND community_id = $2 AND is_removed = false FOR UPDATE`,
+      [req.params.id, community_id]
     );
-    if (!issue) {
+    if (!current.rows.length) {
+      await client.query('ROLLBACK');
       return error(res, 'Issue not found', 404);
     }
-    return success(res, { id: issue.id, status: issue.status });
+    const from = current.rows[0].status;
+    if (!nextStatusIsValid(from, status)) {
+      await client.query('ROLLBACK');
+      return error(res, `Cannot move an issue from ${from} to ${status}`, 422);
+    }
+
+    await client.query(
+      `UPDATE issues
+          SET status = $1, last_activity_at = NOW(),
+              assignee_name = COALESCE($2, assignee_name),
+              resolved_at = CASE WHEN $1 = 'resolved' THEN NOW() ELSE resolved_at END
+        WHERE id = $3 AND community_id = $4`,
+      [status, parsed.data.assignee_name || null, req.params.id, community_id]
+    );
+
+    // Same transaction as the update: a status change without its timeline row
+    // is exactly the gap this feature exists to close. Insert-only — nothing
+    // in this route (or anywhere else) may UPDATE or DELETE this table.
+    await client.query(
+      `INSERT INTO issue_status_events
+         (issue_id, community_id, from_status, to_status,
+          changed_by_resident_id, changed_by_name, changed_by_role, kind)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'status_change')`,
+      [req.params.id, community_id, from, status,
+       changedByResidentId, changedByName, changedByRole]
+    );
+    await client.query('COMMIT');
+
+    return success(res, { id: req.params.id, status, from });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('PUT /issues/:id/status error:', err);
     return error(res, 'Internal server error', 500);
+  } finally {
+    client.release();
   }
 });
 
