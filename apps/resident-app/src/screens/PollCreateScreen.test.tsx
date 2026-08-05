@@ -74,8 +74,8 @@ describe('PollCreateScreen', () => {
     expect(body.showLiveResults).toBe(true);
   });
 
-  it('adds and removes option rows within the 2-6 bounds', () => {
-    const { getByText, getByPlaceholderText, queryByPlaceholderText } = render(
+  it('adds option rows up to six, then withdraws the control', () => {
+    const { getByText, getByPlaceholderText, queryByPlaceholderText, queryByText } = render(
       <PollCreateScreen onCancel={() => {}} onCreated={() => {}} />
     );
     fireEvent.press(getByText('Add option'));
@@ -84,7 +84,18 @@ describe('PollCreateScreen', () => {
     fireEvent.press(getByText('Add option'));
     fireEvent.press(getByText('Add option'));
     expect(getByPlaceholderText('Option 6')).toBeTruthy();
-    fireEvent.press(getByText('Add option'));
+    // Gone rather than inert — a visible control that ignores taps reads as
+    // broken, and the BRD caps a poll at six options.
+    expect(queryByText('Add option')).toBeNull();
     expect(queryByPlaceholderText('Option 7')).toBeNull();
+  });
+
+  it('withdraws Remove at the two-option floor', () => {
+    const { getByText, queryAllByText } = render(
+      <PollCreateScreen onCancel={() => {}} onCreated={() => {}} />
+    );
+    expect(queryAllByText('Remove')).toHaveLength(0);
+    fireEvent.press(getByText('Add option'));
+    expect(queryAllByText('Remove')).toHaveLength(3);
   });
 });

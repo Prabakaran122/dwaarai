@@ -117,10 +117,12 @@ export default function PollCreateScreen({ onCancel, onCreated }: { onCancel: ()
               )}
             </View>
           ))}
-          {/* Always rendered — addOption itself no-ops at MAX_OPTIONS, so the
-              row-limit test's extra press (at 6 options) has a button to hit
-              rather than needing it to have disappeared. */}
-          <Pressable onPress={addOption}><Text style={styles.addOption}>Add option</Text></Pressable>
+          {/* Hidden at the cap rather than left visible and inert — a control
+              that renders but ignores taps reads as broken. addOption still
+              guards internally. */}
+          {options.length < MAX_OPTIONS && (
+            <Pressable onPress={addOption}><Text style={styles.addOption}>Add option</Text></Pressable>
+          )}
         </Card>
 
         <Card style={styles.block}>
