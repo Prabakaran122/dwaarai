@@ -49,4 +49,19 @@ describe('PollCard', () => {
     expect(getByText('75%')).toBeTruthy();
     expect(getByText('25%')).toBeTruthy();
   });
+
+  // A closed poll keeps showLiveResults false but the server reveals its
+  // tallies anyway. Gating the card on that flag instead of on null counts
+  // would hide the final result forever — this is the case that catches it.
+  it('reveals a closed poll s results even though showLiveResults stayed false', () => {
+    const poll: any = {
+      id: 'p3', question: 'Gym hours?', status: 'closed', closesAt: '2026-08-01T09:00:00Z',
+      targetBlockId: null, canManage: false, authorName: 'RWA', createdAt: '2026-07-01T09:00:00Z',
+      totalVotes: 4, myOptionId: 'o1', showLiveResults: false,
+      options: [{ id: 'o1', label: '6am', votes: 3 }, { id: 'o2', label: '7am', votes: 1 }],
+    };
+    const { getByText, queryByText } = render(<PollCard poll={poll} onVote={() => {}} />);
+    expect(getByText('75%')).toBeTruthy();
+    expect(queryByText(/Results hidden/)).toBeNull();
+  });
 });

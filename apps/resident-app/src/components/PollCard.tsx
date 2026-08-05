@@ -16,6 +16,11 @@ export default function PollCard({
   onClose?: (pollId: string) => void;
 }) {
   const voted = !!poll.myOptionId || poll.status !== 'open';
+  // Read from totalVotes, NOT from showLiveResults. assemblePolls nulls the
+  // counts exactly when `show_live_results === false && !closed`, so null is
+  // definitionally "hidden right now". showLiveResults stays false on a poll
+  // that has since closed, so gating on it would hide the final results a
+  // closed poll is supposed to reveal.
   const resultsHidden = poll.totalVotes === null;
   const total = poll.totalVotes ?? 0;
 
