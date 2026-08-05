@@ -48,6 +48,22 @@ describe('community api surface', () => {
     expect(config.headers['Content-Type']).toBe('multipart/form-data');
   });
 
+  // The server trusts the declared mimetype, so a HEIC original — what arrives
+  // when compression falls back to the untouched file — must not be announced
+  // as JPEG and stored with a .jpg extension.
+  it('declares each photo by its real type, not always jpeg', () => {
+    const appended: any[] = [];
+    const spy = jest.spyOn(FormData.prototype, 'append').mockImplementation((_k, v) => { appended.push(v); });
+    api.uploadIssuePhotos('i1', ['file:///a.HEIC', 'file:///b.png', 'file:///c.jpg', 'file:///d']);
+    spy.mockRestore();
+
+    expect(appended[0]).toMatchObject({ type: 'image/heic', name: 'photo-0.heic' });
+    expect(appended[1]).toMatchObject({ type: 'image/png', name: 'photo-1.png' });
+    expect(appended[2]).toMatchObject({ type: 'image/jpeg', name: 'photo-2.jpg' });
+    // Extensionless uris fall back to jpeg, which is what compression emits.
+    expect(appended[3]).toMatchObject({ type: 'image/jpeg', name: 'photo-3.jpg' });
+  });
+
   it('creates an announcement with a priority', () => {
     api.createAnnouncement({ title: 'AGM', body: 'Sunday', priority: 'urgent' });
     expect((instance.post as jest.Mock)).toHaveBeenCalledWith('/notices', {

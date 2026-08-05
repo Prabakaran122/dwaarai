@@ -92,6 +92,11 @@ export function routeNotificationData(
     if (typeof data.issueId === 'string' && data.issueId) onIssueResolved?.(data.issueId);
     return;
   }
+  // Both the type and the id, matching the check this replaced — a push that
+  // merely carries an approval id should not open the approval screen. The
+  // server sends approval_id (fcm.js); approvalId is accepted only so a future
+  // camelCase payload would not silently stop routing.
+  if (data.type !== 'approval_request') return;
   const approvalId = data.approvalId ?? data.approval_id;
   if (typeof approvalId === 'string' && approvalId) {
     onApproval(approvalId, data);

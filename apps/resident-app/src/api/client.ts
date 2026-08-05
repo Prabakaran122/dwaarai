@@ -247,14 +247,29 @@ export const changeIssueStatus = (id: string, status: string, assigneeName?: str
 
 // The server's multer field is `photos` and it caps the request at 5 files
 // (MAX_ISSUE_PHOTOS in services/api-gateway/src/routes/issues.js).
+// The server's fileFilter trusts the declared mimetype, so declaring
+// image/jpeg for everything would let a HEIC original — which is what arrives
+// when compression falls back to the untouched file — land on disk as a .jpg.
+// Derive it from the uri instead. Compressed photos are genuinely JPEG and
+// fall through to the default.
+const MIME_BY_EXT: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  heic: 'image/heic',
+};
+
+function describePhoto(uri: string, index: number) {
+  const ext = (uri.split('?')[0].split('.').pop() ?? '').toLowerCase();
+  const type = MIME_BY_EXT[ext] ?? 'image/jpeg';
+  const suffix = ext && MIME_BY_EXT[ext] ? ext : 'jpg';
+  return { uri, name: `photo-${index}.${suffix}`, type };
+}
+
 export const uploadIssuePhotos = (id: string, uris: string[]) => {
   const form = new FormData();
   uris.forEach((uri, i) => {
-    form.append('photos', {
-      uri,
-      name: `photo-${i}.jpg`,
-      type: 'image/jpeg',
-    } as unknown as Blob);
+    form.append('photos', describePhoto(uri, i) as unknown as Blob);
   });
   return api.post(`/issues/${id}/photos`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },

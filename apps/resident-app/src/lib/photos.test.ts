@@ -22,7 +22,10 @@ describe('compressForUpload', () => {
     const out = await compressForUpload('file:///raw1.jpg');
     expect(ImageManipulator.manipulateAsync).toHaveBeenCalledWith(
       'file:///raw1.jpg',
-      [{ resize: { width: TARGET_WIDTH } }],
+      // The literal, not TARGET_WIDTH — asserting against the constant the
+      // module exports would track any change to it and prove nothing. The
+      // BRD specifies 1200px.
+      [{ resize: { width: 1200 } }],
       expect.objectContaining({ compress: expect.any(Number) })
     );
     expect(out).toBe('file:///raw1.jpg.small');

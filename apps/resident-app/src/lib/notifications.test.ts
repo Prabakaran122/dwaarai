@@ -12,9 +12,18 @@ describe('routeNotificationData', () => {
   it('leaves the existing approval route untouched', () => {
     const onApproval = jest.fn();
     const onIssue = jest.fn();
-    routeNotificationData({ approvalId: 'ap1', foo: 'bar' }, onApproval, onIssue);
-    expect(onApproval).toHaveBeenCalledWith('ap1', { approvalId: 'ap1', foo: 'bar' });
+    const data = { type: 'approval_request', approvalId: 'ap1', foo: 'bar' };
+    routeNotificationData(data, onApproval, onIssue);
+    expect(onApproval).toHaveBeenCalledWith('ap1', data);
     expect(onIssue).not.toHaveBeenCalled();
+  });
+
+  // The check this replaced required BOTH the type and the id. A push that
+  // merely carries an approval id must not open the approval screen.
+  it('ignores an approval id on a push that is not an approval_request', () => {
+    const onApproval = jest.fn();
+    routeNotificationData({ approval_id: 'ap1' }, onApproval, jest.fn());
+    expect(onApproval).not.toHaveBeenCalled();
   });
 
   it('ignores a push it does not recognise', () => {
