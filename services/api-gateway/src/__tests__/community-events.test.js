@@ -69,12 +69,25 @@ describe('GET /community-events', () => {
     expect(status).toBe(401);
   });
 
-  it('returns 403 with a non-resident token', async () => {
-    const adminToken = generateTestToken({ sub: 'a1', role: 'admin', community_id: 'c1', unit_id: 'u1' });
+  it('returns 403 with a token that is neither resident nor admin', async () => {
+    const guardToken = generateTestToken({ sub: 'g1', role: 'guard', community_id: 'c1' });
+    const { status } = await request('GET', '/api/v1/community-events', {
+      headers: { Authorization: `Bearer ${guardToken}` },
+    });
+    expect(status).toBe(403);
+  });
+
+  // Task 8 (2026-08-05-events-backend) widened this GET to also accept an
+  // admin token — the Admin Portal reads events with one. See
+  // events-filters.test.js for the fuller admin-access coverage (myRsvp
+  // safety, super-admin X-Community-Id scoping).
+  it('an admin token can list events (Admin Portal reads this route)', async () => {
+    const adminToken = generateTestToken({ sub: 'a1', role: 'community_admin', community_id: 'c1' });
+    queryRows.mockResolvedValueOnce([]);
     const { status } = await request('GET', '/api/v1/community-events', {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
-    expect(status).toBe(403);
+    expect(status).toBe(200);
   });
 
   it('lists upcoming events with goingCount and myRsvp mapped', async () => {
