@@ -14,10 +14,10 @@ const STATUS: Record<string, { preset: BadgePreset; label: string }> = {
   resolved: { preset: 'granted', label: 'Resolved' },
 };
 
-export default function IssueCard({ issue, onUpvote }: { issue: Issue; onUpvote: (id: string) => void }) {
+export default function IssueCard({ issue, onUpvote, onPress }: { issue: Issue; onUpvote: (id: string) => void; onPress?: () => void }) {
   const st = STATUS[issue.status] || STATUS.open;
   return (
-    <Card style={styles.card}>
+    <Card style={styles.card} onPress={onPress}>
       <View style={styles.headRow}>
         <Text style={[type.h3, styles.flex]} numberOfLines={2}>{issue.title}</Text>
         <StatusBadge preset={st.preset} label={st.label} size="sm" />

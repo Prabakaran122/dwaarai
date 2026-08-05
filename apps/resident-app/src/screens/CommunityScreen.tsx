@@ -2,92 +2,93 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
-import { spacing, radius } from '../theme/spacing';
+import { spacing } from '../theme/spacing';
 import { type } from '../theme/typography';
-import { AppBar, SectionHeader, Card } from '../components/ui';
+import { AppBar, Card } from '../components/ui';
 import AnnouncementCard from '../components/AnnouncementCard';
 import IssueCard from '../components/IssueCard';
 import PollCard from '../components/PollCard';
+import DiscussionCard from '../components/DiscussionCard';
+import FilterTabs from '../components/FilterTabs';
 import ComposeSheet from './ComposeSheet';
+import IssueDetailScreen from './IssueDetailScreen';
 import NoticeBoardScreen from './NoticeBoardScreen';
 import { useCommunityStore } from '../store/communityStore';
-import * as api from '../api/client';
+import type { FeedPost } from '../store/communityStore';
 
-export default function CommunityScreen() {
-  const { feed, error, fetch, applyUpvote } = useCommunityStore();
+export default function CommunityScreen({ initialIssueId }: { initialIssueId?: string } = {}) {
+  const { error, filter, fetch, setFilter, visiblePosts, toggleUpvote, castVote } = useCommunityStore();
   const [refreshing, setRefreshing] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [noticesOpen, setNoticesOpen] = useState(false);
+  const [openIssueId, setOpenIssueId] = useState<string | null>(initialIssueId ?? null);
 
   const load = useCallback(async () => { await fetch(); }, [fetch]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (initialIssueId) setOpenIssueId(initialIssueId); }, [initialIssueId]);
+
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
-  const onUpvote = async (id: string) => {
-    const issue = feed?.issues.find((i) => i.id === id);
-    const next = !issue?.myUpvoted;
-    applyUpvote(id, next);
-    try { await api.upvoteIssue(id); } catch { applyUpvote(id, !next); }
-  };
-  const onVote = async (pollId: string, optionId: string) => {
-    try { await api.votePoll(pollId, optionId); await load(); } catch { /* ignore */ }
-  };
-  const onClosePoll = async (id: string) => {
-    try { await api.closePoll(id); await load(); } catch { /* ignore */ }
-  };
-
-  const announcements = feed?.announcements ?? [];
-  const issues = feed?.issues ?? [];
-  const polls = feed?.polls ?? [];
-
+  // Detail views replace the tab content in place — this app has no navigation
+  // stack (see the plan's Global Constraints and NoticeBoardScreen).
+  if (openIssueId) {
+    return <IssueDetailScreen issueId={openIssueId} onBack={() => { setOpenIssueId(null); load(); }} />;
+  }
   if (noticesOpen) return <NoticeBoardScreen onClose={() => setNoticesOpen(false)} />;
+
+  const posts = visiblePosts();
+
+  const renderPost = (post: FeedPost) => {
+    switch (post.type) {
+      case 'announcement':
+        return <AnnouncementCard announcement={post} />;
+      case 'issue':
+        return <IssueCard issue={post} onUpvote={toggleUpvote} onPress={() => setOpenIssueId(post.id)} />;
+      case 'poll':
+        return <PollCard poll={post} onVote={castVote} />;
+      case 'discussion':
+        return <DiscussionCard discussion={post} onPress={() => setNoticesOpen(true)} />;
+      default:
+        return null;
+    }
+  };
 
   return (
     <View style={styles.container}>
       <AppBar title="Community" />
-      <ScrollView contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.teal} />}>
-        <Card style={styles.item} onPress={() => setNoticesOpen(true)}>
-          <View style={styles.noticeLink}>
-            <MaterialCommunityIcons name="bulletin-board" size={24} color={colors.brandPrimary} />
-            <View style={styles.noticeLinkText}>
-              <Text style={type.h3}>Notice board</Text>
-              <Text style={type.micro}>Discussions & official notices</Text>
-            </View>
-            <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textTertiary} />
-          </View>
-        </Card>
+      <FilterTabs value={filter} onChange={setFilter} />
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.teal} />}
+      >
+        <Pressable style={styles.compose} onPress={() => setComposeOpen(true)}>
+          <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.textSecondary} />
+          <Text style={type.bodySecondary}>Share something with your community…</Text>
+        </Pressable>
 
-        {announcements.map((a) => <View key={a.id} style={styles.item}><AnnouncementCard announcement={a} /></View>)}
-
-        <View style={styles.block}>
-          <SectionHeader title="Issues" />
-          {issues.length === 0 ? (
-            <Card><Text style={type.bodySecondary}>{error ? 'Could not load. Pull to refresh.' : 'No issues raised yet'}</Text></Card>
-          ) : issues.map((i) => <View key={i.id} style={styles.item}><IssueCard issue={i} onUpvote={onUpvote} /></View>)}
-        </View>
-
-        <View style={styles.block}>
-          <SectionHeader title="Polls" />
-          {polls.length === 0 ? (
-            <Card><Text style={type.bodySecondary}>No active polls</Text></Card>
-          ) : polls.map((p) => <View key={p.id} style={styles.item}><PollCard poll={p} onVote={onVote} onClose={onClosePoll} /></View>)}
-        </View>
+        {posts.length === 0 ? (
+          <Card>
+            <Text style={type.bodySecondary}>
+              {error ? 'Could not load. Pull to refresh.' : 'Nothing here yet'}
+            </Text>
+          </Card>
+        ) : (
+          posts.map((post) => <View key={`${post.type}-${post.id}`} style={styles.item}>{renderPost(post)}</View>)
+        )}
       </ScrollView>
 
-      <Pressable style={styles.fab} onPress={() => setComposeOpen(true)}>
-        <MaterialCommunityIcons name="pencil" size={24} color={colors.textInverse} />
-      </Pressable>
-
-      <ComposeSheet visible={composeOpen} onClose={() => setComposeOpen(false)} onPosted={() => { setComposeOpen(false); load(); }} />
+      <ComposeSheet
+        visible={composeOpen}
+        onClose={() => setComposeOpen(false)}
+        onPosted={() => { setComposeOpen(false); load(); }}
+      />
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.mist },
   scroll: { padding: spacing.lg, paddingBottom: spacing['5xl'] },
-  block: { marginTop: spacing.md },
   item: { marginTop: spacing.sm },
-  noticeLink: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  noticeLinkText: { flex: 1, gap: 2 },
-  fab: { position: 'absolute', right: spacing.lg, bottom: spacing.xl, width: 56, height: 56, borderRadius: 28, backgroundColor: colors.actionPrimary, alignItems: 'center', justifyContent: 'center' },
+  compose: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.surfaceBorder, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
 });
