@@ -66,4 +66,16 @@ describe('IssueDetailScreen', () => {
     const { getByText } = render(<IssueDetailScreen issueId="i1" onBack={() => {}} />);
     await waitFor(() => expect(getByText(/Could not load/)).toBeTruthy());
   });
+
+  it('shows the RWA action bar and changes status when the caller is committee', async () => {
+    (api.getIssue as jest.Mock).mockResolvedValue({
+      data: { data: { ...thread, canChangeStatus: true } },
+    });
+    (api.changeIssueStatus as jest.Mock).mockResolvedValue({ data: { data: { status: 'in_progress' } } });
+
+    const { getByText } = render(<IssueDetailScreen issueId="i1" onBack={() => {}} />);
+    await waitFor(() => expect(getByText('Mark in progress')).toBeTruthy());
+    fireEvent.press(getByText('Mark in progress'));
+    await waitFor(() => expect(api.changeIssueStatus).toHaveBeenCalledWith('i1', 'in_progress'));
+  });
 });
