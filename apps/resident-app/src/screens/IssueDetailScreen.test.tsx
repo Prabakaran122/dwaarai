@@ -61,6 +61,29 @@ describe('IssueDetailScreen', () => {
     await waitFor(() => expect(getByText('Thanks')).toBeTruthy());
   });
 
+  // Pins the behaviour, not one particular guard: pressing Send again while
+  // the first reply is still in flight must not post twice, since the server
+  // does not de-duplicate replies. It would fail if the disabled prop, the
+  // state check and the ref were all removed.
+  it('posts once when Send is pressed twice before the first call settles', async () => {
+    let release: (v: unknown) => void = () => {};
+    (api.replyToIssue as jest.Mock).mockImplementation(
+      () => new Promise((resolve) => { release = resolve; })
+    );
+
+    const { getByText, getByPlaceholderText } = render(<IssueDetailScreen issueId="i1" onBack={() => {}} />);
+    await waitFor(() => expect(getByText('Lift broken')).toBeTruthy());
+    fireEvent.changeText(getByPlaceholderText('Write a reply…'), 'Thanks');
+
+    fireEvent.press(getByText('Send'));
+    fireEvent.press(getByText('Send'));
+
+    expect(api.replyToIssue).toHaveBeenCalledTimes(1);
+
+    release({ data: { data: { id: 'rep3', author_name: 'Asha', author_unit: 'A-704', author_role: null, body: 'Thanks', is_official: false, created_at: '2026-08-03T09:00:00Z' } } });
+    await waitFor(() => expect(getByText('Thanks')).toBeTruthy());
+  });
+
   it('does not submit an empty reply', async () => {
     const { getByText } = render(<IssueDetailScreen issueId="i1" onBack={() => {}} />);
     await waitFor(() => expect(getByText('Lift broken')).toBeTruthy());

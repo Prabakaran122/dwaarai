@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, Image, TextInput, Pressable, ActivityIndicator } from 'react-native';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
@@ -40,6 +40,7 @@ export default function IssueDetailScreen({ issueId, onBack }: { issueId: string
   const [failed, setFailed] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
 
   const load = useCallback(async () => {
     setFailed(false);
@@ -55,7 +56,12 @@ export default function IssueDetailScreen({ issueId, onBack }: { issueId: string
 
   const send = async () => {
     const body = draft.trim();
-    if (!body || sending) return;
+    // Two physical taps arrive in separate ticks, so the `sending` state has
+    // already committed and the disabled prop alone would stop the second.
+    // The ref costs nothing and also covers a same-tick re-entry, where state
+    // would still read false. The server does not de-duplicate replies.
+    if (!body || sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
     try {
       const res = await api.replyToIssue(issueId, body);
@@ -65,6 +71,7 @@ export default function IssueDetailScreen({ issueId, onBack }: { issueId: string
     } catch {
       // Leave the draft in the box so the text is not lost.
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };
@@ -153,9 +160,7 @@ export default function IssueDetailScreen({ issueId, onBack }: { issueId: string
           onChangeText={setDraft}
           multiline
         />
-        {/* Disabled as well as guarded in send(): two taps landing before the
-            `sending` state re-render commits would otherwise both submit, and
-            duplicate replies are not something the server de-duplicates. */}
+        {/* Disabled while a reply is in flight, and while the draft is empty. */}
         <Pressable
           onPress={send}
           disabled={sending || !draft.trim()}
