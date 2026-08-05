@@ -5,6 +5,7 @@ import { success, error } from '../middleware/response.js';
 import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
 import { platformFeePaise, stallTotalPaise } from '../lib/money.js';
 import { createOrder, getKeyId, isLiveMode } from '../lib/razorpay.js';
+import { donationSettlementRows } from './donations.js';
 import pool from '../db/pool.js';
 
 const router = Router();
@@ -227,6 +228,184 @@ router.post('/events/:id/stalls/:stallId/book', authenticateJWT(['resident']), a
     return error(res, 'Internal server error', 500);
   } finally {
     client.release();
+  }
+});
+
+// -- GET /admin/events/:id/bookings (admin) -----------------------------------
+//
+// The bookings dashboard for a single event: every non-released booking
+// (reserved AND booked — an admin watching a live sale wants to see a
+// reservation in flight, not just settled ones) with its stall code, booker
+// (resident + flat, or guest name + phone), amount and payment status. This
+// is an operational view, not the financial report — see GET /admin/settlement
+// below for the paid-only ledger.
+const BOOKINGS_SQL = `
+  SELECT sb.id, es.code AS stall_code, sb.booker_kind,
+         sb.stall_fee_paise, sb.platform_fee_paise, sb.total_paise, sb.status,
+         sb.created_at, sb.booked_at,
+         r.name AS resident_name, u.unit_number,
+         sb.guest_name, sb.guest_mobile
+    FROM stall_bookings sb
+    JOIN event_stalls es ON es.id = sb.stall_id
+    LEFT JOIN residents r ON r.id = sb.resident_id
+    LEFT JOIN units u ON u.id = sb.unit_id
+   WHERE sb.event_id = $1 AND sb.community_id = $2 AND sb.status <> 'released'
+   ORDER BY sb.created_at DESC`;
+
+function shapeBookingRow(b) {
+  const isResident = b.booker_kind === 'resident';
+  return {
+    id: b.id,
+    stallCode: b.stall_code,
+    bookerKind: b.booker_kind,
+    bookerName: isResident ? b.resident_name || null : b.guest_name || null,
+    unitNumber: isResident ? b.unit_number || null : null,
+    guestMobile: isResident ? null : b.guest_mobile || null,
+    stallFeePaise: Number(b.stall_fee_paise),
+    platformFeePaise: Number(b.platform_fee_paise),
+    totalPaise: Number(b.total_paise),
+    status: b.status,
+    createdAt: b.created_at,
+    bookedAt: b.booked_at || null,
+  };
+}
+
+router.get('/admin/events/:id/bookings', authenticateJWT(['admin']), async (req, res) => {
+  try {
+    if (!isAdminUser(req.user)) {
+      return error(res, 'Insufficient permissions', 403);
+    }
+
+    const { community_id } = req.user;
+    const ev = await queryOne(
+      'SELECT id FROM events WHERE id = $1 AND community_id = $2',
+      [req.params.id, community_id]
+    );
+    if (!ev) {
+      return error(res, 'Event not found', 404);
+    }
+
+    const rows = await queryRows(BOOKINGS_SQL, [req.params.id, community_id]);
+    return success(res, rows.map(shapeBookingRow));
+  } catch (err) {
+    console.error('GET /admin/events/:id/bookings error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- GET /admin/settlement (admin) --------------------------------------------
+//
+// "Stall fees collected, platform fees deducted, net settled to RWA" (BRD).
+// This is the financial report, so it is stricter than the operational
+// bookings dashboard above:
+//   - only PAID orders count (payment_orders.status = 'paid') — a `created`
+//     order that was never completed must not appear here at all;
+//   - donations carry ZERO platform fee, always — the BRD is deliberate that
+//     Dwaar takes no cut of a community collection;
+//   - net is computed from integer paise via plain addition/subtraction of
+//     values already stored as integers — never a division/toFixed round
+//     trip, which is where float drift would sneak in across many rows;
+//   - `from`/`to` are calendar dates (YYYY-MM-DD) and the range is INCLUSIVE
+//     of both — `to` is expanded to the end of that day here so a report for
+//     "the month of July" does not silently drop July 31st's collections.
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+const STALL_SETTLEMENT_SQL = `
+  SELECT po.id AS order_id, po.paid_at,
+         sb.stall_fee_paise, sb.platform_fee_paise, sb.total_paise,
+         es.code AS stall_code, e.title AS event_title, sb.booker_kind,
+         r.name AS resident_name, u.unit_number, sb.guest_name, sb.guest_mobile
+    FROM payment_orders po
+    JOIN stall_bookings sb ON sb.id = po.subject_id
+    JOIN event_stalls es ON es.id = sb.stall_id
+    JOIN events e ON e.id = sb.event_id
+    LEFT JOIN residents r ON r.id = sb.resident_id
+    LEFT JOIN units u ON u.id = sb.unit_id
+   WHERE po.community_id = $1 AND po.purpose = 'stall' AND po.status = 'paid'
+     AND po.paid_at >= $2 AND po.paid_at <= $3
+   ORDER BY po.paid_at ASC`;
+
+function bookerLabel(name, unitOrMobile) {
+  const base = name || '';
+  return unitOrMobile ? `${base} (${unitOrMobile})`.trim() : base.trim();
+}
+
+router.get('/admin/settlement', authenticateJWT(['admin']), async (req, res) => {
+  try {
+    if (!isAdminUser(req.user)) {
+      return error(res, 'Insufficient permissions', 403);
+    }
+
+    const { from, to } = req.query;
+    if (!from || !to || !DATE_ONLY.test(from) || !DATE_ONLY.test(to)) {
+      return error(res, 'from and to are required, as YYYY-MM-DD', 400);
+    }
+
+    const { community_id } = req.user;
+    const fromTs = `${from}T00:00:00.000Z`;
+    const toTs = `${to}T23:59:59.999Z`;
+
+    const [stallRows, donationRows] = await Promise.all([
+      queryRows(STALL_SETTLEMENT_SQL, [community_id, fromTs, toTs]),
+      donationSettlementRows(community_id, fromTs, toTs),
+    ]);
+
+    let stallFeesPaise = 0;
+    let platformFeesPaise = 0;
+    let donationsPaise = 0;
+    const rows = [];
+
+    for (const r of stallRows) {
+      const stallFeePaise = Number(r.stall_fee_paise);
+      const platformFee = Number(r.platform_fee_paise);
+      stallFeesPaise += stallFeePaise;
+      platformFeesPaise += platformFee;
+      rows.push({
+        type: 'stall',
+        eventTitle: r.event_title,
+        stallCode: r.stall_code,
+        booker: r.booker_kind === 'resident'
+          ? bookerLabel(r.resident_name, r.unit_number)
+          : bookerLabel(r.guest_name, r.guest_mobile),
+        amountPaise: stallFeePaise,
+        platformFeePaise: platformFee,
+        netPaise: stallFeePaise - platformFee,
+        paidAt: r.paid_at,
+      });
+    }
+
+    for (const r of donationRows) {
+      // Never inflate this from po.platform_fee_paise — donations are a
+      // deliberate zero regardless of what is in that column.
+      const amountPaise = Number(r.amount_paise);
+      donationsPaise += amountPaise;
+      rows.push({
+        type: 'donation',
+        fundName: r.fund_name,
+        booker: r.is_anonymous ? 'Anonymous' : bookerLabel(r.donor_name, r.unit_number),
+        amountPaise,
+        platformFeePaise: 0,
+        netPaise: amountPaise,
+        paidAt: r.paid_at,
+      });
+    }
+
+    rows.sort((a, b) => new Date(a.paidAt) - new Date(b.paidAt));
+
+    const netToRwaPaise = (stallFeesPaise - platformFeesPaise) + donationsPaise;
+
+    return success(res, {
+      from,
+      to,
+      stallFeesPaise,
+      platformFeesPaise,
+      donationsPaise,
+      netToRwaPaise,
+      rows,
+    });
+  } catch (err) {
+    console.error('GET /admin/settlement error:', err);
+    return error(res, 'Internal server error', 500);
   }
 });
 

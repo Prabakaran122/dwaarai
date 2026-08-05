@@ -250,4 +250,32 @@ router.get('/admin/donation-funds/:id/donors', authenticateJWT(['admin']), async
   }
 });
 
+// -- Settlement report support ------------------------------------------------
+//
+// Consumed by GET /admin/settlement (routes/stalls.js), which combines the
+// stall and donation ledgers into one report. Donations carry ZERO platform
+// fee (see the file banner above) — po.platform_fee_paise is selected here
+// purely for completeness/audit, but it is always 0 for purpose = 'donation'
+// (enforced by donations.js's own insert, never overridden), so the caller
+// never needs to — and must never — invent a fee for a donation row.
+//
+// `fromTs`/`toTs` are ISO timestamp bounds and BOTH inclusive: the caller
+// (routes/stalls.js) is responsible for expanding a plain YYYY-MM-DD `to`
+// date to the end of that day, or a month boundary silently drops its last
+// day's donations from the report.
+const SETTLEMENT_SQL = `
+  SELECT po.id AS order_id, po.paid_at, d.amount_paise, po.platform_fee_paise,
+         df.name AS fund_name, d.donor_name, d.is_anonymous, d.resident_id, u.unit_number
+    FROM payment_orders po
+    JOIN donations d ON d.id = po.subject_id
+    JOIN donation_funds df ON df.id = d.fund_id
+    LEFT JOIN units u ON u.id = d.unit_id
+   WHERE po.community_id = $1 AND po.purpose = 'donation' AND po.status = 'paid'
+     AND po.paid_at >= $2 AND po.paid_at <= $3
+   ORDER BY po.paid_at ASC`;
+
+export async function donationSettlementRows(communityId, fromTs, toTs) {
+  return queryRows(SETTLEMENT_SQL, [communityId, fromTs, toTs]);
+}
+
 export default router;
