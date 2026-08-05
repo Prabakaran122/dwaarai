@@ -9,7 +9,7 @@ import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
 import pool from '../db/pool.js';
-import { canChangeStatus, canPostIssue, isCommittee, isGuard, roleLabel } from '../lib/committee.js';
+import { canChangeStatus, canPostIssue, isCommittee, isGuard, resolveCaller, roleLabel } from '../lib/committee.js';
 import { allocateReference } from '../lib/issue-reference.js';
 import { sendToMultiple } from '../lib/fcm.js';
 
@@ -454,6 +454,13 @@ router.get('/issues/:id', authenticateJWT(['resident', 'admin']), async (req, re
     const upvoteCount = counts?.total ?? 0;
     const myUpvoted = (counts?.mine ?? 0) > 0;
 
+    // Portal admins may also change status (see PUT /issues/:id/status), so the
+    // flag must admit them too or the portal's own thread view would hide the
+    // control it is allowed to use.
+    const caller = isAdminUser(req.user)
+      ? { isCommittee: true }
+      : await resolveCaller(queryOne, req.user);
+
     return success(res, {
       issue: shapeIssue({ ...issue, upvote_count: upvoteCount, my_upvoted: myUpvoted }),
       photos,
@@ -461,6 +468,7 @@ router.get('/issues/:id', authenticateJWT(['resident', 'admin']), async (req, re
       replies,
       upvoteCount,
       myUpvoted,
+      canChangeStatus: Boolean(caller.isCommittee),
     });
   } catch (err) {
     console.error('GET /issues/:id error:', err);

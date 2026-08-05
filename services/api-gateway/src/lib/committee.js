@@ -42,3 +42,22 @@ export function canAnnounce(actor) {
 export function canChangeStatus(actor) {
   return !isGuard(actor) && isCommittee(actor);
 }
+
+/**
+ * The caller's committee standing, read fresh from the database.
+ *
+ * Residents carry `is_committee` inside a JWT minted at login, so a resident
+ * appointed (or removed) afterwards would keep the old answer until they log
+ * in again. Every client-facing capability flag is therefore computed per
+ * request from `residents.committee_role`, never from the token.
+ */
+export async function resolveCaller(queryOne, user) {
+  if (!user || user.role === 'guard') return { isCommittee: false, committeeRole: null };
+  const row = await queryOne(
+    `SELECT committee_role FROM residents
+      WHERE id = $1 AND community_id = $2 AND is_active = true`,
+    [user.sub, user.community_id]
+  );
+  const label = roleLabel(row?.committee_role);
+  return { isCommittee: isCommittee(row), committeeRole: label || null };
+}

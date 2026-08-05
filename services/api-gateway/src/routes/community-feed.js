@@ -3,6 +3,7 @@ import { queryOne, queryRows } from '../db/queries.js';
 import { success } from '../middleware/response.js';
 import { authenticateJWT } from '../middleware/auth.js';
 import { assemblePolls } from './polls.js';
+import { resolveCaller } from '../lib/committee.js';
 
 const router = Router();
 
@@ -223,8 +224,13 @@ router.get('/community/feed', authenticateJWT(['resident', 'admin']), async (req
   const ordered = orderFeed(allPosts);
   const posts = rawType === undefined ? ordered : ordered.filter((post) => post.type === rawType);
 
+  // Computed after the feed sections so it cannot shift their positional
+  // query order (community.test.js and community-feed.test.js both assert it).
+  const me = await resolveCaller(queryOne, req.user);
+
   return success(res, {
     posts,
+    me,
     // DEPRECATED — see comment above the route. Byte-identical to the
     // pre-`posts` response; do not change without also updating the Basera
     // resident app's CommunityScreen.
