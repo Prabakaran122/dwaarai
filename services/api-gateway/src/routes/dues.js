@@ -288,6 +288,48 @@ router.post('/payments/webhook', async (req, res) => {
             }).catch((e) => console.error('[Push] payment confirm failed:', e.message));
           }
         }
+      } else {
+        // Not a dues payment. Events module (stalls/donations) share one
+        // payment_orders ledger (migration 041) instead of due_payments.
+        //
+        // Idempotency (gateways retry deliveries): settle with a conditional
+        // UPDATE — WHERE status = 'created' — and act on the row count. A
+        // "read the row, then decide" approach races the retry: two
+        // concurrent deliveries could both read status='created' and both
+        // proceed to settle. The conditional UPDATE lets Postgres itself be
+        // the single arbiter — only the delivery that actually flips the row
+        // gets rows back, so a replay naturally finds zero rows and no-ops.
+        const orderUpdate = await query(
+          `UPDATE payment_orders
+              SET status = 'paid', gateway_payment_id = $1, paid_at = NOW()
+            WHERE gateway_order_id = $2 AND status = 'created'
+            RETURNING id, purpose, subject_id`,
+          [paymentId, orderId]
+        );
+
+        if (orderUpdate.rows.length) {
+          const order = orderUpdate.rows[0];
+          if (order.purpose === 'stall') {
+            // Only a 'reserved' booking may be promoted — never re-stamp
+            // booked_at on a replay.
+            await query(
+              `UPDATE stall_bookings
+                  SET status = 'booked', booked_at = NOW()
+                WHERE id = $1 AND status = 'reserved'`,
+              [order.subject_id]
+            );
+          } else if (order.purpose === 'donation') {
+            await query(
+              `UPDATE donations
+                  SET status = 'paid', paid_at = NOW()
+                WHERE id = $1 AND status = 'created'`,
+              [order.subject_id]
+            );
+          }
+        }
+        // else: unknown order id, or a replay of an already-settled order —
+        // no writes, and we still fall through to the 200 below so Razorpay
+        // does not retry forever on something already handled.
       }
     }
 
