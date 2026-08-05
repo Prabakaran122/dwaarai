@@ -4,6 +4,8 @@ import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
 import { platformFeePaise, stallTotalPaise } from '../lib/money.js';
+import { createOrder, getKeyId, isLiveMode } from '../lib/razorpay.js';
+import pool from '../db/pool.js';
 
 const router = Router();
 
@@ -121,6 +123,110 @@ router.post('/admin/events/:id/stalls', authenticateJWT(['admin']), async (req, 
     }
     console.error('POST /admin/events/:id/stalls error:', err);
     return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- POST /events/:id/stalls/:stallId/book (resident) -------------------------
+//
+// The BRD's sharpest acceptance criterion: two residents booking the same
+// stall simultaneously must produce exactly one booking and one clear error
+// — never two bookings, never a 500. That guarantee is NOT an application
+// check here (a SELECT-then-INSERT cannot promise it under concurrency); it
+// is `uniq_live_booking_per_stall` (migration 041), a partial unique index on
+// stall_bookings(stall_id) WHERE status <> 'released'. This handler:
+//   - locks the stall row (FOR UPDATE) so concurrent attempts on the SAME
+//     stall serialize instead of racing independently,
+//   - inserts the booking as 'reserved', never 'booked' — money has not
+//     moved yet, and only the payment webhook may promote it,
+//   - computes stall_fee / platform_fee / total from the LOCKED stall row,
+//     never from the request body — a client naming its own price is a
+//     money bug,
+//   - catches the 23505 that index raises (belt-and-suspenders: the FOR
+//     UPDATE lock should already have serialized the loser into it) and
+//     turns it into a 409 that names the stall, never a 500.
+router.post('/events/:id/stalls/:stallId/book', authenticateJWT(['resident']), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { community_id, unit_id, sub } = req.user;
+
+    const ev = await client.query(
+      'SELECT id FROM events WHERE id = $1 AND community_id = $2',
+      [req.params.id, community_id]
+    );
+    if (!ev.rows.length) {
+      return error(res, 'Event not found', 404);
+    }
+
+    await client.query('BEGIN');
+
+    // Lock the stall row itself so two concurrent booking attempts on the
+    // SAME stall serialize here rather than both racing the INSERT below.
+    const stallResult = await client.query(
+      `SELECT id, code, price_paise FROM event_stalls
+        WHERE id = $1 AND event_id = $2 AND community_id = $3 AND is_active = true
+        FOR UPDATE`,
+      [req.params.stallId, req.params.id, community_id]
+    );
+    if (!stallResult.rows.length) {
+      await client.query('ROLLBACK');
+      return error(res, 'Stall not found', 404);
+    }
+    const stall = stallResult.rows[0];
+
+    const stallFeePaise = Number(stall.price_paise);
+    const platformFee = platformFeePaise(stallFeePaise);
+    const totalPaise = stallTotalPaise(stallFeePaise);
+
+    let bookingId;
+    try {
+      const bookingResult = await client.query(
+        `INSERT INTO stall_bookings
+           (stall_id, event_id, community_id, booker_kind, resident_id, unit_id,
+            stall_fee_paise, platform_fee_paise, total_paise, status)
+         VALUES ($1, $2, $3, 'resident', $4, $5, $6, $7, $8, 'reserved')
+         RETURNING id`,
+        [stall.id, req.params.id, community_id, sub, unit_id, stallFeePaise, platformFee, totalPaise]
+      );
+      bookingId = bookingResult.rows[0].id;
+    } catch (err) {
+      if (err && err.code === '23505') {
+        await client.query('ROLLBACK');
+        return error(res, `Stall ${stall.code} is already booked`, 409);
+      }
+      throw err;
+    }
+
+    const orderRow = await client.query(
+      `INSERT INTO payment_orders
+         (community_id, purpose, subject_id, amount_paise, platform_fee_paise, gateway, status, test_mode)
+       VALUES ($1, 'stall', $2, $3, $4, 'razorpay', 'created', $5)
+       RETURNING id`,
+      [community_id, bookingId, totalPaise, platformFee, !isLiveMode()]
+    );
+    const orderId = orderRow.rows[0].id;
+
+    const receipt = `stall_${String(bookingId).slice(0, 8)}`;
+    const gatewayOrder = await createOrder(totalPaise, receipt);
+
+    await client.query('UPDATE payment_orders SET gateway_order_id = $1 WHERE id = $2', [gatewayOrder.id, orderId]);
+    await client.query('UPDATE stall_bookings SET order_id = $1 WHERE id = $2', [orderId, bookingId]);
+
+    await client.query('COMMIT');
+
+    return success(res, {
+      bookingId,
+      orderId,
+      gatewayOrderId: gatewayOrder.id,
+      keyId: getKeyId(),
+      amountPaise: totalPaise,
+      testMode: !isLiveMode(),
+    }, 201);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('POST /events/:id/stalls/:stallId/book error:', err);
+    return error(res, 'Internal server error', 500);
+  } finally {
+    client.release();
   }
 });
 
