@@ -253,9 +253,9 @@ describe('POST /facilities/:id/book', () => {
     //  2. queryOne → slot conflict (null — slot is free)
     //  3. queryOne → sport conflict (returns existing booking for this sport today)
     queryOne
-      .mockResolvedValueOnce(fakeFacility)     // facility load
-      .mockResolvedValueOnce(null)             // no slot conflict
-      .mockResolvedValueOnce({ id: 'bk-sport' }); // sport conflict
+      .mockResolvedValueOnce(fakeFacility)  // facility load
+      .mockResolvedValueOnce(null)          // no slot conflict
+      .mockResolvedValueOnce({ n: 1 });     // sport conflict — one existing booking, default cap is 1
 
     const { status, json } = await request(
       'POST',
