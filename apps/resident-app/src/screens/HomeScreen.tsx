@@ -68,7 +68,7 @@ export default function HomeScreen({ onNavigate }: Props) {
 
   return (
     <View style={styles.container}>
-      <AppBar title={user?.communityName || 'Home'} bellCount={0} onBell={() => onNavigate?.('community')} />
+      <AppBar title={user?.communityName || 'Home'} bellCount={summary?.unreadCount ?? 0} onBell={() => onNavigate?.('community')} />
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.teal} />}
