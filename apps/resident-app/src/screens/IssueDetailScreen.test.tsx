@@ -61,6 +61,25 @@ describe('IssueDetailScreen', () => {
     await waitFor(() => expect(getByText('Thanks')).toBeTruthy());
   });
 
+  it('does not submit an empty reply', async () => {
+    const { getByText } = render(<IssueDetailScreen issueId="i1" onBack={() => {}} />);
+    await waitFor(() => expect(getByText('Lift broken')).toBeTruthy());
+    fireEvent.press(getByText('Send'));
+    expect(api.replyToIssue).not.toHaveBeenCalled();
+  });
+
+  it('keeps the draft when the reply fails, so nothing typed is lost', async () => {
+    (api.replyToIssue as jest.Mock).mockRejectedValue(new Error('offline'));
+    const { getByText, getByPlaceholderText, getByDisplayValue } = render(
+      <IssueDetailScreen issueId="i1" onBack={() => {}} />
+    );
+    await waitFor(() => expect(getByText('Lift broken')).toBeTruthy());
+    fireEvent.changeText(getByPlaceholderText('Write a reply…'), 'Thanks');
+    fireEvent.press(getByText('Send'));
+    await waitFor(() => expect(api.replyToIssue).toHaveBeenCalled());
+    expect(getByDisplayValue('Thanks')).toBeTruthy();
+  });
+
   it('surfaces a load failure instead of rendering an empty thread', async () => {
     (api.getIssue as jest.Mock).mockRejectedValue(new Error('offline'));
     const { getByText } = render(<IssueDetailScreen issueId="i1" onBack={() => {}} />);

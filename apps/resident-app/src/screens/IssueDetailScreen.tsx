@@ -153,7 +153,14 @@ export default function IssueDetailScreen({ issueId, onBack }: { issueId: string
           onChangeText={setDraft}
           multiline
         />
-        <Pressable onPress={send} style={styles.send}>
+        {/* Disabled as well as guarded in send(): two taps landing before the
+            `sending` state re-render commits would otherwise both submit, and
+            duplicate replies are not something the server de-duplicates. */}
+        <Pressable
+          onPress={send}
+          disabled={sending || !draft.trim()}
+          style={[styles.send, (sending || !draft.trim()) && styles.sendDisabled]}
+        >
           <Text style={styles.sendLabel}>Send</Text>
         </Pressable>
       </View>
@@ -176,5 +183,6 @@ const styles = StyleSheet.create({
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, padding: spacing.md, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.surfaceBorder },
   input: { flex: 1, maxHeight: 96, borderWidth: 1, borderColor: colors.inputBorder, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, ...type.body },
   send: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: radius.md, backgroundColor: colors.actionPrimary },
+  sendDisabled: { opacity: 0.5 },
   sendLabel: { ...type.caption, color: colors.textInverse },
 });
