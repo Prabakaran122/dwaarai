@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable } from 'react-native';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { type } from '../theme/typography';
@@ -8,7 +8,7 @@ import UnitHero from '../components/UnitHero';
 import MemberRow from '../components/MemberRow';
 import VehicleRow from '../components/VehicleRow';
 import DuesSnapshotCard from '../components/DuesSnapshotCard';
-import { useUnitStore } from '../store/unitStore';
+import { useUnitStore, UnitMember } from '../store/unitStore';
 import MembersScreen from './MembersScreen';
 import VehiclesScreen from './VehiclesScreen';
 import DuesScreen from './DuesScreen';
@@ -16,6 +16,7 @@ import PetsScreen from './PetsScreen';
 import PetRow from '../components/PetRow';
 import DocumentsScreen from './DocumentsScreen';
 import FacilityBookingScreen from './FacilityBookingScreen';
+import MemberDetailScreen from './MemberDetailScreen';
 
 type Overlay = 'members' | 'vehicles' | 'dues' | 'pets' | 'documents' | 'facilities' | null;
 
@@ -25,11 +26,13 @@ export default function MyUnitScreen({ onNavigate }: Props) {
   const { profile, error, fetch } = useUnitStore();
   const [refreshing, setRefreshing] = useState(false);
   const [overlay, setOverlay] = useState<Overlay>(null);
+  const [member, setMember] = useState<UnitMember | null>(null);
 
   const load = useCallback(async () => { await fetch(); }, [fetch]);
   useEffect(() => { load(); }, [load]);
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
+  if (member) return <MemberDetailScreen member={member} onBack={() => { setMember(null); load(); }} />;
   if (overlay === 'members') return <MembersScreen onClose={() => { setOverlay(null); load(); }} />;
   if (overlay === 'vehicles') return <VehiclesScreen onClose={() => { setOverlay(null); load(); }} />;
   if (overlay === 'dues') return <DuesScreen onClose={() => { setOverlay(null); load(); }} />;
@@ -51,7 +54,11 @@ export default function MyUnitScreen({ onNavigate }: Props) {
         <View style={styles.block}>
           <SectionHeader title="Members" actionLabel="Manage" onAction={() => setOverlay('members')} />
           <Card>
-            {members.length === 0 ? <Text style={type.bodySecondary}>No members yet</Text> : members.map((m) => <MemberRow key={m.id} member={m} />)}
+            {members.length === 0 ? <Text style={type.bodySecondary}>No members yet</Text> : members.map((m) => (
+              <Pressable key={m.id} onPress={() => setMember(m)}>
+                <MemberRow member={m} />
+              </Pressable>
+            ))}
           </Card>
         </View>
 

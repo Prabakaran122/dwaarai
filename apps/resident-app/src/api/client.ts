@@ -194,6 +194,19 @@ export const deleteFaceData = () => api.delete('/face');
 
 export const getFaceAccessLog = () => api.get('/face/access-log');
 
+// Face identity & consent — household members (owner enrols on their behalf,
+// scoped server-side to residents of the same unit)
+export const getMemberFace = (id: string) => api.get(`/members/${id}/face`);
+export const enrollMemberFace = (id: string, vector: number[]) =>
+  api.post(`/members/${id}/face/enroll`, { vector });
+// NOTE: the server's PUT /members/:id/face/consent mirrors the self-scoped
+// PUT /face/consent — it toggles ONE { location, enabled } pair per call
+// (see services/api-gateway/src/routes/face.js's shared consentSchema), not
+// a bulk `consents` array as an earlier draft of this client assumed.
+export const setMemberFaceConsent = (id: string, location: string, enabled: boolean) =>
+  api.put(`/members/${id}/face/consent`, { location, enabled });
+export const deleteMemberFace = (id: string) => api.delete(`/members/${id}/face`);
+
 // Unit documents (vault)
 export const getDocuments = () => api.get('/documents');
 export const deleteDocument = (id: string) => api.delete(`/documents/${id}`);
