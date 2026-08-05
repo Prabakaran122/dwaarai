@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  COMMITTEE_ROLES, isCommittee, isGuard, roleLabel,
+  COMMITTEE_ROLES, isCommittee, isGuard, roleLabel, resolveCaller,
   canPostIssue, canAnnounce, canChangeStatus,
 } from '../lib/committee.js';
 
@@ -60,5 +60,37 @@ describe('permissions matrix from the BRD', () => {
   // still a guard, so the "Official response" badge can never attach to one.
   it('does not treat a guard with a committee_role as committee', () => {
     expect(isCommittee({ ...guard, committee_role: 'president' })).toBe(false);
+  });
+
+  describe('resolveCaller', () => {
+    const queryOne = async () => ({ committee_role: 'secretary', resident_type: 'owner' });
+
+    it('reads the role from the database, not the token', async () => {
+      // A token minted before the appointment says is_committee: false; the
+      // answer must still be yes.
+      const out = await resolveCaller(queryOne, { sub: 'r1', community_id: 'c1', role: 'resident', is_committee: false });
+      expect(out).toEqual({ isCommittee: true, committeeRole: 'Secretary' });
+    });
+
+    it('reports a resident with no committee role as not committee', async () => {
+      const none = async () => ({ committee_role: null, resident_type: 'owner' });
+      expect(await resolveCaller(none, { sub: 'r1', community_id: 'c1', role: 'resident' }))
+        .toEqual({ isCommittee: false, committeeRole: null });
+    });
+
+    it('reports a missing resident row as not committee', async () => {
+      const missing = async () => null;
+      expect(await resolveCaller(missing, { sub: 'r1', community_id: 'c1', role: 'resident' }))
+        .toEqual({ isCommittee: false, committeeRole: null });
+    });
+
+    it('never grants a guard committee standing, by role OR by resident type', async () => {
+      const byRole = await resolveCaller(queryOne, { sub: 'g1', community_id: 'c1', role: 'guard' });
+      expect(byRole).toEqual({ isCommittee: false, committeeRole: null });
+
+      const guardRow = async () => ({ committee_role: 'president', resident_type: 'guard' });
+      const byType = await resolveCaller(guardRow, { sub: 'g2', community_id: 'c1', role: 'resident' });
+      expect(byType).toEqual({ isCommittee: false, committeeRole: null });
+    });
   });
 });

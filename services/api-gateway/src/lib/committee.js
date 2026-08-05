@@ -52,12 +52,18 @@ export function canChangeStatus(actor) {
  * request from `residents.committee_role`, never from the token.
  */
 export async function resolveCaller(queryOne, user) {
-  if (!user || user.role === 'guard') return { isCommittee: false, committeeRole: null };
+  if (!user) return { isCommittee: false, committeeRole: null };
+  // Select the resident type too, so the row handed to isCommittee carries
+  // everything isGuard inspects. Checking only the JWT's role would let a row
+  // whose resident_type is 'guard' fall through — inert today because guards
+  // hold no committee_role, but this is a permission helper and it should not
+  // depend on that staying true.
   const row = await queryOne(
-    `SELECT committee_role FROM residents
+    `SELECT committee_role, type AS resident_type FROM residents
       WHERE id = $1 AND community_id = $2 AND is_active = true`,
     [user.sub, user.community_id]
   );
-  const label = roleLabel(row?.committee_role);
-  return { isCommittee: isCommittee(row), committeeRole: label || null };
+  const actor = { ...row, role: user.role };
+  const label = isCommittee(actor) ? roleLabel(actor.committee_role) : '';
+  return { isCommittee: isCommittee(actor), committeeRole: label || null };
 }
