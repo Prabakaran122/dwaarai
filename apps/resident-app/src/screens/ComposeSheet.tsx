@@ -6,6 +6,7 @@ import { font, type } from '../theme/typography';
 import { Input, Button } from '../components/ui';
 import * as api from '../api/client';
 import PollCreateScreen from './PollCreateScreen';
+import { pickIssuePhotos, MAX_ISSUE_PHOTOS } from '../lib/photos';
 
 type Kind = 'issue' | 'poll' | 'discussion' | 'announcement';
 
@@ -40,13 +41,19 @@ export default function ComposeSheet({
   const [body, setBody] = useState('');
   const [category, setCategory] = useState('general');
   const [priority, setPriority] = useState<'normal' | 'urgent'>('normal');
+  const [photos, setPhotos] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
   const reset = () => {
-    setTitle(''); setBody(''); setCategory('general'); setPriority('normal'); setKind('issue');
+    setTitle(''); setBody(''); setCategory('general'); setPriority('normal'); setKind('issue'); setPhotos([]);
   };
   const close = () => { reset(); onClose(); };
+
+  const addPhotos = async () => {
+    const picked = await pickIssuePhotos(photos.length);
+    if (picked.length) setPhotos((prev) => [...prev, ...picked]);
+  };
 
   const submit = async () => {
     setMsg(null);
@@ -54,7 +61,14 @@ export default function ComposeSheet({
     setSaving(true);
     try {
       if (kind === 'issue') {
-        await api.createIssue({ title: title.trim(), body: body.trim(), category });
+        const created = await api.createIssue({ title: title.trim(), body: body.trim(), category });
+        if (photos.length) {
+          try {
+            await api.uploadIssuePhotos(created.data.data.id, photos);
+          } catch {
+            // The issue is already filed — a failed photo upload must not lose it.
+          }
+        }
       } else if (kind === 'discussion') {
         await api.createDiscussion({ title: title.trim(), body: body.trim() });
       } else if (kind === 'announcement') {
@@ -83,9 +97,14 @@ export default function ComposeSheet({
                 <Input label="Title" placeholder="Title" value={title} onChangeText={setTitle} />
                 <Input testID="compose-body" label="Details" placeholder="Write something…" value={body} onChangeText={setBody} multiline style={{ minHeight: 90, textAlignVertical: 'top' }} />
                 {kind === 'issue' ? (
-                  <View style={styles.cats}>
-                    {ISSUE_CATS.map((c) => <Text key={c} onPress={() => setCategory(c)} style={[styles.cat, category === c && styles.catActive]}>{c}</Text>)}
-                  </View>
+                  <>
+                    <View style={styles.cats}>
+                      {ISSUE_CATS.map((c) => <Text key={c} onPress={() => setCategory(c)} style={[styles.cat, category === c && styles.catActive]}>{c}</Text>)}
+                    </View>
+                    <Text onPress={addPhotos} style={styles.addPhotos}>
+                      Add photos ({photos.length}/{MAX_ISSUE_PHOTOS} photos)
+                    </Text>
+                  </>
                 ) : null}
                 {kind === 'announcement' ? (
                   <View style={styles.cats}>
@@ -118,6 +137,7 @@ const styles = StyleSheet.create({
   cats: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   cat: { ...font(500), fontSize: 12, color: colors.textSecondary, backgroundColor: colors.surface, borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, overflow: 'hidden', textTransform: 'capitalize' },
   catActive: { backgroundColor: colors.teal, color: colors.textInverse },
+  addPhotos: { ...font(500), fontSize: 13, color: colors.brandPrimary, marginTop: spacing.xs },
   msg: { ...font(400), fontSize: 12, color: colors.textError, marginTop: spacing.xs },
   post: { marginTop: spacing.sm, alignSelf: 'flex-start' },
   cancel: { ...font(500), fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm },
