@@ -197,8 +197,15 @@ export const getFaceAccessLog = () => api.get('/face/access-log');
 // Face identity & consent — household members (owner enrols on their behalf,
 // scoped server-side to residents of the same unit)
 export const getMemberFace = (id: string) => api.get(`/members/${id}/face`);
-export const enrollMemberFace = (id: string, vector: number[]) =>
-  api.post(`/members/${id}/face/enroll`, { vector });
+// The server derives the vector from the scan and never accepts one from the
+// client — a caller-supplied vector would be an arbitrary value that then
+// matches a real face at the gate. `scanB64` is optional: without it the
+// enrolment is recorded as 'pending' until a scan is captured.
+export const enrollMemberFace = (id: string, scanB64?: string) =>
+  api.post(`/members/${id}/face/enroll`, {
+    consent_acknowledged: true,
+    ...(scanB64 ? { scan_b64: scanB64 } : {}),
+  });
 // NOTE: the server's PUT /members/:id/face/consent mirrors the self-scoped
 // PUT /face/consent — it toggles ONE { location, enabled } pair per call
 // (see services/api-gateway/src/routes/face.js's shared consentSchema), not

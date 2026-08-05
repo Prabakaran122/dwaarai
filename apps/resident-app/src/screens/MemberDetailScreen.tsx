@@ -27,15 +27,21 @@ const STATUS_META: Record<string, { label: string; color: string; icon: string }
 
 const EMPTY_CONSENTS: ConsentMap = { gate: false, pool: false, clubhouse: false, gym: false };
 
-// No on-device face-capture pipeline exists in this app yet (self-enrolment
-// doesn't send a real scan either — see FaceIdentityScreen, which posts
-// consent only and leaves the server to mark the enrolment 'pending').
-// The member-scoped enrol endpoint requires a non-empty vector, so until a
-// real capture/vectorization step ships, this produces a placeholder that is
-// never persisted client-side and never leaves this function.
-function placeholderVector(): number[] {
-  return [Date.now() % 1000];
-}
+// This app has NO on-device face capture or vectorisation pipeline, so it
+// cannot produce a real face vector. Sending a synthetic one would write a
+// junk enrolment and tell a resident their family member is recognised at the
+// gate when they are not — a false claim about a security control, and junk
+// data in a matching system. So in-app enrolment is presented as unavailable
+// and the resident is pointed at the gate device, which is where enrolment
+// actually happens today.
+//
+// Reading status, managing per-location consent and withdrawing an enrolment
+// are all real and work against live data — only capture is missing.
+//
+// Resolving BRD open question 2 ("does the app capture biometric data in-app
+// or redirect to the ZKTeco device enrolment flow?") decides what replaces
+// this: a camera + vectoriser here, or a deep link into the device flow.
+const CAPTURE_AVAILABLE = false;
 
 interface Props {
   member: UnitMember;
@@ -71,19 +77,14 @@ export default function MemberDetailScreen({ member, onBack }: Props) {
   const isEnrolled = status === 'active' || status === 'pending';
   const sm = STATUS_META[status] || STATUS_META.not_enrolled;
 
-  const doEnroll = async () => {
-    setBusy(true);
-    try {
-      // The vector is generated and sent in the same call; it is never
-      // assigned to component state and never rendered or logged.
-      const res = await api.enrollMemberFace(member.id, placeholderVector());
-      setStatus(res.data.data.status);
-      Alert.alert('Enrolled', `${member.name}'s face ID is now set up for the locations you enable below.`);
-    } catch (err: any) {
-      Alert.alert('Enrolment failed', err?.response?.data?.error?.message || 'Please try again.');
-    } finally {
-      setBusy(false);
-    }
+  // Never sends a synthetic vector. Until capture exists (see CAPTURE_AVAILABLE
+  // above), this explains where enrolment actually happens rather than
+  // pretending it succeeded.
+  const doEnroll = () => {
+    Alert.alert(
+      'Enrol at the gate',
+      `${member.name}'s face is captured at the gate device, not in the app. Ask the guard to enrol them, then their status here will update.`
+    );
   };
 
   const toggleConsent = async (loc: ConsentLocation, value: boolean) => {
@@ -200,7 +201,12 @@ export default function MemberDetailScreen({ member, onBack }: Props) {
           ) : isEnrolled ? (
             <Button title="Remove face ID" icon="delete-forever" variant="destructive" onPress={confirmDelete} />
           ) : (
-            <Button title="Enrol face ID" icon="face-recognition" variant="primary" onPress={doEnroll} />
+            <Button
+              title={CAPTURE_AVAILABLE ? 'Enrol face ID' : 'How to enrol face ID'}
+              icon="face-recognition"
+              variant="primary"
+              onPress={doEnroll}
+            />
           )}
         </View>
       </ScrollView>

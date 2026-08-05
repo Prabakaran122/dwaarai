@@ -37,23 +37,43 @@ async function call(method, path, body) {
 describe('member face enrolment is scoped to the caller\'s own unit', () => {
   it('refuses a member who belongs to another unit', async () => {
     queryOne.mockResolvedValueOnce(null); // same-unit lookup finds nothing
-    const { status } = await call('POST', '/api/v1/members/r9/face/enroll', { vector: [0.1, 0.2] });
+    const { status } = await call('POST', '/api/v1/members/r9/face/enroll', { consent_acknowledged: true });
     expect(status).toBe(404);
   });
 
   it('enrols a member of the same unit', async () => {
     queryOne
-      .mockResolvedValueOnce({ id: 'r2', unit_id: 'u1', name: 'Ravi' }) // same-unit lookup
-      .mockResolvedValueOnce({ id: 'f1', resident_id: 'r2', status: 'pending' });
-    const { status } = await call('POST', '/api/v1/members/r2/face/enroll', { vector: [0.1, 0.2] });
+      .mockResolvedValueOnce({ id: 'r2', unit_id: 'u1', community_id: 'c1', name: 'Ravi' })
+      .mockResolvedValueOnce({ status: 'pending', enrolled_at: '2026-08-05T00:00:00Z', activated_at: null });
+    const { status } = await call('POST', '/api/v1/members/r2/face/enroll', { consent_acknowledged: true });
     expect(status).toBe(201);
   });
 
-  it('never accepts an image, only a vector', async () => {
-    queryOne.mockResolvedValueOnce({ id: 'r2', unit_id: 'u1', name: 'Ravi' });
-    const { status, json } = await call('POST', '/api/v1/members/r2/face/enroll', { image: 'data:image/jpeg;base64,AAAA' });
+  // A client-supplied vector is an arbitrary value that would then match a real
+  // face at the gate — accepting one lets any resident mint a gate credential
+  // for anyone. The server derives it, exactly as self-enrolment does.
+  it('refuses a caller-supplied vector', async () => {
+    const { status } = await call('POST', '/api/v1/members/r2/face/enroll', {
+      consent_acknowledged: true, vector: [0.42, 0.43],
+    });
     expect(status).toBe(400);
+    // Rejected before any lookup — the guard, not schema validation, did this.
+    expect(queryOne).not.toHaveBeenCalled();
+  });
+
+  it('never accepts an image', async () => {
+    const { status, json } = await call('POST', '/api/v1/members/r2/face/enroll', {
+      consent_acknowledged: true, image: 'data:image/jpeg;base64,AAAA',
+    });
+    expect(status).toBe(400);
+    expect(queryOne).not.toHaveBeenCalled();
     expect(JSON.stringify(json)).not.toMatch(/base64|data:image/);
+  });
+
+  it('requires consent before enrolling anyone', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'r2', unit_id: 'u1', community_id: 'c1', name: 'Ravi' });
+    const { status } = await call('POST', '/api/v1/members/r2/face/enroll', { consent_acknowledged: false });
+    expect(status).toBe(400);
   });
 
   it('reads a member\'s enrolment status', async () => {

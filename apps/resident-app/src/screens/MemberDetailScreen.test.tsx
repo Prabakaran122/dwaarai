@@ -24,11 +24,23 @@ describe('MemberDetailScreen', () => {
     expect(getByText(/Not enrolled/i)).toBeTruthy();
   });
 
-  it('offers enrolment and calls the member-scoped endpoint', async () => {
+  // The app has no face capture pipeline, so it CANNOT produce a real vector.
+  // Sending a synthetic one would write a junk enrolment and tell a resident
+  // their family member is recognised at the gate when they are not. Until
+  // capture exists, the control explains where enrolment happens instead.
+  it('never sends a synthetic face vector', async () => {
     const { getByText } = render(<MemberDetailScreen member={member} onBack={() => {}} />);
     await waitFor(() => expect(getByText('Ravi')).toBeTruthy());
-    fireEvent.press(getByText(/Enrol face ID/i));
-    await waitFor(() => expect(api.enrollMemberFace).toHaveBeenCalledWith('r2', expect.anything()));
+    fireEvent.press(getByText(/How to enrol face ID/i));
+    expect(api.enrollMemberFace).not.toHaveBeenCalled();
+  });
+
+  it('tells the resident where enrolment actually happens', async () => {
+    const spy = jest.spyOn(Alert, 'alert');
+    const { getByText } = render(<MemberDetailScreen member={member} onBack={() => {}} />);
+    await waitFor(() => expect(getByText('Ravi')).toBeTruthy());
+    fireEvent.press(getByText(/How to enrol face ID/i));
+    expect(spy.mock.calls[0][1]).toMatch(/gate device/i);
   });
 
   it('offers removal once enrolled, and never renders a raw vector', async () => {

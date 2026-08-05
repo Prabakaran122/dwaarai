@@ -342,9 +342,13 @@ router.post('/face/verify-driver', authenticateJWT(['guard']), async (req, res) 
  */
 export async function assertSameUnit(queryOneFn, actorSub, targetResidentId) {
   return queryOneFn(
-    `SELECT t.id, t.unit_id, t.name
+    `SELECT t.id, t.unit_id, t.community_id, t.name
        FROM residents t
-       JOIN residents a ON a.unit_id = t.unit_id AND a.id = $1
+       JOIN residents a
+         ON a.unit_id = t.unit_id
+        AND a.community_id = t.community_id
+        AND a.id = $1
+        AND a.is_active = true
       WHERE t.id = $2 AND t.is_active = true`,
     [actorSub, targetResidentId]
   );
@@ -379,22 +383,28 @@ router.get('/members/:id/face', authenticateJWT(['resident']), async (req, res) 
 });
 
 // -- POST /members/:id/face/enroll --------------------------------------------
-// Accepts a derived face VECTOR only — never an image. The client computes the
-// vector on-device; this endpoint persists it. DPDP Act 2023: a face image must
-// never reach the server, so any body carrying `image`/`photo` is rejected with
-// 400 before any database work.
+// Mirrors POST /face/enroll exactly, for a member of the caller's own unit.
+//
+// The server derives the vector from a transient scan via the recognition
+// service — it NEVER accepts a vector from the client. A client-supplied
+// vector is an arbitrary value that would then match a real face at the gate,
+// so accepting one would let any resident mint a gate credential for anyone.
+//
+// DPDP Act 2023: the scan is used only to derive the vector and is never
+// stored; only the vector is persisted (016_face_identity.sql:13). Enrolment
+// stays 'pending' unless vectorisation actually succeeded.
 
 const memberEnrollSchema = z.object({
-  vector: z.array(z.number()).min(1),
+  scan_b64: z.string().min(1).optional(),
+  consent_acknowledged: z.boolean(),
   consent_locations: z.array(z.enum(['gate', 'pool', 'clubhouse', 'gym'])).optional(),
 });
 
 router.post('/members/:id/face/enroll', authenticateJWT(['resident']), async (req, res) => {
   try {
-    // DPDP Act 2023: a face IMAGE must never reach the server. Only the
-    // derived vector is accepted, and it is stored encrypted at rest.
-    if (req.body && ('image' in req.body || 'photo' in req.body)) {
-      return error(res, 'Face images are not accepted; send the derived vector only', 400);
+    // A caller must never supply the vector itself — see the note above.
+    if (req.body && ('vector' in req.body || 'image' in req.body || 'photo' in req.body)) {
+      return error(res, 'Send a scan; the vector is derived server-side', 400);
     }
 
     const target = await assertSameUnit(queryOne, req.user.sub, req.params.id);
@@ -404,20 +414,36 @@ router.post('/members/:id/face/enroll', authenticateJWT(['resident']), async (re
     if (!parsed.success) {
       return error(res, 'Validation error', 400, parsed.error.issues);
     }
+    if (!parsed.data.consent_acknowledged) {
+      return error(res, 'Consent is required before enrollment', 400);
+    }
 
-    const vectorBuffer = Buffer.from(JSON.stringify(parsed.data.vector));
+    // Same derivation as self-enrolment: the scan is transient and never
+    // stored; without a successful vectorisation the record stays 'pending'.
+    let vector = null;
+    let status = 'pending';
+    if (parsed.data.scan_b64) {
+      try {
+        vector = await vectorize(parsed.data.scan_b64);
+        if (vector) status = 'active';
+      } catch (e) {
+        console.error('[Face] member vectorize failed:', e.message);
+        return error(res, 'Could not process the face scan. Please try again.', 502);
+      }
+    }
 
     const enrollment = await queryOne(
       `INSERT INTO face_enrollments (community_id, unit_id, resident_id, status, vector, enrolled_at, activated_at)
-       VALUES ($1, $2, $3, 'active', $4, NOW(), NOW())
+       VALUES ($1, $2, $3, $4, $5, NOW(), $6)
        ON CONFLICT (resident_id) DO UPDATE
-         SET status = 'active',
+         SET status = EXCLUDED.status,
              vector = EXCLUDED.vector,
              enrolled_at = NOW(),
-             activated_at = NOW(),
+             activated_at = EXCLUDED.activated_at,
              deleted_at = NULL
        RETURNING status, enrolled_at, activated_at`,
-      [req.user.community_id, target.unit_id, target.id, vectorBuffer]
+      [target.community_id, target.unit_id, target.id, status, vector,
+       status === 'active' ? new Date().toISOString() : null]
     );
 
     if (parsed.data.consent_locations?.length) {
