@@ -17,7 +17,7 @@ import { useCommunityStore } from '../store/communityStore';
 import type { FeedPost } from '../store/communityStore';
 
 export default function CommunityScreen({ initialIssueId }: { initialIssueId?: string } = {}) {
-  const { error, filter, fetch, setFilter, visiblePosts, toggleUpvote, castVote } = useCommunityStore();
+  const { me, error, filter, fetch, setFilter, visiblePosts, toggleUpvote, castVote } = useCommunityStore();
   const [refreshing, setRefreshing] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [noticesOpen, setNoticesOpen] = useState(false);
@@ -79,6 +79,7 @@ export default function CommunityScreen({ initialIssueId }: { initialIssueId?: s
 
       <ComposeSheet
         visible={composeOpen}
+        isCommittee={Boolean(me?.isCommittee)}
         onClose={() => setComposeOpen(false)}
         onPosted={() => { setComposeOpen(false); load(); }}
       />
