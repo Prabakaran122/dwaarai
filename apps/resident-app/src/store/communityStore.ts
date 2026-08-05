@@ -4,7 +4,10 @@ import * as api from '../api/client';
 export interface Announcement { id: string; title: string; body: string; authorName: string; createdAt: string; }
 export interface Issue { id: string; title: string; body: string; category: string; status: string; authorName: string; authorUnit: string | null; upvoteCount: number; myUpvoted: boolean; createdAt: string; }
 export interface PollOption { id: string; label: string; votes: number | null; }
-export interface Poll { id: string; topic?: string | null; question: string; status: string; closesAt: string | null; targetBlockId: string | null; canManage: boolean; authorName: string; createdAt: string; totalVotes: number | null; myOptionId: string | null; showLiveResults?: boolean; isAnonymous?: boolean; options: PollOption[]; }
+// Mirrors assemblePolls() in services/api-gateway/src/routes/polls.js — every
+// field it puts on the wire, so the type stays a faithful description of the
+// response rather than only the subset today's cards happen to read.
+export interface Poll { id: string; topic?: string | null; question: string; status: string; closesAt: string | null; audience?: string; targetBlockId: string | null; oneVotePerUnit?: boolean; canManage: boolean; authorName: string; createdAt: string; totalVotes: number | null; myOptionId: string | null; showLiveResults?: boolean; isAnonymous?: boolean; options: PollOption[]; }
 export interface Discussion { id: string; title: string; body: string; authorName: string; createdAt: string; }
 
 export type PostType = 'announcement' | 'issue' | 'poll' | 'discussion';
@@ -80,9 +83,18 @@ export const useCommunityStore = create<CommunityState>((set, get) => ({
     try {
       await api.upvoteIssue(issueId);
     } catch {
-      // Put back exactly what was there, rather than applying an inverse delta —
-      // a concurrent refresh could otherwise leave the count permanently wrong.
-      set({ posts: before });
+      // Revert only this issue's two fields, back onto whatever state is
+      // current — not the whole captured array, and not an inverse delta.
+      // Restoring the array would throw away a refresh that landed while the
+      // request was in flight; an inverse delta applied to already-refreshed
+      // state would decrement a count the server had already corrected.
+      set({
+        posts: get().posts.map((p) =>
+          p.id === issueId && p.type === 'issue'
+            ? { ...p, myUpvoted: target.myUpvoted, upvoteCount: target.upvoteCount }
+            : p
+        ),
+      });
     }
   },
 

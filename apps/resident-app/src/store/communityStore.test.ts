@@ -71,4 +71,34 @@ describe('communityStore', () => {
     expect(issue.myUpvoted).toBe(false);
     expect(issue.upvoteCount).toBe(3);
   });
+
+  // The two tests above cannot tell a correct revert from a broken one: with
+  // nothing else happening, restoring the old array and subtracting one both
+  // land on 3. This one puts a refresh in flight underneath the failing
+  // request, which is where the three strategies diverge.
+  it('reverts only the issue, keeping a refresh that landed mid-request', async () => {
+    (api.getCommunityFeed as jest.Mock).mockResolvedValue({ data: { data: sample } });
+    await useCommunityStore.getState().fetch();
+
+    (api.upvoteIssue as jest.Mock).mockImplementation(async () => {
+      // A pull-to-refresh completes while the upvote is still in flight, and
+      // brings back a post the store had not seen.
+      (api.getCommunityFeed as jest.Mock).mockResolvedValue({
+        data: { data: { ...sample, posts: [...sample.posts, post('i2', 'issue', '2026-08-04T09:00:00Z', { title: 'New', body: 'b', category: 'general', status: 'open', authorName: 'X', authorUnit: null, upvoteCount: 0, myUpvoted: false })] } },
+      });
+      await useCommunityStore.getState().fetch();
+      throw new Error('500');
+    });
+
+    await useCommunityStore.getState().toggleUpvote('i1');
+
+    const state = useCommunityStore.getState();
+    const issue: any = state.posts.find((p) => p.id === 'i1');
+    // Not 2 — an inverse delta would decrement the count the refresh already
+    // corrected back to 3.
+    expect(issue.upvoteCount).toBe(3);
+    expect(issue.myUpvoted).toBe(false);
+    // Not absent — restoring the captured array would have discarded it.
+    expect(state.posts.find((p) => p.id === 'i2')).toBeTruthy();
+  });
 });
