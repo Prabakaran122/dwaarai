@@ -37,6 +37,17 @@ export default function VehiclesScreen({ onClose }: { onClose?: () => void } = {
     AsyncStorage.setItem(BANNER_KEY, '1').catch(() => {});
   };
 
+  // FASTag is auto-linked by gate detection (ANPR + tag read correlate on
+  // entry) — there is no manual "enter tag ID" field, because there is
+  // nothing for the resident to type. This explains that instead of
+  // offering a field that would silently do nothing.
+  const showFastagGuide = (plate: string) => {
+    Alert.alert(
+      'How to link FASTag',
+      `FASTag links automatically — no manual entry needed. Just drive ${plate} through the gate once and the tag detected on entry will be linked to this vehicle.`,
+    );
+  };
+
   const resetForm = () => { setPlate(''); setMake(''); setModel(''); setType('car'); setEditing(null); setShowForm(false); };
 
   const openEdit = (v: Vehicle) => {
@@ -119,6 +130,15 @@ export default function VehiclesScreen({ onClose }: { onClose?: () => void } = {
                   </View>
                 </View>
               </TouchableOpacity>
+              {!item.fastagTidHash ? (
+                <TouchableOpacity
+                  style={styles.fastagLinkRow}
+                  onPress={() => showFastagGuide(item.plate)}
+                >
+                  <MaterialCommunityIcons name="help-circle-outline" size={14} color={colors.info} />
+                  <Text style={styles.fastagLinkText}>How to link FASTag</Text>
+                </TouchableOpacity>
+              ) : null}
             </Card>
           );
         }}
@@ -210,6 +230,8 @@ const styles = StyleSheet.create({
   },
   vehicleInfo: { flex: 1, gap: spacing.xs },
   vehicleMeta: { alignItems: 'flex-end' },
+  fastagLinkRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm },
+  fastagLinkText: { fontSize: 12, fontWeight: '600', color: colors.info },
   emptyState: { alignItems: 'center', gap: spacing.sm, marginTop: spacing['5xl'] },
   emptyText: { color: colors.textSecondary, fontSize: 16, fontWeight: '600' },
   emptySubtext: { color: colors.textTertiary, fontSize: 13 },

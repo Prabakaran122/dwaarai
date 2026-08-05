@@ -55,6 +55,8 @@ const inThreeDays = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 1
 const tenDaysOut = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
 
 const resident = generateTestToken({ sub: 'r1', role: 'resident', community_id: 'c1', unit_id: 'u1' });
+const admin = generateTestToken({ sub: 'a1', role: 'community_admin', community_id: 'c1' });
+const otherAdmin = generateTestToken({ sub: 'a2', role: 'community_admin', community_id: 'c2' });
 
 // ── bookingPolicy (pure function) ────────────────────────────────────────────
 
@@ -241,5 +243,103 @@ describe('POST /facilities/:id/book — confirmation push', () => {
     });
     expect(status).toBe(201);
     expect(json.data.id).toBe('bk-new');
+  });
+});
+
+// ── PUT /admin/facilities/:id — admin-configurable booking policy ──────────
+
+describe('PUT /admin/facilities/:id', () => {
+  it('lets an admin update the booking policy for a facility in their community', async () => {
+    queryOne
+      .mockResolvedValueOnce({
+        id: 'fac-1', community_id: 'c1', advance_days: 14, cancel_cutoff_minutes: 30, max_per_unit_per_day: 2,
+      });
+
+    const { status, json } = await request('PUT', '/api/v1/admin/facilities/fac-1', {
+      headers: { Authorization: `Bearer ${admin}` },
+      body: { advance_days: 14, cancel_cutoff_minutes: 30, max_per_unit_per_day: 2 },
+    });
+    expect(status).toBe(200);
+    expect(json.data).toMatchObject({ advanceDays: 14, cancelCutoffMinutes: 30, maxPerUnitPerDay: 2 });
+  });
+
+  it('actually changes subsequent booking behaviour', async () => {
+    // Admin sets advance_days to 14 on fac-1.
+    queryOne.mockResolvedValueOnce({
+      id: 'fac-1', community_id: 'c1', advance_days: 14, cancel_cutoff_minutes: 60, max_per_unit_per_day: 1,
+    });
+    await request('PUT', '/api/v1/admin/facilities/fac-1', {
+      headers: { Authorization: `Bearer ${admin}` },
+      body: { advance_days: 14 },
+    });
+
+    // A booking 10 days out — beyond the old 7-day default, within the new 14 — now succeeds.
+    const facility = {
+      id: 'fac-1', name: 'Badminton Court', sport: 'badminton',
+      open_time: '06:00:00', close_time: '22:00:00', slot_minutes: 60,
+      advance_days: 14, cancel_cutoff_minutes: 60, max_per_unit_per_day: 1,
+    };
+    queryOne
+      .mockResolvedValueOnce(facility)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'bk-new', facility_id: 'fac-1', booking_date: tenDaysOut,
+        start_time: '06:00:00', end_time: '07:00:00',
+      });
+    queryRows.mockResolvedValueOnce([]);
+
+    const { status } = await request('POST', '/api/v1/facilities/fac-1/book', {
+      headers: { Authorization: `Bearer ${resident}` },
+      body: { date: tenDaysOut, start: '06:00' },
+    });
+    expect(status).toBe(201);
+  });
+
+  it('rejects a non-admin', async () => {
+    const { status } = await request('PUT', '/api/v1/admin/facilities/fac-1', {
+      headers: { Authorization: `Bearer ${resident}` },
+      body: { advance_days: 14 },
+    });
+    expect(status).toBe(403);
+  });
+
+  it('404s when the facility belongs to another community', async () => {
+    queryOne.mockResolvedValueOnce(null); // scoped UPDATE ... WHERE community_id = $ finds nothing
+
+    const { status } = await request('PUT', '/api/v1/admin/facilities/fac-1', {
+      headers: { Authorization: `Bearer ${otherAdmin}` },
+      body: { advance_days: 14 },
+    });
+    expect(status).toBe(404);
+  });
+
+  it('rejects an absurd advance_days value rather than storing it', async () => {
+    const { status, json } = await request('PUT', '/api/v1/admin/facilities/fac-1', {
+      headers: { Authorization: `Bearer ${admin}` },
+      body: { advance_days: 3650 },
+    });
+    expect(status).toBe(400);
+    expect(queryOne).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-integer / negative value', async () => {
+    const { status } = await request('PUT', '/api/v1/admin/facilities/fac-1', {
+      headers: { Authorization: `Bearer ${admin}` },
+      body: { max_per_unit_per_day: -1 },
+    });
+    expect(status).toBe(400);
+  });
+
+  it('allows cancel_cutoff_minutes = 0', async () => {
+    queryOne.mockResolvedValueOnce({
+      id: 'fac-1', community_id: 'c1', advance_days: 7, cancel_cutoff_minutes: 0, max_per_unit_per_day: 1,
+    });
+    const { status, json } = await request('PUT', '/api/v1/admin/facilities/fac-1', {
+      headers: { Authorization: `Bearer ${admin}` },
+      body: { cancel_cutoff_minutes: 0 },
+    });
+    expect(status).toBe(200);
+    expect(json.data.cancelCutoffMinutes).toBe(0);
   });
 });

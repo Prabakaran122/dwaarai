@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
-import { authenticateJWT } from '../middleware/auth.js';
+import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
 import { sendNotification } from '../lib/fcm.js';
 
 const router = Router();
@@ -74,6 +74,19 @@ const bookSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   start: z.string().regex(/^\d{2}:\d{2}$/),
 });
+
+// Admin-configurable booking policy (040_facility_policy.sql). Bounds keep the
+// values meaningful, not just "a positive integer": an advance_days of 3650
+// makes the 7-day availability strip pointless, and an unbounded cancel
+// cutoff or per-day cap is equally nonsensical for a facility slot.
+const facilityPolicySchema = z
+  .object({
+    advance_days: z.number().int().min(1).max(90),
+    cancel_cutoff_minutes: z.number().int().min(0).max(1440),
+    max_per_unit_per_day: z.number().int().min(1).max(10),
+  })
+  .partial()
+  .refine((v) => Object.keys(v).length > 0, { message: 'At least one field is required' });
 
 // ---------------------------------------------------------------------------
 // GET /facilities/mine  — MUST be registered BEFORE /facilities/:id/...
@@ -387,6 +400,57 @@ router.delete('/facilities/bookings/:id', authenticateJWT(['resident']), async (
     return success(res, { cancelled: true });
   } catch (err) {
     console.error('DELETE /facilities/bookings/:id error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /admin/facilities/:id — admin-configurable booking policy
+// (advance_days / cancel_cutoff_minutes / max_per_unit_per_day). Task 5 read
+// these columns everywhere but never gave the admin portal a way to write
+// them, which left the BRD's "admin-configurable" requirement half-done.
+// ---------------------------------------------------------------------------
+router.put('/admin/facilities/:id', authenticateJWT(['admin']), async (req, res) => {
+  try {
+    if (!isAdminUser(req.user)) {
+      return error(res, 'Insufficient permissions', 403);
+    }
+
+    const parsed = facilityPolicySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return error(res, 'Validation error', 400, parsed.error.issues);
+    }
+    const fields = parsed.data;
+
+    const setClauses = [];
+    const values = [];
+    let idx = 1;
+    for (const [key, val] of Object.entries(fields)) {
+      setClauses.push(`${key} = $${idx}`);
+      values.push(val);
+      idx += 1;
+    }
+
+    // Scoped by community_id so an admin can never edit another society's
+    // facility — a mismatch (or a nonexistent id) both come back as 404.
+    values.push(req.params.id, req.user.community_id);
+    const facility = await queryOne(
+      `UPDATE facilities
+          SET ${setClauses.join(', ')}
+        WHERE id = $${idx} AND community_id = $${idx + 1}
+        RETURNING id, advance_days, cancel_cutoff_minutes, max_per_unit_per_day`,
+      values
+    );
+    if (!facility) {
+      return error(res, 'Facility not found', 404);
+    }
+
+    return success(res, {
+      id: facility.id,
+      ...bookingPolicy(facility),
+    });
+  } catch (err) {
+    console.error('PUT /admin/facilities/:id error:', err);
     return error(res, 'Internal server error', 500);
   }
 });

@@ -1,6 +1,6 @@
 jest.mock('../api/client');
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import * as apiClient from '../api/client';
 import { useMemberStore } from '../store/memberStore';
 import MembersScreen from './MembersScreen';
@@ -12,6 +12,7 @@ describe('MembersScreen', () => {
     jest.clearAllMocks();
     // Seed getMembers to resolve empty so the store fetch doesn't throw.
     mockClient.getMembers.mockResolvedValue({ data: { data: [] } } as any);
+    mockClient.createRecurringPass.mockResolvedValue({ data: { data: { id: 'rp1' } } } as any);
     // Reset store to empty state before each test.
     useMemberStore.setState({ members: [], loading: false } as any);
   });
@@ -37,5 +38,26 @@ describe('MembersScreen', () => {
   it('renders intro text about household members', () => {
     const { getByText } = render(<MembersScreen onClose={() => {}} />);
     expect(getByText(/Everyone in your household/)).toBeTruthy();
+  });
+
+  it('renders a ghost row to add house help / staff', () => {
+    const { getByText } = render(<MembersScreen onClose={() => {}} />);
+    expect(getByText(/Add house help \/ staff/i)).toBeTruthy();
+  });
+
+  it('opens the helper flow when the ghost row is tapped', () => {
+    const { getByText, getByPlaceholderText } = render(<MembersScreen onClose={() => {}} />);
+    fireEvent.press(getByText(/Add house help \/ staff/i));
+    expect(getByPlaceholderText(/name/i)).toBeTruthy();
+  });
+
+  it('creates a recurring pass via the existing helper mechanism, not a new one', async () => {
+    const { getByText, getByPlaceholderText } = render(<MembersScreen onClose={() => {}} />);
+    fireEvent.press(getByText(/Add house help \/ staff/i));
+    fireEvent.changeText(getByPlaceholderText(/name/i), 'Meena Devi');
+    fireEvent.press(getByText(/^Save$/i));
+    await waitFor(() => expect(mockClient.createRecurringPass).toHaveBeenCalledWith(
+      expect.objectContaining({ visitor_name: 'Meena Devi' })
+    ));
   });
 });
