@@ -54,7 +54,15 @@ describe('community api surface', () => {
   it('declares each photo by its real type, not always jpeg', () => {
     const appended: any[] = [];
     const spy = jest.spyOn(FormData.prototype, 'append').mockImplementation((_k, v) => { appended.push(v); });
-    api.uploadIssuePhotos('i1', ['file:///a.HEIC', 'file:///b.png', 'file:///c.jpg', 'file:///d']);
+    api.uploadIssuePhotos('i1', [
+      'file:///a.HEIC',
+      'file:///b.png',
+      'file:///c.jpg',
+      'file:///d',
+      // ImagePicker hands back uris with a query string on some platforms; the
+      // extension must be read from the path, not the whole string.
+      'file:///e.png?width=1200&ts=123',
+    ]);
     spy.mockRestore();
 
     expect(appended[0]).toMatchObject({ type: 'image/heic', name: 'photo-0.heic' });
@@ -62,6 +70,7 @@ describe('community api surface', () => {
     expect(appended[2]).toMatchObject({ type: 'image/jpeg', name: 'photo-2.jpg' });
     // Extensionless uris fall back to jpeg, which is what compression emits.
     expect(appended[3]).toMatchObject({ type: 'image/jpeg', name: 'photo-3.jpg' });
+    expect(appended[4]).toMatchObject({ type: 'image/png', name: 'photo-4.png' });
   });
 
   it('creates an announcement with a priority', () => {
