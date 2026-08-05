@@ -42,6 +42,15 @@ router.get('/resident/unit', authenticateJWT(['resident']), async (req, res) => 
     const outstanding = Number(
       duesRows.reduce((s, d) => s + Number(d.base_amount || 0) + Number(d.penalty_amount || 0), 0).toFixed(2)
     );
+    // My Unit's document tiles only need enough to identify and open a document —
+    // never `file_path`, which is a server filesystem path with no business
+    // leaving the server. Most recent 3 active documents, newest first.
+    const documents = await queryRows(
+      `SELECT id, title, category FROM unit_documents
+        WHERE unit_id = $1 AND community_id = $2 AND is_active = true
+        ORDER BY created_at DESC LIMIT 3`,
+      [unit_id, community_id]
+    );
     return success(res, {
       unit: unit ? {
         unitNumber: unit.unit_number, floor: unit.floor, wing: unit.wing || null,
@@ -57,6 +66,7 @@ router.get('/resident/unit', authenticateJWT(['resident']), async (req, res) => 
         type: v.type, fastagLinked: !!v.fastag_linked,
       })),
       pets: pets.map((p) => ({ id: p.id, name: p.name, species: p.species, breed: p.breed || null })),
+      documents: documents.map((d) => ({ id: d.id, title: d.title, category: d.category })),
       dues: { outstanding, pendingCount: duesRows.length },
     });
   } catch (err) {
