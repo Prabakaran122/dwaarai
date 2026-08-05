@@ -37,6 +37,7 @@ import unitRoutes from './routes/units.js';
 import residentAdminRoutes from './routes/residents-admin.js';
 import communityFeedRoutes from './routes/community-feed.js';
 import communityEventRoutes from './routes/community-events.js';
+import stallRoutes from './routes/stalls.js';
 import dashboardRoutes from './routes/dashboard.js';
 import entitlementRoutes from './routes/entitlements.js';
 import { startVisitCron } from './cron/generate-visits.js';
@@ -97,6 +98,7 @@ app.use('/api/v1', facilityRoutes);
 // Community: /community/feed must be mounted before :id-style routes
 app.use('/api/v1', communityFeedRoutes);
 app.use('/api/v1', communityEventRoutes);
+app.use('/api/v1', stallRoutes);
 app.use('/api/v1', issueRoutes);
 app.use('/api/v1', pollRoutes);
 app.use('/api/v1', blockRoutes);
