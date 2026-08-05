@@ -6,6 +6,7 @@ import { success, error } from '../middleware/response.js';
 import { authenticateJWT } from '../middleware/auth.js';
 import { createOrder, verifyWebhookSignature, getKeyId, isLiveMode } from '../lib/razorpay.js';
 import { sendNotification } from '../lib/fcm.js';
+import { sendTransactionalSMS } from '../lib/msg91.js';
 
 const router = Router();
 
@@ -312,12 +313,46 @@ router.post('/payments/webhook', async (req, res) => {
           if (order.purpose === 'stall') {
             // Only a 'reserved' booking may be promoted — never re-stamp
             // booked_at on a replay.
-            await query(
+            const stallUpdate = await query(
               `UPDATE stall_bookings
                   SET status = 'booked', booked_at = NOW()
                 WHERE id = $1 AND status = 'reserved'`,
               [order.subject_id]
             );
+
+            // FR-GST-04 (P0): guest bookers get an SMS receipt with stall,
+            // event, date, and amount paid. Hang this off rowCount, not the
+            // orderUpdate branch alone — a replay finds this UPDATE matching
+            // zero rows (status already 'booked'), so it must send nothing.
+            // Resident bookers get a push elsewhere, not this SMS.
+            if (stallUpdate.rowCount > 0) {
+              try {
+                const booking = await queryOne(
+                  `SELECT sb.booker_kind, sb.guest_mobile, es.code AS stall_code,
+                          e.title AS event_title, e.starts_at AS event_date
+                     FROM stall_bookings sb
+                     JOIN event_stalls es ON es.id = sb.stall_id
+                     JOIN events e ON e.id = sb.event_id
+                    WHERE sb.id = $1`,
+                  [order.subject_id]
+                );
+                if (booking?.booker_kind === 'guest' && booking.guest_mobile) {
+                  const amount = (order.amount_paise / 100).toFixed(2);
+                  const eventDate = booking.event_date
+                    ? new Date(booking.event_date).toLocaleDateString('en-IN', {
+                        day: '2-digit', month: 'short', year: 'numeric',
+                      })
+                    : '';
+                  const message = `Your stall ${booking.stall_code} for ${booking.event_title}` +
+                    (eventDate ? ` on ${eventDate}` : '') +
+                    ` is booked. Amount paid: Rs ${amount}.`;
+                  // Never let a failed SMS affect the (already committed) settlement.
+                  await sendTransactionalSMS(booking.guest_mobile, message);
+                }
+              } catch (smsErr) {
+                console.error('POST /payments/webhook stall SMS failed:', smsErr.message);
+              }
+            }
           } else if (order.purpose === 'donation') {
             await query(
               `UPDATE donations

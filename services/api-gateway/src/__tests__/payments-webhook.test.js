@@ -25,8 +25,13 @@ vi.mock('../../src/lib/fcm.js', () => ({
   sendToMultiple: vi.fn().mockResolvedValue({}),
 }));
 
+vi.mock('../../src/lib/msg91.js', () => ({
+  sendTransactionalSMS: vi.fn().mockResolvedValue({ type: 'skipped', reason: 'not-configured' }),
+}));
+
 const { default: app } = await import('../index.js');
 const { query, queryOne } = await import('../db/queries.js');
+const { sendTransactionalSMS } = await import('../lib/msg91.js');
 
 let server;
 let baseUrl;
@@ -38,7 +43,12 @@ beforeAll(async () => {
   return () => server.close();
 });
 
-beforeEach(() => { query.mockReset(); queryOne.mockReset(); });
+beforeEach(() => {
+  query.mockReset();
+  queryOne.mockReset();
+  sendTransactionalSMS.mockClear();
+  sendTransactionalSMS.mockResolvedValue({ type: 'skipped', reason: 'not-configured' });
+});
 
 async function postWebhook(signature, payload) {
   const res = await fetch(`${baseUrl}/api/v1/payments/webhook`, {
@@ -101,6 +111,114 @@ describe('POST /payments/webhook — stall settlement', () => {
     expect(bookingCall[0]).toMatch(/booked_at\s*=\s*NOW\(\)/);
     expect(bookingCall[0]).toMatch(/status\s*=\s*'booked'/);
     expect(bookingCall[1]).toContain('booking1');
+  });
+});
+
+describe('POST /payments/webhook — guest stall SMS receipt (FR-GST-04)', () => {
+  it('sends an SMS receipt to guest_mobile when a guest booking settles', async () => {
+    queryOne
+      .mockResolvedValueOnce(null) // not a dues payment
+      .mockResolvedValueOnce({
+        booker_kind: 'guest',
+        guest_mobile: '9876543210',
+        stall_code: 'A1',
+        event_title: 'Diwali Mela',
+        event_date: '2026-10-20T00:00:00.000Z',
+      });
+    query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'order1', purpose: 'stall', subject_id: 'booking1', community_id: 'c1', amount_paise: 103000, platform_fee_paise: 3000 }],
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }); // UPDATE stall_bookings settles it
+
+    const { status } = await postWebhook('good', capturedPayload('order_stall_sms'));
+    expect(status).toBe(200);
+
+    expect(sendTransactionalSMS).toHaveBeenCalledTimes(1);
+    const [mobile, message] = sendTransactionalSMS.mock.calls[0];
+    expect(mobile).toBe('9876543210');
+    expect(message).toContain('A1');
+    expect(message).toContain('Diwali Mela');
+    expect(message).toContain('1030.00');
+  });
+
+  it('does not send SMS for a resident booking', async () => {
+    queryOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        booker_kind: 'resident',
+        guest_mobile: null,
+        stall_code: 'A1',
+        event_title: 'Diwali Mela',
+        event_date: '2026-10-20T00:00:00.000Z',
+      });
+    query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'order1', purpose: 'stall', subject_id: 'booking1', community_id: 'c1', amount_paise: 103000, platform_fee_paise: 3000 }],
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+    const { status } = await postWebhook('good', capturedPayload('order_stall_resident'));
+    expect(status).toBe(200);
+    expect(sendTransactionalSMS).not.toHaveBeenCalled();
+  });
+
+  it('does not send a second SMS on a webhook replay (UPDATE matches zero rows)', async () => {
+    // First delivery settles the booking and sends the receipt.
+    queryOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        booker_kind: 'guest',
+        guest_mobile: '9876543210',
+        stall_code: 'A1',
+        event_title: 'Diwali Mela',
+        event_date: '2026-10-20T00:00:00.000Z',
+      });
+    query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'order1', purpose: 'stall', subject_id: 'booking1', community_id: 'c1', amount_paise: 103000, platform_fee_paise: 3000 }],
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+    const first = await postWebhook('good', capturedPayload('order_stall_replay_sms'));
+    expect(first.status).toBe(200);
+    expect(sendTransactionalSMS).toHaveBeenCalledTimes(1);
+
+    // Replay: payment_orders row is already 'paid', so the conditional
+    // UPDATE ... WHERE status = 'created' matches zero rows and the handler
+    // never even reaches the stall_bookings UPDATE.
+    queryOne.mockResolvedValueOnce(null);
+    query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    const second = await postWebhook('good', capturedPayload('order_stall_replay_sms'));
+    expect(second.status).toBe(200);
+    expect(sendTransactionalSMS).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed SMS send does not fail the webhook response', async () => {
+    queryOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        booker_kind: 'guest',
+        guest_mobile: '9876543210',
+        stall_code: 'A1',
+        event_title: 'Diwali Mela',
+        event_date: '2026-10-20T00:00:00.000Z',
+      });
+    query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'order1', purpose: 'stall', subject_id: 'booking1', community_id: 'c1', amount_paise: 103000, platform_fee_paise: 3000 }],
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+    sendTransactionalSMS.mockRejectedValueOnce(new Error('MSG91 down'));
+
+    const { status, json } = await postWebhook('good', capturedPayload('order_stall_sms_fail'));
+    expect(status).toBe(200);
+    expect(json.data.received).toBe(true);
   });
 });
 
