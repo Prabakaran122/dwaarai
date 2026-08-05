@@ -116,14 +116,20 @@ describe('POST /admin/events/:id/guest-link', () => {
   });
 
   it('never derives the token from the event id, and never issues the same token twice', async () => {
-    queryOne.mockResolvedValueOnce({ id: 'e1' });
+    // The marker must be characters that CANNOT occur in a hex token —
+    // asserting a hex string lacks 'e1' is a coin flip, since 'e1' is itself
+    // valid hex and turns up in most 64-char tokens.
+    const marker = 'zzqqww';
+    queryOne.mockResolvedValueOnce({ id: marker });
     const first = await request('POST', LINK_PATH, { headers: adminHeader });
-    queryOne.mockResolvedValueOnce({ id: 'e1' });
+    queryOne.mockResolvedValueOnce({ id: marker });
     const second = await request('POST', LINK_PATH, { headers: adminHeader });
 
     expect(first.json.data.token).not.toBe(second.json.data.token);
-    expect(first.json.data.token).not.toContain('e1');
-    expect(second.json.data.token).not.toContain('e1');
+    expect(first.json.data.token).not.toContain(marker);
+    expect(second.json.data.token).not.toContain(marker);
+    // And it really is a 64-char hex token, not something shorter or encoded.
+    expect(first.json.data.token).toMatch(/^[0-9a-f]{64}$/);
   });
 });
 
