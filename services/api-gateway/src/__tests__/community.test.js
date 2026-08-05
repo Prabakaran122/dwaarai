@@ -19,15 +19,22 @@
  *   2. queryRows → polls list (audience-filtered)
  *   3. queryRows → options with vote counts (skipped if no polls)
  *   4. queryRows → caller's votes by unit_id (skipped if no polls)
+ *   5. queryOne  → (non-admin only) canManagePolls' resolveCaller lookup
+ *      (SELECT committee_role, type FROM residents ...), run AFTER the
+ *      queryRows calls above so it can never shift their positional order —
+ *      this is queryOne's 2nd call overall, not interleaved with queryRows.
  *
- * GET /community/feed runs Promise.allSettled([announcements, issues, polls]) in parallel.
- * Each async section hits its first await in declaration order, so the interleaved
- * mock-queue consumption is:
+ * GET /community/feed runs Promise.allSettled([announcements, issues, discussions, polls])
+ * in parallel. Each async section hits its first await in declaration order, so the
+ * interleaved mock-queue consumption is:
  *   queryRows call 1 → fetchAnnouncements notices query
  *   queryRows call 2 → fetchIssues issues query
+ *   queryRows call 3 → fetchDiscussions notices query (category='discussion')
  *   queryOne  call 1 → fetchPolls callerBlock lookup (SELECT block_id FROM units)
- *   queryRows call 3 → fetchPolls polls query  (if polls returned, +2 more queryRows for opts/votes)
- * The existing feed tests are updated to seed queryOne for the callerBlock lookup.
+ *   queryRows call 4 → fetchPolls polls query  (if polls returned, +2 more queryRows for opts/votes)
+ * The existing feed tests are updated to seed queryOne for the callerBlock lookup and
+ * a queryRows call for discussions (typically empty, since these tests predate the
+ * discussion source and don't assert on it).
  */
 
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
@@ -38,8 +45,16 @@ vi.mock('../../src/db/queries.js', () => ({
   queryRows: vi.fn().mockResolvedValue([]),
 }));
 
+// PUT /issues/:id/status runs its work through a pool-checked-out client
+// (BEGIN / SELECT ... FOR UPDATE / UPDATE / INSERT / COMMIT) so the mock pool
+// needs a working connect() that hands back a client with its own query/release.
+const mockClient = { query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }), release: vi.fn() };
 vi.mock('../../src/db/pool.js', () => ({
-  default: { query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }), on: vi.fn() },
+  default: {
+    query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+    connect: vi.fn(),
+    on: vi.fn(),
+  },
 }));
 
 vi.mock('../../src/lib/fcm.js', () => ({
@@ -58,6 +73,7 @@ vi.mock('../../src/websocket.js', () => ({
 const { default: app } = await import('../index.js');
 const { generateTestToken } = await import('../middleware/auth.js');
 const { query, queryOne, queryRows } = await import('../db/queries.js');
+const { default: pool } = await import('../db/pool.js');
 
 let server;
 let baseUrl;
@@ -80,6 +96,11 @@ beforeEach(() => {
   query.mockResolvedValue({ rows: [], rowCount: 0 });
   queryOne.mockResolvedValue(null);
   queryRows.mockResolvedValue([]);
+  mockClient.query.mockReset();
+  mockClient.query.mockResolvedValue({ rows: [], rowCount: 0 });
+  mockClient.release.mockReset();
+  pool.connect.mockReset();
+  pool.connect.mockResolvedValue(mockClient);
 });
 
 async function request(method, path, { body, headers } = {}) {
@@ -120,6 +141,19 @@ const adminToken = generateTestToken({
 const authR = { Authorization: `Bearer ${residentToken}` };
 const authC = { Authorization: `Bearer ${committeeToken}` };
 const authA = { Authorization: `Bearer ${adminToken}` };
+
+// Deliberately mismatched: is_committee:false in the JWT, used with a fresh
+// residents.committee_role lookup mocked to a real role — proves
+// canManagePolls reads the DB, not the token.
+const freshCommitteeToken = generateTestToken({
+  sub: 'c2',
+  role: 'resident',
+  community_id: 'c1',
+  unit_id: 'u3',
+  name: 'Newly Appointed',
+  is_committee: false,
+});
+const authFreshCommittee = { Authorization: `Bearer ${freshCommitteeToken}` };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /issues
@@ -179,6 +213,18 @@ describe('GET /issues', () => {
 // POST /issues
 // ─────────────────────────────────────────────────────────────────────────────
 
+// POST /issues handler acquires a client via pool.connect() unconditionally
+// (matching PUT /issues/:id/status), then:
+//   queryOne 1: residents actor lookup (SELECT id, name, type, committee_role FROM residents ...)
+//   [403 return here if canPostIssue(actor) is false — before BEGIN, so no
+//    ROLLBACK is issued; the transaction never opened.]
+//   queryOne 2: unit lookup (SELECT unit_number FROM units WHERE id = $1)
+//   client.query 1: BEGIN
+//   client.query 2: allocateReference upsert (INSERT INTO issue_reference_seq ...)
+//   client.query 3: INSERT INTO issues ... RETURNING
+//   client.query 4: INSERT INTO issue_status_events ... (same transaction)
+//   client.query 5: COMMIT
+
 describe('POST /issues', () => {
   it('rejects an invalid category with 400', async () => {
     const { status, json } = await request('POST', '/api/v1/issues', {
@@ -197,24 +243,57 @@ describe('POST /issues', () => {
     expect(status).toBe(400);
   });
 
-  it('creates an issue and returns 201 with correct shape (upvoteCount 0, myUpvoted false)', async () => {
-    // Call order:
-    //  1. queryOne → unit lookup (SELECT unit_number FROM units WHERE id = $1)
-    //  2. queryOne → INSERT RETURNING
+  it('rejects a tenant (non-owner, non-committee) with 403 and never opens a transaction', async () => {
+    queryOne.mockResolvedValueOnce({
+      id: 'r-tenant',
+      name: 'Ravi',
+      resident_type: 'tenant',
+      committee_role: null,
+    });
+
+    const { status, json } = await request('POST', '/api/v1/issues', {
+      headers: authR,
+      body: { title: 'Test', body: 'Test body', category: 'general' },
+    });
+    expect(status).toBe(403);
+    expect(json.error.message).toMatch(/owners and committee members/i);
+    // Rejected before BEGIN — the transaction never opened, so nothing to roll back.
+    expect(mockClient.query).not.toHaveBeenCalled();
+  });
+
+  it('rejects a portal admin token with 403 (no residents row to look up)', async () => {
+    // Default queryOne mock resolves null — canPostIssue({ role: 'community_admin' }) is false.
+    const { status, json } = await request('POST', '/api/v1/issues', {
+      headers: authA,
+      body: { title: 'Test', body: 'Test body', category: 'general' },
+    });
+    expect(status).toBe(403);
+    expect(json.error.message).toMatch(/owners and committee members/i);
+    expect(mockClient.query).not.toHaveBeenCalled();
+  });
+
+  it('creates an issue and returns 201 with correct shape (upvoteCount 0, myUpvoted false, reference set)', async () => {
     queryOne
-      .mockResolvedValueOnce({ unit_number: 'A-704' }) // unit lookup
-      .mockResolvedValueOnce({                          // insert result
-        id: 'i-new',
-        title: 'Water seepage',
-        body: 'Ceiling leaking',
-        category: 'maintenance',
-        status: 'open',
-        author_name: 'Asha',
-        author_unit: 'A-704',
-        upvote_count: 0,
-        my_upvoted: false,
-        created_at: new Date().toISOString(),
-      });
+      .mockResolvedValueOnce({ id: 'r1', name: 'Asha', resident_type: 'owner', committee_role: null }) // actor lookup
+      .mockResolvedValueOnce({ unit_number: 'A-704' }); // unit lookup
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ last_value: 1 }] }) // allocateReference upsert
+      .mockResolvedValueOnce({
+        rows: [{                          // INSERT ... RETURNING
+          id: 'i-new',
+          title: 'Water seepage',
+          body: 'Ceiling leaking',
+          category: 'maintenance',
+          status: 'open',
+          author_name: 'Asha',
+          author_unit: 'A-704',
+          reference: 'IQ-2026-001',
+          created_at: new Date().toISOString(),
+        }],
+      })
+      .mockResolvedValueOnce({}) // INSERT issue_status_events
+      .mockResolvedValueOnce({}); // COMMIT
 
     const { status, json } = await request('POST', '/api/v1/issues', {
       headers: authR,
@@ -225,21 +304,51 @@ describe('POST /issues', () => {
     expect(json.data.title).toBe('Water seepage');
     expect(json.data.upvoteCount).toBe(0);
     expect(json.data.myUpvoted).toBe(false);
+    expect(json.data.reference).toMatch(/^IQ-\d{4}-\d{3}$/);
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(1);
+    const [sql, params] = insertCalls[0];
+    // from_status (NULL) and to_status ('open') are literals in the SQL text,
+    // not bound params, for the opening timeline entry.
+    expect(sql).toMatch(/NULL,'open'/);
+    // (issue_id, community_id, changed_by_resident_id, changed_by_name, changed_by_role)
+    expect(params[0]).toBe('i-new');
+    expect(params[1]).toBe('c1');
+    expect(params[2]).toBe('r1');
+    expect(params[3]).toBe('Asha');
+    expect(params[4]).toBeNull(); // roleLabel('') || null — non-committee owner, not the empty string
+
+    const seqCall = mockClient.query.mock.calls.find(([sql]) =>
+      typeof sql === 'string' && sql.includes('issue_reference_seq')
+    );
+    expect(seqCall[0]).toMatch(/ON CONFLICT/i);
   });
 
   it('defaults category to general when omitted', async () => {
     queryOne
-      .mockResolvedValueOnce({ unit_number: 'A-704' })
+      .mockResolvedValueOnce({ id: 'r1', name: 'Asha', resident_type: 'owner', committee_role: null })
+      .mockResolvedValueOnce({ unit_number: 'A-704' });
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ last_value: 2 }] }) // allocateReference upsert
       .mockResolvedValueOnce({
-        id: 'i-gen',
-        title: 'General issue',
-        body: 'Some text',
-        category: 'general',
-        status: 'open',
-        author_name: 'Asha',
-        author_unit: 'A-704',
-        created_at: new Date().toISOString(),
-      });
+        rows: [{
+          id: 'i-gen',
+          title: 'General issue',
+          body: 'Some text',
+          category: 'general',
+          status: 'open',
+          author_name: 'Asha',
+          author_unit: 'A-704',
+          reference: 'IQ-2026-002',
+          created_at: new Date().toISOString(),
+        }],
+      })
+      .mockResolvedValueOnce({}) // INSERT issue_status_events
+      .mockResolvedValueOnce({}); // COMMIT
 
     const { status, json } = await request('POST', '/api/v1/issues', {
       headers: authR,
@@ -249,56 +358,213 @@ describe('POST /issues', () => {
     expect(status).toBe(201);
     expect(json.data.category).toBe('general');
   });
+
+  it('a committee resident writes their capitalised role onto the opening timeline entry', async () => {
+    queryOne
+      .mockResolvedValueOnce({ id: 'c1', name: 'RWA', resident_type: 'owner', committee_role: 'secretary' })
+      .mockResolvedValueOnce({ unit_number: 'A-101' });
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ last_value: 3 }] }) // allocateReference upsert
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 'i-committee',
+          title: 'Gate light out',
+          body: 'Needs replacing',
+          category: 'maintenance',
+          status: 'open',
+          author_name: 'RWA',
+          author_unit: 'A-101',
+          reference: 'IQ-2026-003',
+          created_at: new Date().toISOString(),
+        }],
+      })
+      .mockResolvedValueOnce({}) // INSERT issue_status_events
+      .mockResolvedValueOnce({}); // COMMIT
+
+    const { status } = await request('POST', '/api/v1/issues', {
+      headers: authC,
+      body: { title: 'Gate light out', body: 'Needs replacing', category: 'maintenance' },
+    });
+    expect(status).toBe(201);
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    const [, params] = insertCalls[0];
+    expect(params[4]).toBe('Secretary');
+  });
+
+  it('rolls back and returns 500 when the issue INSERT fails', async () => {
+    queryOne
+      .mockResolvedValueOnce({ id: 'r1', name: 'Asha', resident_type: 'owner', committee_role: null })
+      .mockResolvedValueOnce({ unit_number: 'A-704' });
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ last_value: 4 }] }) // allocateReference upsert
+      .mockRejectedValueOnce(new Error('DB error')) // INSERT issues fails
+      .mockResolvedValueOnce({}); // ROLLBACK
+
+    const { status } = await request('POST', '/api/v1/issues', {
+      headers: authR,
+      body: { title: 'Water seepage', body: 'Ceiling leaking', category: 'maintenance' },
+    });
+
+    expect(status).toBe(500);
+    expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /issues/:id/upvote — toggle
+// POST /issues/:id/upvote — toggle, plus the upvote-threshold system entry
 // ─────────────────────────────────────────────────────────────────────────────
+// Handler acquires a client via pool.connect() and runs the whole toggle
+// under a lock (BEGIN / SELECT ... FOR UPDATE / [DELETE|INSERT+UPDATE] /
+// recount / [threshold INSERT] / COMMIT):
+//   client.query 1: BEGIN
+//   client.query 2: SELECT id FROM issues ... FOR UPDATE
+//   client.query 3: SELECT 1 FROM issue_upvotes ... (existing upvote check)
+//   client.query 4: DELETE (toggle off) OR INSERT (toggle on)
+//   client.query 5: UPDATE last_activity_at (toggle on only)
+//   client.query N: SELECT COUNT(*)::int AS n FROM issue_upvotes ... (recount)
+//   client.query N+1: INSERT INTO issue_status_events ... WHERE NOT EXISTS (only if threshold crossed)
+//   client.query last: COMMIT
 
 describe('POST /issues/:id/upvote', () => {
-  it('returns 404 when issue not in community', async () => {
-    // queryOne 1: issue not found
-    queryOne.mockResolvedValueOnce(null);
+  it('returns 404 when issue not in community and rolls back', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [] }) // SELECT ... FOR UPDATE (not found)
+      .mockResolvedValueOnce({}); // ROLLBACK
+
     const { status } = await request('POST', '/api/v1/issues/no-such/upvote', { headers: authR });
     expect(status).toBe(404);
+    expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
   });
 
-  it('toggles OFF (existing upvote → deletes → { upvoted: false })', async () => {
-    // queryOne 1: issue found
-    // queryOne 2: existing upvote found (row truthy)
-    // query 3: DELETE
-    queryOne
-      .mockResolvedValueOnce({ id: 'i1' })  // issue exists
-      .mockResolvedValueOnce({ 1: 1 });      // existing upvote found
-    query.mockResolvedValue({ rowCount: 1 });
+  it('toggles OFF (existing upvote → deletes → { upvoted: false }), below threshold writes no system entry', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({ rows: [{ 1: 1 }] }) // existing upvote found
+      .mockResolvedValueOnce({}) // DELETE
+      .mockResolvedValueOnce({ rows: [{ n: 4 }] }) // recount
+      .mockResolvedValueOnce({}); // COMMIT
 
     const { status, json } = await request('POST', '/api/v1/issues/i1/upvote', { headers: authR });
     expect(status).toBe(200);
     expect(json.data.upvoted).toBe(false);
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(0);
   });
 
-  it('toggles ON (no existing upvote → inserts → { upvoted: true })', async () => {
-    // queryOne 1: issue found
-    // queryOne 2: no existing upvote
-    // query 3: INSERT upvote
-    // query 4: UPDATE last_activity_at
-    queryOne
-      .mockResolvedValueOnce({ id: 'i1' }) // issue exists
-      .mockResolvedValueOnce(null);         // no existing upvote
-    query.mockResolvedValue({ rowCount: 1 });
+  it('toggles ON below threshold (no existing upvote → inserts → { upvoted: true }), writes no system entry', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({ rows: [] }) // no existing upvote
+      .mockResolvedValueOnce({}) // INSERT upvote
+      .mockResolvedValueOnce({}) // UPDATE last_activity_at
+      .mockResolvedValueOnce({ rows: [{ n: 5 }] }) // recount, well below UPVOTE_THRESHOLD (20)
+      .mockResolvedValueOnce({}); // COMMIT
 
     const { status, json } = await request('POST', '/api/v1/issues/i1/upvote', { headers: authR });
     expect(status).toBe(200);
     expect(json.data.upvoted).toBe(true);
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  it('crossing the threshold (19 -> 20) writes exactly one issue_status_events row with kind=system and NULL actor columns', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({ rows: [] }) // no existing upvote
+      .mockResolvedValueOnce({}) // INSERT upvote
+      .mockResolvedValueOnce({}) // UPDATE last_activity_at
+      .mockResolvedValueOnce({ rows: [{ n: 20 }] }) // recount: crosses UPVOTE_THRESHOLD
+      .mockResolvedValueOnce({}) // INSERT issue_status_events (threshold)
+      .mockResolvedValueOnce({}); // COMMIT
+
+    const { status, json } = await request('POST', '/api/v1/issues/i1/upvote', { headers: authR });
+    expect(status).toBe(200);
+    expect(json.data.upvoted).toBe(true);
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(1);
+    const [sql, params] = insertCalls[0];
+    expect(sql).toMatch(/WHERE NOT EXISTS/i);
+    expect(sql).toMatch(/'system'/);
+    // (issue_id, community_id, detail) — kind and the NULL actor columns are
+    // either literals or simply absent from the column list, so there is no
+    // param binding NULL onto changed_by_* here; the columns default to NULL.
+    expect(params[0]).toBe('i1');
+    expect(params[1]).toBe('c1');
+    expect(params[2]).toMatch(/20 residents affected/i);
+  });
+
+  it('guards the threshold INSERT with WHERE NOT EXISTS rather than deciding in JS', async () => {
+    // The mock cannot express "the second INSERT no-ops because a row already
+    // exists" (that's real Postgres semantics for WHERE NOT EXISTS), so this
+    // asserts the handler still issues a single, correctly-guarded INSERT
+    // attempt per crossing rather than skipping it in JS. The NOT EXISTS
+    // clause itself is what a real database enforces at most once.
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({ rows: [] }) // no existing upvote
+      .mockResolvedValueOnce({}) // INSERT upvote
+      .mockResolvedValueOnce({}) // UPDATE last_activity_at
+      .mockResolvedValueOnce({ rows: [{ n: 20 }] }) // recount: back up to 20 after toggling down and up
+      .mockResolvedValueOnce({}) // INSERT issue_status_events (guarded by WHERE NOT EXISTS)
+      .mockResolvedValueOnce({}); // COMMIT
+
+    const { status } = await request('POST', '/api/v1/issues/i1/upvote', { headers: authR });
+    expect(status).toBe(200);
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0][0]).toMatch(/WHERE NOT EXISTS/i);
+  });
+
+  it('rolls back and returns 500 when the upvote insert fails', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({ rows: [] }) // no existing upvote
+      .mockRejectedValueOnce(new Error('DB error')) // INSERT upvote fails
+      .mockResolvedValueOnce({}); // ROLLBACK
+
+    const { status } = await request('POST', '/api/v1/issues/i1/upvote', { headers: authR });
+    expect(status).toBe(500);
+    expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUT /issues/:id/status
 // ─────────────────────────────────────────────────────────────────────────────
+// Handler acquires a client via pool.connect() unconditionally, then:
+//   Non-admin actor resolution: queryOne → residents lookup (skipped for admins)
+//   client.query 1: BEGIN
+//   client.query 2: SELECT id, status FROM issues ... FOR UPDATE
+//   client.query 3: UPDATE issues ...              (only if transition valid)
+//   client.query 4: INSERT INTO issue_status_events ... (same transaction)
+//   client.query 5: COMMIT
 
 describe('PUT /issues/:id/status', () => {
-  it('returns 403 for a resident token (role gate)', async () => {
+  it('returns 403 for a resident token with no committee role (role gate)', async () => {
+    // queryOne default (beforeEach) resolves null → actor is null → not committee.
     const { status } = await request('PUT', '/api/v1/issues/i1/status', {
       headers: authR,
       body: { status: 'resolved' },
@@ -307,7 +573,8 @@ describe('PUT /issues/:id/status', () => {
   });
 
   it('returns 404 when issue not found in community', async () => {
-    queryOne.mockResolvedValueOnce(null);
+    // Admin path skips the residents lookup; mockClient.query's default
+    // ({ rows: [] }) on the SELECT ... FOR UPDATE already yields "not found".
     const { status } = await request('PUT', '/api/v1/issues/no-such/status', {
       headers: authA,
       body: { status: 'resolved' },
@@ -316,7 +583,12 @@ describe('PUT /issues/:id/status', () => {
   });
 
   it('returns 200 with { id, status } for admin on valid update', async () => {
-    queryOne.mockResolvedValueOnce({ id: 'i1', status: 'in_progress' });
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1', status: 'open' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({}) // UPDATE issues
+      .mockResolvedValueOnce({}) // INSERT issue_status_events
+      .mockResolvedValueOnce({}); // COMMIT
 
     const { status, json } = await request('PUT', '/api/v1/issues/i1/status', {
       headers: authA,
@@ -333,6 +605,88 @@ describe('PUT /issues/:id/status', () => {
       body: { status: 'banana' },
     });
     expect(status).toBe(400);
+  });
+
+  it('rejects a backwards transition with 422 and does not write a timeline row', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1', status: 'resolved' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({}); // ROLLBACK
+
+    const { status, json } = await request('PUT', '/api/v1/issues/i1/status', {
+      headers: authA,
+      body: { status: 'open' },
+    });
+    expect(status).toBe(422);
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(0);
+    expect(json.error.message).toMatch(/cannot move an issue/i);
+  });
+
+  it('a committee resident forward transition writes exactly one issue_status_events row with their name and capitalised role', async () => {
+    queryOne.mockResolvedValueOnce({
+      id: 'r-committee',
+      name: 'Priya Sharma',
+      resident_type: 'owner',
+      committee_role: 'secretary',
+    });
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i1', status: 'open' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({}) // UPDATE issues
+      .mockResolvedValueOnce({}) // INSERT issue_status_events
+      .mockResolvedValueOnce({}); // COMMIT
+
+    const { status, json } = await request('PUT', '/api/v1/issues/i1/status', {
+      headers: authC,
+      body: { status: 'in_progress' },
+    });
+
+    expect(status).toBe(200);
+    expect(json.data.status).toBe('in_progress');
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(1);
+    const [, params] = insertCalls[0];
+    // (issue_id, community_id, from_status, to_status, changed_by_resident_id, changed_by_name, changed_by_role)
+    expect(params[0]).toBe('i1');
+    expect(params[2]).toBe('open');
+    expect(params[3]).toBe('in_progress');
+    expect(params[4]).toBe('r-committee');
+    expect(params[5]).toBe('Priya Sharma');
+    expect(params[6]).toBe('Secretary');
+  });
+
+  it('a portal admin forward transition is permitted and writes a row with changed_by_resident_id NULL and changed_by_role Admin', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'i2', status: 'in_progress' }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce({}) // UPDATE issues
+      .mockResolvedValueOnce({}) // INSERT issue_status_events
+      .mockResolvedValueOnce({}); // COMMIT
+
+    const { status, json } = await request('PUT', '/api/v1/issues/i2/status', {
+      headers: authA,
+      body: { status: 'resolved' },
+    });
+
+    expect(status).toBe(200);
+    expect(json.data.status).toBe('resolved');
+    // Admin path never looks the actor up in residents.
+    expect(queryOne).not.toHaveBeenCalled();
+
+    const insertCalls = mockClient.query.mock.calls.filter(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO issue_status_events')
+    );
+    expect(insertCalls).toHaveLength(1);
+    const [, params] = insertCalls[0];
+    expect(params[4]).toBeNull(); // changed_by_resident_id
+    expect(params[5]).toBe('RWA'); // changed_by_name (admin token's name)
+    expect(params[6]).toBe('Admin'); // changed_by_role
   });
 });
 
@@ -411,7 +765,12 @@ describe('GET /polls', () => {
       author_name: 'RWA',
       created_at: new Date().toISOString(),
     };
-    queryOne.mockResolvedValueOnce({ block_id: 'blk1' });
+    // queryOne 1: callerBlock lookup. queryOne 2: canManagePolls' resolveCaller
+    // lookup, run AFTER the queryRows calls (see the route's comment) but still
+    // queryOne's second call overall — a committee row so canManage comes back true.
+    queryOne
+      .mockResolvedValueOnce({ block_id: 'blk1' })
+      .mockResolvedValueOnce({ committee_role: 'secretary', resident_type: 'owner' });
     queryRows
       .mockResolvedValueOnce([pollRow])
       .mockResolvedValueOnce([
@@ -457,16 +816,31 @@ describe('GET /polls', () => {
 // POST /polls
 // ─────────────────────────────────────────────────────────────────────────────
 // Plain resident → 403; committee → 201.
+//
+// canManagePolls now checks committee standing fresh (resolveCaller reading
+// residents.committee_role), never the JWT's is_committee claim, so every
+// authC request below spends queryOne call 1 on that lookup before anything
+// else — a stale JWT that still said `is_committee: true` must not keep
+// working after the resident is removed from the committee, and a freshly
+// appointed member must not have to log out and back in to use it.
+//
 // New call order for committee create (no targetBlockId):
-//   queryOne 1: INSERT poll RETURNING
-//   queryOne 2: INSERT option 0 RETURNING
-//   queryOne 3: INSERT option 1 RETURNING
-// With targetBlockId:
-//   queryOne 1: SELECT id FROM blocks WHERE id=$1 AND community_id=$2
+//   queryOne 1: SELECT committee_role, type FROM residents (resolveCaller)
 //   queryOne 2: INSERT poll RETURNING
-//   queryOne 3+: INSERT options
+//   queryOne 3: INSERT option 0 RETURNING
+//   queryOne 4: INSERT option 1 RETURNING
+// With targetBlockId:
+//   queryOne 1: SELECT committee_role, type FROM residents (resolveCaller)
+//   queryOne 2: SELECT id FROM blocks WHERE id=$1 AND community_id=$2
+//   queryOne 3: INSERT poll RETURNING
+//   queryOne 4+: INSERT options
+// Admin tokens skip the resolveCaller lookup entirely (isAdmin fast path).
 
 describe('POST /polls', () => {
+  function mockCommitteeLookup() {
+    queryOne.mockResolvedValueOnce({ committee_role: 'secretary', resident_type: 'owner' });
+  }
+
   it('returns 403 for a plain resident (no is_committee)', async () => {
     const { status, json } = await request('POST', '/api/v1/polls', {
       headers: authR,
@@ -477,6 +851,7 @@ describe('POST /polls', () => {
   });
 
   it('rejects fewer than 2 options with 400', async () => {
+    mockCommitteeLookup();
     const { status, json } = await request('POST', '/api/v1/polls', {
       headers: authC,
       body: { question: 'Pick one?', options: ['Only one'] },
@@ -486,6 +861,7 @@ describe('POST /polls', () => {
   });
 
   it('rejects more than 6 options with 400', async () => {
+    mockCommitteeLookup();
     const { status } = await request('POST', '/api/v1/polls', {
       headers: authC,
       body: { question: 'Too many?', options: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] },
@@ -494,6 +870,7 @@ describe('POST /polls', () => {
   });
 
   it('rejects missing question with 400', async () => {
+    mockCommitteeLookup();
     const { status } = await request('POST', '/api/v1/polls', {
       headers: authC,
       body: { options: ['Yes', 'No'] },
@@ -502,6 +879,7 @@ describe('POST /polls', () => {
   });
 
   it('rejects bad closesAt with 400', async () => {
+    mockCommitteeLookup();
     const { status, json } = await request('POST', '/api/v1/polls', {
       headers: authC,
       body: { question: 'Valid?', options: ['Yes', 'No'], closesAt: 'not-a-date' },
@@ -511,7 +889,9 @@ describe('POST /polls', () => {
   });
 
   it('rejects targetBlockId not in community with 400', async () => {
-    // queryOne 1: block lookup returns null (block not found)
+    // queryOne 1: committee-standing lookup (resolveCaller)
+    // queryOne 2: block lookup returns null (block not found)
+    mockCommitteeLookup();
     queryOne.mockResolvedValueOnce(null);
 
     const { status, json } = await request('POST', '/api/v1/polls', {
@@ -528,9 +908,11 @@ describe('POST /polls', () => {
 
   it('creates poll for committee member and returns 201 (myOptionId null, votes 0)', async () => {
     // Call order (no targetBlockId):
-    //  1. queryOne → INSERT poll RETURNING
-    //  2. queryOne → INSERT option 0 RETURNING
-    //  3. queryOne → INSERT option 1 RETURNING
+    //  1. queryOne → committee-standing lookup (resolveCaller)
+    //  2. queryOne → INSERT poll RETURNING
+    //  3. queryOne → INSERT option 0 RETURNING
+    //  4. queryOne → INSERT option 1 RETURNING
+    mockCommitteeLookup();
     queryOne
       .mockResolvedValueOnce({
         id: 'p-new',
@@ -562,10 +944,12 @@ describe('POST /polls', () => {
   it('creates poll with valid targetBlockId for committee member', async () => {
     const blockId = '00000000-0000-0000-0000-000000000001';
     // Call order (with targetBlockId):
-    //  1. queryOne → block lookup (found)
-    //  2. queryOne → INSERT poll RETURNING
-    //  3. queryOne → INSERT option 0
-    //  4. queryOne → INSERT option 1
+    //  1. queryOne → committee-standing lookup (resolveCaller)
+    //  2. queryOne → block lookup (found)
+    //  3. queryOne → INSERT poll RETURNING
+    //  4. queryOne → INSERT option 0
+    //  5. queryOne → INSERT option 1
+    mockCommitteeLookup();
     queryOne
       .mockResolvedValueOnce({ id: blockId })                              // block found
       .mockResolvedValueOnce({
@@ -608,6 +992,51 @@ describe('POST /polls', () => {
       body: { question: 'Admin poll?', options: ['Yes', 'No'] },
     });
     expect(status).toBe(201);
+  });
+
+  // The defect this fix closes: committee standing must be read fresh from
+  // residents.committee_role, never trusted from the JWT's is_committee
+  // claim — that claim is only ever as fresh as the caller's last login.
+
+  it('a resident whose JWT says is_committee:false but who holds a fresh committee_role CAN create a poll', async () => {
+    // freshCommitteeToken (declared below the token block) carries
+    // is_committee: false — old-token behaviour would 403 here. The residents
+    // lookup below is what canManagePolls now goes by instead.
+    queryOne
+      .mockResolvedValueOnce({ committee_role: 'treasurer', resident_type: 'owner' }) // resolveCaller
+      .mockResolvedValueOnce({
+        id: 'p-fresh',
+        question: 'Newly appointed?',
+        status: 'open',
+        closes_at: null,
+        target_block_id: null,
+        author_name: 'Newly Appointed',
+        created_at: new Date().toISOString(),
+      })
+      .mockResolvedValueOnce({ id: 'o-1', label: 'Yes', position: 0 })
+      .mockResolvedValueOnce({ id: 'o-2', label: 'No', position: 1 });
+
+    const { status, json } = await request('POST', '/api/v1/polls', {
+      headers: authFreshCommittee,
+      body: { question: 'Newly appointed?', options: ['Yes', 'No'] },
+    });
+    expect(status).toBe(201);
+    expect(json.data.canManage).toBe(true);
+  });
+
+  it('a resident whose JWT says is_committee:true but who has no committee_role in the DB CANNOT create a poll', async () => {
+    // committeeToken (authC) carries is_committee: true, but the residents
+    // lookup below comes back with no committee_role — e.g. removed from the
+    // committee since the token was minted. Old behaviour trusted the stale
+    // JWT claim and would let this through with a 201.
+    queryOne.mockResolvedValueOnce({ committee_role: null, resident_type: 'owner' }); // resolveCaller
+
+    const { status, json } = await request('POST', '/api/v1/polls', {
+      headers: authC,
+      body: { question: 'Should this work?', options: ['Yes', 'No'] },
+    });
+    expect(status).toBe(403);
+    expect(json.error.message).toMatch(/committee/i);
   });
 });
 
@@ -710,9 +1139,11 @@ describe('POST /polls/:id/vote', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /polls/:id/close
 // ─────────────────────────────────────────────────────────────────────────────
-// Call order:
-//   1. queryOne → poll existence check (SELECT id FROM polls WHERE id=$1 AND community_id=$2)
-//   2. queryOne → UPDATE polls SET status='closed' WHERE id=$1
+// Call order for a non-admin (committee) caller:
+//   1. queryOne → committee-standing lookup (resolveCaller, SELECT committee_role, type FROM residents)
+//   2. queryOne → poll existence check (SELECT id FROM polls WHERE id=$1 AND community_id=$2)
+//   3. queryOne → UPDATE polls SET status='closed' WHERE id=$1
+// Admin tokens skip call 1 (isAdmin fast path).
 
 describe('POST /polls/:id/close', () => {
   it('returns 403 for a plain resident', async () => {
@@ -724,7 +1155,9 @@ describe('POST /polls/:id/close', () => {
   });
 
   it('returns 404 when poll not found', async () => {
-    queryOne.mockResolvedValueOnce(null);
+    queryOne
+      .mockResolvedValueOnce({ committee_role: 'secretary', resident_type: 'owner' }) // resolveCaller
+      .mockResolvedValueOnce(null); // poll lookup
     const { status } = await request('POST', '/api/v1/polls/no-such/close', {
       headers: authC,
     });
@@ -733,9 +1166,11 @@ describe('POST /polls/:id/close', () => {
 
   it('returns { id, status: "closed" } for committee member', async () => {
     // Call order:
-    //  1. queryOne → poll found
-    //  2. queryOne → UPDATE (returns null — no RETURNING needed)
+    //  1. queryOne → committee-standing lookup (resolveCaller)
+    //  2. queryOne → poll found
+    //  3. queryOne → UPDATE (returns null — no RETURNING needed)
     queryOne
+      .mockResolvedValueOnce({ committee_role: 'secretary', resident_type: 'owner' })
       .mockResolvedValueOnce({ id: 'p1' })
       .mockResolvedValueOnce(null); // UPDATE doesn't need a return value
 
@@ -745,6 +1180,19 @@ describe('POST /polls/:id/close', () => {
     expect(status).toBe(200);
     expect(json.data.id).toBe('p1');
     expect(json.data.status).toBe('closed');
+  });
+
+  it('a committee token whose committee_role has since been revoked in the DB gets 403 on close', async () => {
+    // committeeToken (authC) still carries is_committee: true from login, but
+    // the fresh residents lookup shows no committee_role — proves the close
+    // route also stopped trusting the JWT claim.
+    queryOne.mockResolvedValueOnce({ committee_role: null, resident_type: 'owner' }); // resolveCaller
+
+    const { status, json } = await request('POST', '/api/v1/polls/p1/close', {
+      headers: authC,
+    });
+    expect(status).toBe(403);
+    expect(json.error.message).toMatch(/committee/i);
   });
 
   it('allows admin to close a poll', async () => {
@@ -763,15 +1211,16 @@ describe('POST /polls/:id/close', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /community/feed
 // ─────────────────────────────────────────────────────────────────────────────
-// New call order (after committee-polls upgrade):
-//   Promise.allSettled fires all three fetchXxx() in parallel.
+// Call order (after adding the discussions source):
+//   Promise.allSettled fires all four fetchXxx() in parallel.
 //   Each hits its first await in declaration order:
 //     fetchAnnouncements → queryRows (call 1 in queryRows queue)
 //     fetchIssues        → queryRows (call 2 in queryRows queue)
+//     fetchDiscussions   → queryRows (call 3 in queryRows queue)
 //     fetchPolls         → queryOne  (call 1 in queryOne queue — callerBlock)
 //   After the first awaits resolve, continuations run:
-//     fetchPolls (cont.) → queryRows (call 3 in queryRows queue — polls list)
-//                          If polls found: queryRows 4 (options), queryRows 5 (myVotes)
+//     fetchPolls (cont.) → queryRows (call 4 in queryRows queue — polls list)
+//                          If polls found: queryRows 5 (options), queryRows 6 (myVotes)
 
 describe('GET /community/feed', () => {
   it('returns 401 without auth', async () => {
@@ -784,11 +1233,13 @@ describe('GET /community/feed', () => {
     // queryOne  1: fetchPolls callerBlock lookup → { block_id: 'blk1' }
     // queryRows 1: fetchAnnouncements notices
     // queryRows 2: fetchIssues
-    // queryRows 3: fetchPolls polls (empty → no further queries)
+    // queryRows 3: fetchDiscussions (empty)
+    // queryRows 4: fetchPolls polls (empty → no further queries)
     queryOne.mockResolvedValueOnce({ block_id: 'blk1' }); // callerBlock
     queryRows
       .mockResolvedValueOnce([{ id: 'n1', title: 'AGM Notice', body: 'See you Sunday', author_name: 'RWA', created_at: now }])  // announcements
       .mockResolvedValueOnce([{ id: 'i1', title: 'Lift broken', body: 'B Block', category: 'maintenance', status: 'open', author_name: 'Asha', author_unit: 'A-704', upvote_count: '2', my_upvoted: false, created_at: now }])  // issues
+      .mockResolvedValueOnce([]) // discussions (empty)
       .mockResolvedValueOnce([]); // polls (empty)
 
     const { status, json } = await request('GET', '/api/v1/community/feed', { headers: authR });
@@ -798,6 +1249,8 @@ describe('GET /community/feed', () => {
     expect(json.data.issues).toHaveLength(1);
     expect(json.data.issues[0].upvoteCount).toBe(2);
     expect(json.data.polls).toEqual([]);
+    // discussions do NOT leak into any legacy grouped key.
+    expect(json.data.discussions).toBeUndefined();
   });
 
   it('degrades a failed section to [] and returns 200 (not 500)', async () => {
@@ -805,11 +1258,13 @@ describe('GET /community/feed', () => {
     // queryOne  1: fetchPolls callerBlock lookup
     // queryRows 1: fetchAnnouncements succeeds
     // queryRows 2: fetchIssues rejects
-    // queryRows 3: fetchPolls polls (empty)
+    // queryRows 3: fetchDiscussions (empty)
+    // queryRows 4: fetchPolls polls (empty)
     queryOne.mockResolvedValueOnce({ block_id: 'blk1' }); // callerBlock
     queryRows
       .mockResolvedValueOnce([{ id: 'n1', title: 'Water cut', body: 'Tomorrow', author_name: 'RWA', created_at: now }]) // announcements ok
       .mockRejectedValueOnce(new Error('DB timeout'))  // issues fail
+      .mockResolvedValueOnce([])                       // discussions ok (empty)
       .mockResolvedValueOnce([]);                      // polls ok (empty)
 
     const { status, json } = await request('GET', '/api/v1/community/feed', { headers: authR });
@@ -817,6 +1272,30 @@ describe('GET /community/feed', () => {
     expect(json.data.announcements).toHaveLength(1);
     expect(json.data.issues).toEqual([]);   // degraded to []
     expect(json.data.polls).toEqual([]);
+  });
+
+  it('a failing discussions query degrades to no discussions rather than emptying the feed', async () => {
+    const now = new Date().toISOString();
+    // queryOne  1: fetchPolls callerBlock lookup
+    // queryRows 1: fetchAnnouncements succeeds
+    // queryRows 2: fetchIssues succeeds
+    // queryRows 3: fetchDiscussions rejects
+    // queryRows 4: fetchPolls polls (empty)
+    queryOne.mockResolvedValueOnce({ block_id: 'blk1' });
+    queryRows
+      .mockResolvedValueOnce([{ id: 'n1', title: 'AGM Notice', body: 'x', author_name: 'RWA', created_at: now }]) // announcements
+      .mockResolvedValueOnce([{ id: 'i1', title: 'Lift broken', body: 'x', category: 'maintenance', status: 'open', author_name: 'Asha', author_unit: 'A-704', upvote_count: '0', my_upvoted: false, created_at: now }]) // issues
+      .mockRejectedValueOnce(new Error('DB timeout')) // discussions fail
+      .mockResolvedValueOnce([]); // polls (empty)
+
+    const { status, json } = await request('GET', '/api/v1/community/feed', { headers: authR });
+    expect(status).toBe(200);
+    // Announcements and issues are unaffected by the discussions failure.
+    expect(json.data.announcements).toHaveLength(1);
+    expect(json.data.issues).toHaveLength(1);
+    // No discussion post made it into posts, but the rest of the feed survives.
+    expect(json.data.posts.some((p) => p.type === 'discussion')).toBe(false);
+    expect(json.data.posts).toHaveLength(2);
   });
 
   it('includes open polls in the feed with audience filter applied', async () => {
@@ -833,13 +1312,15 @@ describe('GET /community/feed', () => {
     // queryOne  1: callerBlock
     // queryRows 1: announcements (empty)
     // queryRows 2: issues (empty)
-    // queryRows 3: polls list (one poll)
-    // queryRows 4: options
-    // queryRows 5: myVotes
+    // queryRows 3: discussions (empty)
+    // queryRows 4: polls list (one poll)
+    // queryRows 5: options
+    // queryRows 6: myVotes
     queryOne.mockResolvedValueOnce({ block_id: 'blk1' });
     queryRows
       .mockResolvedValueOnce([])       // announcements
       .mockResolvedValueOnce([])       // issues
+      .mockResolvedValueOnce([])       // discussions
       .mockResolvedValueOnce([pollRow]) // polls
       .mockResolvedValueOnce([
         { id: 'o1', poll_id: 'p1', label: 'Morning', position: 0, votes: '2' },
@@ -852,6 +1333,51 @@ describe('GET /community/feed', () => {
     expect(json.data.polls).toHaveLength(1);
     expect(json.data.polls[0].totalVotes).toBe(3);
     expect(json.data.polls[0].canManage).toBe(false);
+  });
+
+  it('surfaces a discussion post in posts with type "discussion", scoped to the caller community', async () => {
+    const now = new Date().toISOString();
+    // queryOne  1: callerBlock
+    // queryRows 1: announcements (empty)
+    // queryRows 2: issues (empty)
+    // queryRows 3: discussions (one row)
+    // queryRows 4: polls (empty)
+    queryOne.mockResolvedValueOnce({ block_id: 'blk1' });
+    queryRows
+      .mockResolvedValueOnce([]) // announcements
+      .mockResolvedValueOnce([]) // issues
+      .mockResolvedValueOnce([{ id: 'd1', title: 'Any recommendations for painters?', body: 'Looking for one in the area', author_name: 'Asha', created_at: now }]) // discussions
+      .mockResolvedValueOnce([]); // polls
+
+    const { status, json } = await request('GET', '/api/v1/community/feed', { headers: authR });
+    expect(status).toBe(200);
+    expect(json.data.posts).toHaveLength(1);
+    expect(json.data.posts[0]).toMatchObject({ id: 'd1', type: 'discussion', authorName: 'Asha' });
+
+    // Verify the query is scoped to the caller's community — 'c1' from the resident token.
+    const discussionsCall = queryRows.mock.calls.find(
+      ([sql]) => typeof sql === 'string' && sql.includes("category = 'discussion'")
+    );
+    expect(discussionsCall).toBeDefined();
+    expect(discussionsCall[1]).toEqual(['c1']);
+  });
+
+  it('?type=discussion returns only discussion posts', async () => {
+    const now = new Date().toISOString();
+    queryOne.mockResolvedValueOnce({ block_id: 'blk1' });
+    queryRows
+      .mockResolvedValueOnce([{ id: 'n1', title: 'AGM Notice', body: 'x', author_name: 'RWA', created_at: now }]) // announcements
+      .mockResolvedValueOnce([]) // issues
+      .mockResolvedValueOnce([{ id: 'd1', title: 'Painters?', body: 'x', author_name: 'Asha', created_at: now }]) // discussions
+      .mockResolvedValueOnce([]); // polls
+
+    const { status, json } = await request('GET', '/api/v1/community/feed?type=discussion', { headers: authR });
+    expect(status).toBe(200);
+    expect(json.data.posts).toHaveLength(1);
+    expect(json.data.posts[0]).toMatchObject({ id: 'd1', type: 'discussion' });
+    // Discussions never leak into the legacy announcements key, filtered or not.
+    expect(json.data.announcements).toHaveLength(1);
+    expect(json.data.announcements.every((a) => a.id !== 'd1')).toBe(true);
   });
 });
 

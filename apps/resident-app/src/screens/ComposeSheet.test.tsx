@@ -1,34 +1,111 @@
-jest.mock('../api/client');
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
-import * as api from '../api/client';
 import ComposeSheet from './ComposeSheet';
-import { useAuthStore } from '../store/authStore';
+import * as api from '../api/client';
+import { pickIssuePhotos } from '../lib/photos';
 
-describe('ComposeSheet', () => {
-  beforeEach(() => jest.clearAllMocks());
+jest.mock('../api/client');
+jest.mock('../lib/photos');
 
-  it('posts an issue', async () => {
-    (api.createIssue as jest.Mock).mockResolvedValue({ data: { data: { id: 'i9' } } });
+beforeEach(() => {
+  jest.clearAllMocks();
+  (api.getBlocks as jest.Mock).mockResolvedValue({ data: { data: [] } });
+  (api.createIssue as jest.Mock).mockResolvedValue({ data: { data: { id: 'i1' } } });
+  (api.createDiscussion as jest.Mock).mockResolvedValue({ data: { data: { id: 'n1' } } });
+  (api.createAnnouncement as jest.Mock).mockResolvedValue({ data: { data: { id: 'n2' } } });
+  (api.uploadIssuePhotos as jest.Mock).mockResolvedValue({ data: { data: {} } });
+  (pickIssuePhotos as jest.Mock).mockResolvedValue([]);
+});
+
+describe('ComposeSheet type selector', () => {
+  it('offers a plain resident everything except Announce', () => {
+    const { getByText, queryByText } = render(
+      <ComposeSheet visible isCommittee={false} onClose={() => {}} onPosted={() => {}} />
+    );
+    expect(getByText('Report issue')).toBeTruthy();
+    expect(getByText('Start discussion')).toBeTruthy();
+    expect(queryByText('Announce')).toBeNull();
+  });
+
+  it('offers a committee member Announce as well', () => {
+    const { getByText } = render(
+      <ComposeSheet visible isCommittee onClose={() => {}} onPosted={() => {}} />
+    );
+    expect(getByText('Announce')).toBeTruthy();
+    expect(getByText('Create poll')).toBeTruthy();
+  });
+
+  it('posts a discussion under the discussion category', async () => {
     const onPosted = jest.fn();
-    const { getByText, getByPlaceholderText, getByTestId } = render(<ComposeSheet visible onClose={() => {}} onPosted={onPosted} />);
-    fireEvent.changeText(getByPlaceholderText('Short title'), 'Gate light out');
-    fireEvent.changeText(getByTestId('compose-body'), 'Main gate light not working');
+    const { getByText, getByPlaceholderText } = render(
+      <ComposeSheet visible isCommittee={false} onClose={() => {}} onPosted={onPosted} />
+    );
+    fireEvent.press(getByText('Start discussion'));
+    fireEvent.changeText(getByPlaceholderText('Title'), 'Parking');
+    fireEvent.changeText(getByPlaceholderText('Write something…'), 'Thoughts?');
     fireEvent.press(getByText('Post'));
-    await waitFor(() => expect(api.createIssue).toHaveBeenCalledWith(expect.objectContaining({ title: 'Gate light out', body: 'Main gate light not working' })));
+    await waitFor(() => expect(api.createDiscussion).toHaveBeenCalledWith({ title: 'Parking', body: 'Thoughts?' }));
     await waitFor(() => expect(onPosted).toHaveBeenCalled());
   });
 
-  it('hides the Poll tab for non-committee residents', () => {
-    useAuthStore.setState({ user: { name: 'R', phone: '9', unitNumber: 'A-1', isCommittee: false } as any });
-    const { queryByText } = render(<ComposeSheet visible onClose={() => {}} onPosted={() => {}} />);
-    expect(queryByText('Poll')).toBeNull();
+  it('posts an announcement with the chosen priority', async () => {
+    const { getByText, getByPlaceholderText } = render(
+      <ComposeSheet visible isCommittee onClose={() => {}} onPosted={() => {}} />
+    );
+    fireEvent.press(getByText('Announce'));
+    fireEvent.changeText(getByPlaceholderText('Title'), 'AGM');
+    fireEvent.changeText(getByPlaceholderText('Write something…'), 'Sunday 11am');
+    fireEvent.press(getByText('Urgent'));
+    fireEvent.press(getByText('Post'));
+    await waitFor(() => expect(api.createAnnouncement).toHaveBeenCalledWith({
+      title: 'AGM', body: 'Sunday 11am', priority: 'urgent',
+    }));
   });
 
-  it('shows the Poll tab for committee residents', () => {
-    (api.getBlocks as jest.Mock).mockResolvedValue({ data: { data: [] } });
-    useAuthStore.setState({ user: { name: 'RWA', phone: '9', unitNumber: 'A-1', isCommittee: true } as any });
-    const { getByText } = render(<ComposeSheet visible onClose={() => {}} onPosted={() => {}} />);
-    expect(getByText('Poll')).toBeTruthy();
+  it('reports an issue with its category', async () => {
+    const { getByText, getByPlaceholderText } = render(
+      <ComposeSheet visible isCommittee={false} onClose={() => {}} onPosted={() => {}} />
+    );
+    fireEvent.press(getByText('Report issue'));
+    fireEvent.changeText(getByPlaceholderText('Title'), 'Lift broken');
+    fireEvent.changeText(getByPlaceholderText('Write something…'), 'Stuck on 7');
+    fireEvent.press(getByText('security'));
+    fireEvent.press(getByText('Post'));
+    await waitFor(() => expect(api.createIssue).toHaveBeenCalledWith({
+      title: 'Lift broken', body: 'Stuck on 7', category: 'security',
+    }));
+  });
+
+  it('uploads picked photos against the new issue after it is created', async () => {
+    (pickIssuePhotos as jest.Mock).mockResolvedValue(['file:///a.jpg.small', 'file:///b.jpg.small']);
+    const { getByText, getByPlaceholderText } = render(
+      <ComposeSheet visible isCommittee={false} onClose={() => {}} onPosted={() => {}} />
+    );
+    fireEvent.press(getByText('Report issue'));
+    fireEvent.changeText(getByPlaceholderText('Title'), 'Lift broken');
+    fireEvent.changeText(getByPlaceholderText('Write something…'), 'Stuck on 7');
+    fireEvent.press(getByText(/Add photos/));
+    await waitFor(() => expect(getByText('Add photos (2/5 photos)')).toBeTruthy());
+    fireEvent.press(getByText('Post'));
+    await waitFor(() => expect(api.uploadIssuePhotos).toHaveBeenCalledWith('i1', [
+      'file:///a.jpg.small', 'file:///b.jpg.small',
+    ]));
+  });
+
+  it('still fires onPosted when the photo upload fails, since the issue is already filed', async () => {
+    (pickIssuePhotos as jest.Mock).mockResolvedValue(['file:///a.jpg.small']);
+    (api.uploadIssuePhotos as jest.Mock).mockRejectedValue(new Error('network'));
+    const onPosted = jest.fn();
+    const { getByText, getByPlaceholderText } = render(
+      <ComposeSheet visible isCommittee={false} onClose={() => {}} onPosted={onPosted} />
+    );
+    fireEvent.press(getByText('Report issue'));
+    fireEvent.changeText(getByPlaceholderText('Title'), 'Lift broken');
+    fireEvent.changeText(getByPlaceholderText('Write something…'), 'Stuck on 7');
+    fireEvent.press(getByText(/Add photos/));
+    await waitFor(() => expect(getByText('Add photos (1/5 photos)')).toBeTruthy());
+    fireEvent.press(getByText('Post'));
+    await waitFor(() => expect(api.uploadIssuePhotos).toHaveBeenCalled());
+    await waitFor(() => expect(onPosted).toHaveBeenCalled());
   });
 });

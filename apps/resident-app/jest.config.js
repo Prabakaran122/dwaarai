@@ -4,6 +4,13 @@ module.exports = {
   // async waitFor() screen tests under load and they time out non-deterministically.
   // Cap concurrency so the suite is reliably green locally and in CI.
   maxWorkers: 2,
+  // The default 5s is not enough for the FIRST test in a heavy screen suite:
+  // it absorbs the cold-start transform of the screen and everything it pulls
+  // in, and CI runs `pnpm -r run test`, so api-gateway compiles alongside this
+  // package. That combination timed the first IssueDetailScreen test out in CI
+  // while every assertion in it was fine. Raised so the suite measures
+  // behaviour rather than machine load.
+  testTimeout: 20000,
   setupFiles: ['<rootDir>/jest.setup.js'],
   setupFilesAfterEnv: ['@testing-library/react-native/extend-expect'],
   // pnpm stores packages under node_modules/.pnpm/<pkg>/node_modules/<pkg>.

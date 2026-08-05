@@ -218,10 +218,71 @@ export const getIssues = () => api.get('/issues');
 export const createIssue = (data: { title: string; body: string; category?: string }) => api.post('/issues', data);
 export const upvoteIssue = (id: string) => api.post(`/issues/${id}/upvote`);
 export const getPolls = () => api.get('/polls');
-export const createPoll = (data: { question: string; options: string[]; closesAt?: string; targetBlockId?: string | null }) => api.post('/polls', data);
 export const votePoll = (id: string, optionId: string) => api.post(`/polls/${id}/vote`, { optionId });
 export const closePoll = (id: string) => api.post(`/polls/${id}/close`);
 export const getBlocks = () => api.get('/blocks');
+
+export type PostType = 'announcement' | 'issue' | 'poll' | 'discussion';
+export type PollAudience = 'all' | 'owners' | 'block';
+
+export interface CreatePollBody {
+  topic?: string;
+  question: string;
+  options: string[];
+  closesAt?: string;
+  audience?: PollAudience;
+  targetBlockId?: string | null;
+  oneVotePerUnit?: boolean;
+  isAnonymous?: boolean;
+  showLiveResults?: boolean;
+}
+
+export const getIssue = (id: string) => api.get(`/issues/${id}`);
+
+export const replyToIssue = (id: string, body: string) =>
+  api.post(`/issues/${id}/replies`, { body });
+
+export const changeIssueStatus = (id: string, status: string, assigneeName?: string) =>
+  api.put(`/issues/${id}/status`, assigneeName ? { status, assignee_name: assigneeName } : { status });
+
+// The server's multer field is `photos` and it caps the request at 5 files
+// (MAX_ISSUE_PHOTOS in services/api-gateway/src/routes/issues.js).
+// The server's fileFilter trusts the declared mimetype, so declaring
+// image/jpeg for everything would let a HEIC original — which is what arrives
+// when compression falls back to the untouched file — land on disk as a .jpg.
+// Derive it from the uri instead. Compressed photos are genuinely JPEG and
+// fall through to the default.
+const MIME_BY_EXT: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  heic: 'image/heic',
+};
+
+function describePhoto(uri: string, index: number) {
+  const ext = (uri.split('?')[0].split('.').pop() ?? '').toLowerCase();
+  const type = MIME_BY_EXT[ext] ?? 'image/jpeg';
+  const suffix = ext && MIME_BY_EXT[ext] ? ext : 'jpg';
+  return { uri, name: `photo-${index}.${suffix}`, type };
+}
+
+export const uploadIssuePhotos = (id: string, uris: string[]) => {
+  const form = new FormData();
+  uris.forEach((uri, i) => {
+    form.append('photos', describePhoto(uri, i) as unknown as Blob);
+  });
+  return api.post(`/issues/${id}/photos`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const createAnnouncement = (data: { title: string; body: string; priority?: 'normal' | 'urgent' }) =>
+  api.post('/notices', { ...data, category: 'official' });
+
+export const createDiscussion = (data: { title: string; body: string }) =>
+  api.post('/notices', { ...data, category: 'discussion' });
+
+export const createPoll = (data: CreatePollBody) => api.post('/polls', data);
 
 // 401 interceptor — auto-refresh token on expiry
 let isRefreshing = false;

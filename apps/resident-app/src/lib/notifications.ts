@@ -71,24 +71,54 @@ export async function registerForPushNotifications(): Promise<string | null> {
   return token;
 }
 
-export function setupNotificationListeners(onApprovalReceived?: (approvalId: string, data: any) => void) {
+/**
+ * Decide what a tapped push should open. Split out as a pure function so the
+ * routing is testable without standing up expo-notifications.
+ *
+ * The server sends `approval_id` (snake_case) on `approval_request` pushes
+ * (see `sendApprovalRequest` in services/api-gateway/src/lib/fcm.js) but
+ * `issueId` (camelCase) on `issue_resolved` pushes (see `notifyIssueResolved`
+ * in services/api-gateway/src/routes/issues.js). Both spellings of the
+ * approval field are accepted here so real approval_request pushes keep
+ * routing correctly.
+ */
+export function routeNotificationData(
+  data: Record<string, unknown> | undefined,
+  onApproval: (approvalId: string, data: Record<string, unknown>) => void,
+  onIssueResolved?: (issueId: string) => void
+): void {
+  if (!data) return;
+  if (data.type === 'issue_resolved') {
+    if (typeof data.issueId === 'string' && data.issueId) onIssueResolved?.(data.issueId);
+    return;
+  }
+  // Both the type and the id, matching the check this replaced — a push that
+  // merely carries an approval id should not open the approval screen. The
+  // server sends approval_id (fcm.js); approvalId is accepted only so a future
+  // camelCase payload would not silently stop routing.
+  if (data.type !== 'approval_request') return;
+  const approvalId = data.approvalId ?? data.approval_id;
+  if (typeof approvalId === 'string' && approvalId) {
+    onApproval(approvalId, data);
+  }
+}
+
+export function setupNotificationListeners(
+  onApprovalReceived?: (approvalId: string, data: any) => void,
+  onIssueResolved?: (issueId: string) => void
+) {
   // Handle notification actions (approve/deny buttons from banner)
   const responseSubscription = Notifications.addNotificationResponseReceivedListener(
     async (response) => {
       const data = response.notification.request.content.data;
       const actionId = response.actionIdentifier;
 
-      if (data?.type === 'approval_request' && data?.approval_id) {
-        if (actionId === 'approve' || actionId === 'deny') {
-          // Quick action from notification banner
-          try {
-            await respondToApproval(data.approval_id as string, actionId);
-          } catch (err) {
-            console.error(`[Notifications] ${actionId} action failed:`, err);
-          }
-        } else {
-          // Tapped notification body — navigate to approval screen
-          onApprovalReceived?.(data.approval_id as string, data);
+      if (data?.type === 'approval_request' && data?.approval_id && (actionId === 'approve' || actionId === 'deny')) {
+        // Quick action from notification banner
+        try {
+          await respondToApproval(data.approval_id as string, actionId);
+        } catch (err) {
+          console.error(`[Notifications] ${actionId} action failed:`, err);
         }
         return;
       }
@@ -108,7 +138,15 @@ export function setupNotificationListeners(onApprovalReceived?: (approvalId: str
             console.error('[Notifications] Deny action failed:', err);
           }
         }
+        return;
       }
+
+      // Tapped notification body (approval_request or issue_resolved) — route it.
+      routeNotificationData(
+        data as Record<string, unknown> | undefined,
+        (approvalId, d) => onApprovalReceived?.(approvalId, d),
+        onIssueResolved
+      );
     }
   );
 

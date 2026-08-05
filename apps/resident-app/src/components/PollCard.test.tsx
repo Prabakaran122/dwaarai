@@ -25,4 +25,43 @@ describe('PollCard', () => {
     fireEvent.press(getByText('Close poll'));
     expect(onClose).toHaveBeenCalledWith('p1');
   });
+
+  it('says results are hidden rather than showing zero when the poll hides them', () => {
+    const poll: any = {
+      id: 'p1', question: 'Gym hours?', status: 'open', closesAt: null, targetBlockId: null,
+      canManage: false, authorName: 'RWA', createdAt: '2026-08-01T09:00:00Z',
+      totalVotes: null, myOptionId: 'o1', showLiveResults: false,
+      options: [{ id: 'o1', label: '6am', votes: null }, { id: 'o2', label: '7am', votes: null }],
+    };
+    const { getByText, queryByText } = render(<PollCard poll={poll} onVote={() => {}} />);
+    expect(getByText(/Results hidden until the poll closes/)).toBeTruthy();
+    expect(queryByText('0%')).toBeNull();
+  });
+
+  it('shows percentages once results are visible', () => {
+    const poll: any = {
+      id: 'p2', question: 'Gym hours?', status: 'open', closesAt: null, targetBlockId: null,
+      canManage: false, authorName: 'RWA', createdAt: '2026-08-01T09:00:00Z',
+      totalVotes: 4, myOptionId: 'o1', showLiveResults: true,
+      options: [{ id: 'o1', label: '6am', votes: 3 }, { id: 'o2', label: '7am', votes: 1 }],
+    };
+    const { getByText } = render(<PollCard poll={poll} onVote={() => {}} />);
+    expect(getByText('75%')).toBeTruthy();
+    expect(getByText('25%')).toBeTruthy();
+  });
+
+  // A closed poll keeps showLiveResults false but the server reveals its
+  // tallies anyway. Gating the card on that flag instead of on null counts
+  // would hide the final result forever — this is the case that catches it.
+  it('reveals a closed poll s results even though showLiveResults stayed false', () => {
+    const poll: any = {
+      id: 'p3', question: 'Gym hours?', status: 'closed', closesAt: '2026-08-01T09:00:00Z',
+      targetBlockId: null, canManage: false, authorName: 'RWA', createdAt: '2026-07-01T09:00:00Z',
+      totalVotes: 4, myOptionId: 'o1', showLiveResults: false,
+      options: [{ id: 'o1', label: '6am', votes: 3 }, { id: 'o2', label: '7am', votes: 1 }],
+    };
+    const { getByText, queryByText } = render(<PollCard poll={poll} onVote={() => {}} />);
+    expect(getByText('75%')).toBeTruthy();
+    expect(queryByText(/Results hidden/)).toBeNull();
+  });
 });

@@ -2,15 +2,26 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
-import { authenticateJWT } from '../middleware/auth.js';
+import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
+import { canAnnounce, isGuard, roleLabel } from '../lib/committee.js';
 import { sendToMultiple } from '../lib/fcm.js';
 
 const router = Router();
+
+// Exactly two priority levels (BRD: announcement composer with priority
+// levels). isUrgent is pure and exported so the feed's "renders differently"
+// rule is unit-testable without a request.
+export const NOTICE_PRIORITIES = ['normal', 'urgent'];
+
+export function isUrgent(priority) {
+  return priority === 'urgent';
+}
 
 const createSchema = z.object({
   title: z.string().min(1).max(200),
   body: z.string().min(1).max(5000),
   category: z.enum(['official', 'discussion']).optional(),
+  priority: z.enum(NOTICE_PRIORITIES).default('normal'),
 });
 
 const replySchema = z.object({
@@ -31,6 +42,7 @@ function shapeNotice(n) {
     author_unit: n.author_unit || null,
     posted_by_role: n.posted_by_role,
     is_pinned: n.is_pinned,
+    priority: n.priority,
     author_resident_id: n.author_resident_id || null,
     reply_count: n.reply_count !== undefined ? Number(n.reply_count) : undefined,
     created_at: n.created_at,
@@ -98,7 +110,11 @@ router.get('/notices/:id', authenticateJWT(['resident', 'admin']), async (req, r
 });
 
 // -- POST /notices -----------------------------------------------------------
-// Residents may only create discussions. Admins may post official (pinned) notices.
+// Announcement composer: portal admins or resident committee members only
+// (BRD: "Announcement composer, committee-only, with priority levels"). A
+// portal admin's JWT `sub` is an admins.id, not a residents.id, so the
+// committee lookup must be skipped entirely for admins — looking it up would
+// always come back empty and 403 every portal announcement.
 
 router.post('/notices', authenticateJWT(['resident', 'admin']), async (req, res) => {
   try {
@@ -106,33 +122,67 @@ router.post('/notices', authenticateJWT(['resident', 'admin']), async (req, res)
     if (!parsed.success) {
       return error(res, 'Validation error', 400, parsed.error.issues);
     }
-    const { title, body } = parsed.data;
+    const { title, body, priority } = parsed.data;
     const user = req.user;
-    const admin = isAdmin(user);
+    const admin = isAdminUser(user);
 
-    // Residents are confined to discussion threads.
-    const category = admin ? (parsed.data.category || 'official') : 'discussion';
-    const isPinned = admin && category === 'official';
+    // This route serves two different posts with two different permissions
+    // (BRD role table): an ANNOUNCEMENT is official, pinned and committee-only,
+    // while a DISCUSSION is open to any owner or tenant. Gating both on
+    // committee membership would take discussion posting away from ordinary
+    // residents, who can do it today.
+    const category = parsed.data.category === 'discussion' ? 'discussion' : 'official';
 
     let authorResidentId = null;
-    let authorName = user.name || 'Management';
+    let authorName;
     let authorUnit = null;
-    let role = 'admin';
+    let role;
 
-    if (!admin) {
-      role = 'resident';
-      authorResidentId = user.sub;
+    // posted_by_role is NOT NULL (014_notice_board.sql) and its existing
+    // vocabulary is 'admin' | 'resident'. The shipped Basera app compares it to
+    // the literal 'admin' to render the "· RWA" badge, so those two values must
+    // survive verbatim; a committee member's label is the only new value, and
+    // it is additive — it simply doesn't match 'admin', which renders fine.
+    if (admin) {
+      authorName = user.name || 'Management';
+      role = 'admin';
+    } else {
+      // The actor's committee role comes from the database, never the token —
+      // a token issued before someone left the committee must not still work.
+      const actor = await queryOne(
+        `SELECT id, name, type AS resident_type, committee_role
+           FROM residents WHERE id = $1 AND community_id = $2 AND is_active = true`,
+        [user.sub, user.community_id]
+      );
+      const permitted = category === 'official'
+        ? canAnnounce({ ...actor, role: user.role })
+        : Boolean(actor) && !isGuard({ ...actor, role: user.role });
+      if (!permitted) {
+        return error(
+          res,
+          category === 'official'
+            ? 'Only committee members can post announcements'
+            : 'Only residents can start a discussion',
+          403
+        );
+      }
+      authorResidentId = actor.id;
       const unit = await queryOne('SELECT unit_number FROM units WHERE id = $1', [user.unit_id]);
-      authorName = user.name || 'Resident';
+      authorName = actor.name || user.name || 'Resident';
       authorUnit = unit?.unit_number || null;
+      // Never null: the column rejects it, and a plain resident starting a
+      // discussion has no committee label to fall back on.
+      role = roleLabel(actor.committee_role) || 'resident';
     }
+
+    const isPinned = category === 'official';
 
     const notice = await queryOne(
       `INSERT INTO notices
-         (community_id, category, title, body, author_resident_id, author_name, author_unit, posted_by_role, is_pinned)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         (community_id, category, title, body, author_resident_id, author_name, author_unit, posted_by_role, is_pinned, priority)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [user.community_id, category, title, body, authorResidentId, authorName, authorUnit, role, isPinned]
+      [user.community_id, category, title, body, authorResidentId, authorName, authorUnit, role, isPinned, priority]
     );
 
     // Push for official notices only (never for every discussion thread).
