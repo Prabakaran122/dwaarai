@@ -52,12 +52,21 @@ function TabBar({ active, onSelect }: { active: TabKey; onSelect: (key: TabKey) 
 function ResidentApp() {
   const [tab, setTab] = useState<TabKey>('home');
   const [approvalOverlay, setApprovalOverlay] = useState<{ id: string; data: any } | null>(null);
+  const [pendingIssueId, setPendingIssueId] = useState<string | null>(null);
+
+  const selectTab = (key: TabKey) => { setPendingIssueId(null); setTab(key); };
 
   useEffect(() => {
     registerForPushNotifications();
-    const cleanup = setupNotificationListeners((approvalId, data) => {
-      setApprovalOverlay({ id: approvalId, data });
-    });
+    const cleanup = setupNotificationListeners(
+      (approvalId, data) => {
+        setApprovalOverlay({ id: approvalId, data });
+      },
+      (issueId) => {
+        setTab('community');
+        setPendingIssueId(issueId);
+      }
+    );
     return cleanup;
   }, []);
 
@@ -67,13 +76,13 @@ function ResidentApp() {
       <View style={{ flex: 1, backgroundColor: colors.mist }}>
         {tab === 'home' && <HomeScreen onNavigate={setTab} />}
         {tab === 'myunit' && <MyUnitScreen onNavigate={setTab} />}
-        {tab === 'community' && <CommunityScreen />}
+        {tab === 'community' && <CommunityScreen initialIssueId={pendingIssueId ?? undefined} />}
         {tab === 'events' && <EventsScreen />}
         {tab === 'profile' && <ProfileTabScreen />}
       </View>
 
       {/* Tab Bar */}
-      <TabBar active={tab} onSelect={setTab} />
+      <TabBar active={tab} onSelect={selectTab} />
 
       {approvalOverlay && (
         <ApprovalScreen
