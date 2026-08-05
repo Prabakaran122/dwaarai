@@ -5,7 +5,6 @@ import { spacing, radius } from '../theme/spacing';
 import { font, type } from '../theme/typography';
 import { Input, Button } from '../components/ui';
 import * as api from '../api/client';
-import PollCreateScreen from './PollCreateScreen';
 import { pickIssuePhotos, MAX_ISSUE_PHOTOS } from '../lib/photos';
 
 type Kind = 'issue' | 'poll' | 'discussion' | 'announcement';
@@ -28,11 +27,13 @@ export default function ComposeSheet({
   isCommittee,
   onClose,
   onPosted,
+  onCreatePoll,
 }: {
   visible: boolean;
   isCommittee: boolean;
   onClose: () => void;
   onPosted: () => void;
+  onCreatePoll?: () => void;
 }) {
   const VISIBLE_KINDS = KINDS.filter((k) => isCommittee || !k.committeeOnly);
 
@@ -49,6 +50,19 @@ export default function ComposeSheet({
     setTitle(''); setBody(''); setCategory('general'); setPriority('normal'); setKind('issue'); setPhotos([]);
   };
   const close = () => { reset(); onClose(); };
+
+  // "Create poll" doesn't have its own in-sheet form — PollCreateScreen is a
+  // full-screen component with its own AppBar, and nesting a flex:1 screen
+  // inside this sheet's ScrollView collapses its height and stacks two
+  // dismiss affordances. Instead, close the sheet and ask the parent
+  // (CommunityScreen) to open it as its own screen, matching how
+  // IssueDetailScreen/NoticeBoardScreen are opened.
+  const openPollComposer = () => { close(); onCreatePoll?.(); };
+
+  const selectKind = (key: Kind) => {
+    if (key === 'poll') { openPollComposer(); return; }
+    setKind(key);
+  };
 
   const addPhotos = async () => {
     const picked = await pickIssuePhotos(photos.length);
@@ -84,42 +98,36 @@ export default function ComposeSheet({
         <View style={styles.sheet}>
           <View style={styles.tabs}>
             {VISIBLE_KINDS.map((k) => (
-              <Text key={k.key} onPress={() => setKind(k.key)} style={[styles.tab, kind === k.key && styles.tabActive]}>
+              <Text key={k.key} onPress={() => selectKind(k.key)} style={[styles.tab, kind === k.key && styles.tabActive]}>
                 {k.label}
               </Text>
             ))}
           </View>
           <ScrollView contentContainerStyle={styles.form}>
-            {kind === 'poll' ? (
-              <PollCreateScreen onCancel={() => setKind('issue')} onCreated={() => { reset(); onPosted(); }} />
-            ) : (
+            <Input label="Title" placeholder="Title" value={title} onChangeText={setTitle} />
+            <Input testID="compose-body" label="Details" placeholder="Write something…" value={body} onChangeText={setBody} multiline style={{ minHeight: 90, textAlignVertical: 'top' }} />
+            {kind === 'issue' ? (
               <>
-                <Input label="Title" placeholder="Title" value={title} onChangeText={setTitle} />
-                <Input testID="compose-body" label="Details" placeholder="Write something…" value={body} onChangeText={setBody} multiline style={{ minHeight: 90, textAlignVertical: 'top' }} />
-                {kind === 'issue' ? (
-                  <>
-                    <View style={styles.cats}>
-                      {ISSUE_CATS.map((c) => <Text key={c} onPress={() => setCategory(c)} style={[styles.cat, category === c && styles.catActive]}>{c}</Text>)}
-                    </View>
-                    <Text onPress={addPhotos} style={styles.addPhotos}>
-                      Add photos ({photos.length}/{MAX_ISSUE_PHOTOS} photos)
-                    </Text>
-                  </>
-                ) : null}
-                {kind === 'announcement' ? (
-                  <View style={styles.cats}>
-                    {PRIORITIES.map((p) => (
-                      <Text key={p.key} onPress={() => setPriority(p.key)} style={[styles.cat, priority === p.key && styles.catActive]}>
-                        {p.label}
-                      </Text>
-                    ))}
-                  </View>
-                ) : null}
-                {msg ? <Text style={styles.msg}>{msg}</Text> : null}
-                <Button title="Post" onPress={submit} loading={saving} style={styles.post} />
-                <Text onPress={close} style={styles.cancel}>Cancel</Text>
+                <View style={styles.cats}>
+                  {ISSUE_CATS.map((c) => <Text key={c} onPress={() => setCategory(c)} style={[styles.cat, category === c && styles.catActive]}>{c}</Text>)}
+                </View>
+                <Text onPress={addPhotos} style={styles.addPhotos}>
+                  Add photos ({photos.length}/{MAX_ISSUE_PHOTOS} photos)
+                </Text>
               </>
-            )}
+            ) : null}
+            {kind === 'announcement' ? (
+              <View style={styles.cats}>
+                {PRIORITIES.map((p) => (
+                  <Text key={p.key} onPress={() => setPriority(p.key)} style={[styles.cat, priority === p.key && styles.catActive]}>
+                    {p.label}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
+            {msg ? <Text style={styles.msg}>{msg}</Text> : null}
+            <Button title="Post" onPress={submit} loading={saving} style={styles.post} />
+            <Text onPress={close} style={styles.cancel}>Cancel</Text>
           </ScrollView>
         </View>
       </View>

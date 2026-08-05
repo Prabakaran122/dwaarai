@@ -13,6 +13,7 @@ import FilterTabs from '../components/FilterTabs';
 import ComposeSheet from './ComposeSheet';
 import IssueDetailScreen from './IssueDetailScreen';
 import NoticeBoardScreen from './NoticeBoardScreen';
+import PollCreateScreen from './PollCreateScreen';
 import { useCommunityStore } from '../store/communityStore';
 import type { FeedPost } from '../store/communityStore';
 
@@ -21,6 +22,7 @@ export default function CommunityScreen({ initialIssueId }: { initialIssueId?: s
   const [refreshing, setRefreshing] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [noticesOpen, setNoticesOpen] = useState(false);
+  const [pollCreateOpen, setPollCreateOpen] = useState(false);
   const [openIssueId, setOpenIssueId] = useState<string | null>(initialIssueId ?? null);
 
   const load = useCallback(async () => { await fetch(); }, [fetch]);
@@ -35,6 +37,14 @@ export default function CommunityScreen({ initialIssueId }: { initialIssueId?: s
     return <IssueDetailScreen issueId={openIssueId} onBack={() => { setOpenIssueId(null); load(); }} />;
   }
   if (noticesOpen) return <NoticeBoardScreen onClose={() => setNoticesOpen(false)} />;
+  if (pollCreateOpen) {
+    return (
+      <PollCreateScreen
+        onCancel={() => setPollCreateOpen(false)}
+        onCreated={() => { setPollCreateOpen(false); load(); }}
+      />
+    );
+  }
 
   const posts = visiblePosts();
 
@@ -82,6 +92,7 @@ export default function CommunityScreen({ initialIssueId }: { initialIssueId?: s
         isCommittee={Boolean(me?.isCommittee)}
         onClose={() => setComposeOpen(false)}
         onPosted={() => { setComposeOpen(false); load(); }}
+        onCreatePoll={() => { setComposeOpen(false); setPollCreateOpen(true); }}
       />
     </View>
   );

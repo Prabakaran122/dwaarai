@@ -16,7 +16,8 @@ export default function PollCard({
   onClose?: (pollId: string) => void;
 }) {
   const voted = !!poll.myOptionId || poll.status !== 'open';
-  const total = poll.totalVotes ?? poll.options.reduce((s, o) => s + (o.votes ?? 0), 0);
+  const resultsHidden = poll.totalVotes === null;
+  const total = poll.totalVotes ?? 0;
 
   const statusLine = poll.status === 'closed'
     ? 'Closed'
@@ -30,28 +31,32 @@ export default function PollCard({
       <Text style={type.micro}>{poll.authorName} · {total} vote{total === 1 ? '' : 's'}</Text>
       {statusLine ? <Text style={styles.statusLine}>{statusLine}</Text> : null}
       {poll.targetBlockId ? <Text style={styles.blockCaption}>Block-only</Text> : null}
-      <View style={styles.options}>
-        {poll.options.map((o) => {
-          const pct = total > 0 ? Math.round(((o.votes ?? 0) / total) * 100) : 0;
-          const mine = poll.myOptionId === o.id;
-          if (voted) {
-            return (
-              <View key={o.id} style={styles.resultRow}>
-                <View style={[styles.bar, { width: `${pct}%` } as any, mine && styles.barMine]} />
-                <View style={styles.resultLabel}>
-                  <Text style={[type.body, mine && styles.mineText]}>{o.label}</Text>
-                  <Text style={[type.caption, mine && styles.mineText]}>{pct}%</Text>
+      {voted && resultsHidden ? (
+        <Text style={type.micro}>Results hidden until the poll closes</Text>
+      ) : (
+        <View style={styles.options}>
+          {poll.options.map((o) => {
+            const pct = Math.round(((o.votes ?? 0) / (poll.totalVotes || 1)) * 100);
+            const mine = poll.myOptionId === o.id;
+            if (voted) {
+              return (
+                <View key={o.id} style={styles.resultRow}>
+                  <View style={[styles.bar, { width: `${pct}%` } as any, mine && styles.barMine]} />
+                  <View style={styles.resultLabel}>
+                    <Text style={[type.body, mine && styles.mineText]}>{o.label}</Text>
+                    <Text style={[type.caption, mine && styles.mineText]}>{pct}%</Text>
+                  </View>
                 </View>
-              </View>
+              );
+            }
+            return (
+              <Pressable key={o.id} style={styles.voteOption} onPress={() => onVote(poll.id, o.id)}>
+                <Text style={styles.voteLabel}>{o.label}</Text>
+              </Pressable>
             );
-          }
-          return (
-            <Pressable key={o.id} style={styles.voteOption} onPress={() => onVote(poll.id, o.id)}>
-              <Text style={styles.voteLabel}>{o.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
+          })}
+        </View>
+      )}
       {poll.canManage && poll.status === 'open' && onClose ? (
         <Pressable onPress={() => onClose(poll.id)}>
           <Text style={styles.closeAction}>Close poll</Text>
