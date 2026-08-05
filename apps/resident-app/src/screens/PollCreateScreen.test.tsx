@@ -30,6 +30,17 @@ describe('canSubmitPoll', () => {
     expect(canSubmitPoll({ ...base, options: ['1', '2', '3', '4', '5', '6', '7'] })).toBe(false);
   });
 
+  // The server caps these (createPollSchema in polls.js). Without matching
+  // caps the client would send a payload it knows will 400, with nothing on
+  // screen explaining the rejection.
+  it('rejects text longer than the server accepts', () => {
+    expect(canSubmitPoll({ ...base, question: 'q'.repeat(281) })).toBe(false);
+    expect(canSubmitPoll({ ...base, question: 'q'.repeat(280) })).toBe(true);
+    expect(canSubmitPoll({ ...base, options: ['ok', 'o'.repeat(121)] })).toBe(false);
+    expect(canSubmitPoll({ ...base, topic: 't'.repeat(81) })).toBe(false);
+    expect(canSubmitPoll({ ...base, topic: 't'.repeat(80) })).toBe(true);
+  });
+
   it('rejects a block-audience poll with no block chosen', () => {
     expect(canSubmitPoll({ ...base, audience: 'block', targetBlockId: null })).toBe(false);
     expect(canSubmitPoll({ ...base, audience: 'block', targetBlockId: 'b1' })).toBe(true);

@@ -10,7 +10,17 @@ import type { PollAudience } from '../api/client';
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 6;
 
+// Mirrors createPollSchema in services/api-gateway/src/routes/polls.js. Applied
+// as maxLength on the inputs so an over-long paste is simply not accepted,
+// rather than being sent and coming back as a 400 with nothing on screen to
+// explain it. Also checked in canSubmitPoll so the pure function tells the
+// whole truth about what the server accepts.
+const MAX_TOPIC = 80;
+const MAX_QUESTION = 280;
+const MAX_OPTION = 120;
+
 interface Draft {
+  topic?: string;
   question: string;
   options: string[];
   audience: PollAudience;
@@ -25,9 +35,11 @@ interface Draft {
  */
 export function canSubmitPoll(draft: Draft): boolean {
   const filled = draft.options.map((o) => o.trim()).filter(Boolean);
-  if (!draft.question.trim()) return false;
+  if (!draft.question.trim() || draft.question.trim().length > MAX_QUESTION) return false;
   if (filled.length < MIN_OPTIONS || draft.options.length > MAX_OPTIONS) return false;
   if (filled.length !== draft.options.length) return false;
+  if (filled.some((o) => o.length > MAX_OPTION)) return false;
+  if ((draft.topic ?? '').trim().length > MAX_TOPIC) return false;
   if (draft.audience === 'block' && !draft.targetBlockId) return false;
   return true;
 }
@@ -56,7 +68,7 @@ export default function PollCreateScreen({ onCancel, onCreated }: { onCancel: ()
       .catch(() => setBlocks([]));
   }, []);
 
-  const draft: Draft = { question, options, audience, targetBlockId };
+  const draft: Draft = { topic, question, options, audience, targetBlockId };
   const valid = canSubmitPoll(draft);
 
   const setOption = (i: number, value: string) =>
@@ -96,9 +108,9 @@ export default function PollCreateScreen({ onCancel, onCreated }: { onCancel: ()
       <ScrollView contentContainerStyle={styles.scroll}>
         <Card>
           <Text style={type.caption}>Topic (optional)</Text>
-          <TextInput style={styles.input} placeholder="e.g. Amenities" placeholderTextColor={colors.textTertiary} value={topic} onChangeText={setTopic} />
+          <TextInput style={styles.input} placeholder="e.g. Amenities" placeholderTextColor={colors.textTertiary} value={topic} onChangeText={setTopic} maxLength={MAX_TOPIC} />
           <Text style={type.caption}>Question</Text>
-          <TextInput style={styles.input} placeholder="Ask a question" placeholderTextColor={colors.textTertiary} value={question} onChangeText={setQuestion} />
+          <TextInput style={styles.input} placeholder="Ask a question" placeholderTextColor={colors.textTertiary} value={question} onChangeText={setQuestion} maxLength={MAX_QUESTION} />
         </Card>
 
         <Card style={styles.block}>
@@ -111,6 +123,7 @@ export default function PollCreateScreen({ onCancel, onCreated }: { onCancel: ()
                 placeholderTextColor={colors.textTertiary}
                 value={value}
                 onChangeText={(t) => setOption(i, t)}
+                maxLength={MAX_OPTION}
               />
               {options.length > MIN_OPTIONS && (
                 <Pressable onPress={() => removeOption(i)}><Text style={type.micro}>Remove</Text></Pressable>
