@@ -64,6 +64,18 @@ describe('committee capability is computed fresh, not read from the token', () =
     expect(json.data).toHaveProperty('posts');
   });
 
+  // The feed's contract is that a failing source empties one section rather
+  // than 500ing the whole thing. The capability lookup must obey it too.
+  it('still serves the feed when the capability lookup itself fails', async () => {
+    queryOne
+      .mockResolvedValueOnce({ block_id: null })
+      .mockRejectedValueOnce(new Error('db gone'));
+    const { status, json } = await get('/api/v1/community/feed', resident);
+    expect(status).toBe(200);
+    expect(json.data).toHaveProperty('posts');
+    expect(json.data.me).toEqual({ isCommittee: false, committeeRole: null });
+  });
+
   it('exposes canChangeStatus on an issue thread for a committee member', async () => {
     queryOne
       .mockResolvedValueOnce({ id: 'i1', title: 'Lift', body: 'stuck', category: 'maintenance', status: 'open', author_name: 'Asha', author_unit: 'A-704', reference: 'IQ-2026-001', assignee_name: null, resolved_at: null, created_at: new Date().toISOString() })

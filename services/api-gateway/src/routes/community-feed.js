@@ -226,7 +226,18 @@ router.get('/community/feed', authenticateJWT(['resident', 'admin']), async (req
 
   // Computed after the feed sections so it cannot shift their positional
   // query order (community.test.js and community-feed.test.js both assert it).
-  const me = await resolveCaller(queryOne, req.user);
+  //
+  // Degrades like every other section rather than throwing: this route's whole
+  // contract is that a failing source empties one part of the feed instead of
+  // 500ing all of it, and an unguarded await here would have broken that.
+  // Failing closed is safe — hiding a committee control is presentation, and
+  // the server authorises every write regardless of what the client renders.
+  let me = { isCommittee: false, committeeRole: null };
+  try {
+    me = await resolveCaller(queryOne, req.user);
+  } catch (err) {
+    console.error('[community/feed] caller capability lookup failed:', err?.message);
+  }
 
   return success(res, {
     posts,
