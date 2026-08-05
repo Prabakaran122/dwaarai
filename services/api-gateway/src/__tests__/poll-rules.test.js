@@ -5,11 +5,14 @@
  *
  * Mock call-order notes:
  *
- * POST /polls (validation happens before any DB call except the optional
- * target-block existence check):
- *   queryOne 1: (only when targetBlockId given) SELECT block FROM blocks
- *   queryOne 2: INSERT INTO polls ... RETURNING *
- *   queryOne 3..N: INSERT INTO poll_options ... RETURNING * (one per option)
+ * POST /polls (committee/admin gate runs before validation; for a non-admin
+ * caller that gate itself is a queryOne round trip — resolveCaller's fresh
+ * `residents.committee_role` lookup, since committee standing is never read
+ * from the JWT):
+ *   queryOne 1: (non-admin only) SELECT committee_role, type FROM residents (resolveCaller)
+ *   queryOne 2: (only when targetBlockId given) SELECT block FROM blocks
+ *   queryOne 3: INSERT INTO polls ... RETURNING *
+ *   queryOne 4..N: INSERT INTO poll_options ... RETURNING * (one per option)
  *
  * POST /polls/:id/vote:
  *   queryOne 1: combined poll + voter lookup — a single LEFT JOIN query
@@ -195,52 +198,69 @@ describe('POST /polls validation', () => {
     expect(status).toBe(403);
   });
 
+  // canManagePolls now reads committee standing fresh from `residents`
+  // (never from the JWT's `is_committee`), so every authC request below
+  // spends queryOne call 1 on that lookup before it ever reaches
+  // validation. Queue a committee row so authC clears the manage gate and
+  // falls through to the validation error under test — otherwise these
+  // would 403 before the validation code ever runs.
+  function mockCommitteeLookup() {
+    queryOne.mockResolvedValueOnce({ committee_role: 'secretary', resident_type: 'owner' });
+  }
+
   it('rejects a single option', async () => {
+    mockCommitteeLookup();
     const { status } = await request('POST', '/api/v1/polls', {
       headers: authC,
       body: { question: 'Q', options: ['only-one'], closesAt: future() },
     });
     expect(status).toBe(400);
-    expect(queryOne).not.toHaveBeenCalled();
+    // Only the committee-standing lookup ran — no poll/option INSERT was reached.
+    expect(queryOne).toHaveBeenCalledTimes(1);
   });
 
   it('rejects seven options', async () => {
+    mockCommitteeLookup();
     const { status } = await request('POST', '/api/v1/polls', {
       headers: authC,
       body: { question: 'Q', options: ['a', 'b', 'c', 'd', 'e', 'f', 'g'], closesAt: future() },
     });
     expect(status).toBe(400);
-    expect(queryOne).not.toHaveBeenCalled();
+    expect(queryOne).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a past closesAt', async () => {
+    mockCommitteeLookup();
     const { status } = await request('POST', '/api/v1/polls', {
       headers: authC,
       body: { question: 'Q', options: ['a', 'b'], closesAt: past() },
     });
     expect(status).toBe(422);
-    expect(queryOne).not.toHaveBeenCalled();
+    expect(queryOne).toHaveBeenCalledTimes(1);
   });
 
   it('rejects an invalid audience', async () => {
+    mockCommitteeLookup();
     const { status } = await request('POST', '/api/v1/polls', {
       headers: authC,
       body: { question: 'Q', options: ['a', 'b'], closesAt: future(), audience: 'everyone' },
     });
     expect(status).toBe(400);
-    expect(queryOne).not.toHaveBeenCalled();
+    expect(queryOne).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a block-audience poll with no target_block_id (delta 1 — dead-poll guard)', async () => {
+    mockCommitteeLookup();
     const { status } = await request('POST', '/api/v1/polls', {
       headers: authC,
       body: { question: 'Q', options: ['a', 'b'], closesAt: future(), audience: 'block' },
     });
     expect(status).toBe(422);
-    expect(queryOne).not.toHaveBeenCalled();
+    expect(queryOne).toHaveBeenCalledTimes(1);
   });
 
   it('accepts a valid poll and persists topic/audience/one_vote_per_unit/is_anonymous/show_live_results', async () => {
+    mockCommitteeLookup(); // queryOne call 1: committee-standing lookup
     queryOne
       .mockResolvedValueOnce({
         id: 'p1',
@@ -255,7 +275,7 @@ describe('POST /polls validation', () => {
         one_vote_per_unit: false,
         is_anonymous: true,
         show_live_results: false,
-      }) // INSERT polls
+      }) // queryOne call 2: INSERT polls
       .mockResolvedValueOnce({ id: 'o1', label: 'Blue', position: 0 })
       .mockResolvedValueOnce({ id: 'o2', label: 'Green', position: 1 });
 
@@ -279,8 +299,8 @@ describe('POST /polls validation', () => {
     expect(json.data.isAnonymous).toBe(true);
     expect(json.data.showLiveResults).toBe(false);
 
-    const insertSql = queryOne.mock.calls[0][0];
-    const insertParams = queryOne.mock.calls[0][1];
+    const insertSql = queryOne.mock.calls[1][0];
+    const insertParams = queryOne.mock.calls[1][1];
     expect(insertSql).toMatch(/INSERT INTO polls/);
     expect(insertParams).toContain('owners');
     expect(insertParams).toContain(false); // one_vote_per_unit

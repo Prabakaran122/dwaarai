@@ -19,6 +19,10 @@
  *   2. queryRows → polls list (audience-filtered)
  *   3. queryRows → options with vote counts (skipped if no polls)
  *   4. queryRows → caller's votes by unit_id (skipped if no polls)
+ *   5. queryOne  → (non-admin only) canManagePolls' resolveCaller lookup
+ *      (SELECT committee_role, type FROM residents ...), run AFTER the
+ *      queryRows calls above so it can never shift their positional order —
+ *      this is queryOne's 2nd call overall, not interleaved with queryRows.
  *
  * GET /community/feed runs Promise.allSettled([announcements, issues, discussions, polls])
  * in parallel. Each async section hits its first await in declaration order, so the
@@ -137,6 +141,19 @@ const adminToken = generateTestToken({
 const authR = { Authorization: `Bearer ${residentToken}` };
 const authC = { Authorization: `Bearer ${committeeToken}` };
 const authA = { Authorization: `Bearer ${adminToken}` };
+
+// Deliberately mismatched: is_committee:false in the JWT, used with a fresh
+// residents.committee_role lookup mocked to a real role — proves
+// canManagePolls reads the DB, not the token.
+const freshCommitteeToken = generateTestToken({
+  sub: 'c2',
+  role: 'resident',
+  community_id: 'c1',
+  unit_id: 'u3',
+  name: 'Newly Appointed',
+  is_committee: false,
+});
+const authFreshCommittee = { Authorization: `Bearer ${freshCommitteeToken}` };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /issues
@@ -748,7 +765,12 @@ describe('GET /polls', () => {
       author_name: 'RWA',
       created_at: new Date().toISOString(),
     };
-    queryOne.mockResolvedValueOnce({ block_id: 'blk1' });
+    // queryOne 1: callerBlock lookup. queryOne 2: canManagePolls' resolveCaller
+    // lookup, run AFTER the queryRows calls (see the route's comment) but still
+    // queryOne's second call overall — a committee row so canManage comes back true.
+    queryOne
+      .mockResolvedValueOnce({ block_id: 'blk1' })
+      .mockResolvedValueOnce({ committee_role: 'secretary', resident_type: 'owner' });
     queryRows
       .mockResolvedValueOnce([pollRow])
       .mockResolvedValueOnce([
@@ -794,16 +816,31 @@ describe('GET /polls', () => {
 // POST /polls
 // ─────────────────────────────────────────────────────────────────────────────
 // Plain resident → 403; committee → 201.
+//
+// canManagePolls now checks committee standing fresh (resolveCaller reading
+// residents.committee_role), never the JWT's is_committee claim, so every
+// authC request below spends queryOne call 1 on that lookup before anything
+// else — a stale JWT that still said `is_committee: true` must not keep
+// working after the resident is removed from the committee, and a freshly
+// appointed member must not have to log out and back in to use it.
+//
 // New call order for committee create (no targetBlockId):
-//   queryOne 1: INSERT poll RETURNING
-//   queryOne 2: INSERT option 0 RETURNING
-//   queryOne 3: INSERT option 1 RETURNING
-// With targetBlockId:
-//   queryOne 1: SELECT id FROM blocks WHERE id=$1 AND community_id=$2
+//   queryOne 1: SELECT committee_role, type FROM residents (resolveCaller)
 //   queryOne 2: INSERT poll RETURNING
-//   queryOne 3+: INSERT options
+//   queryOne 3: INSERT option 0 RETURNING
+//   queryOne 4: INSERT option 1 RETURNING
+// With targetBlockId:
+//   queryOne 1: SELECT committee_role, type FROM residents (resolveCaller)
+//   queryOne 2: SELECT id FROM blocks WHERE id=$1 AND community_id=$2
+//   queryOne 3: INSERT poll RETURNING
+//   queryOne 4+: INSERT options
+// Admin tokens skip the resolveCaller lookup entirely (isAdmin fast path).
 
 describe('POST /polls', () => {
+  function mockCommitteeLookup() {
+    queryOne.mockResolvedValueOnce({ committee_role: 'secretary', resident_type: 'owner' });
+  }
+
   it('returns 403 for a plain resident (no is_committee)', async () => {
     const { status, json } = await request('POST', '/api/v1/polls', {
       headers: authR,
@@ -814,6 +851,7 @@ describe('POST /polls', () => {
   });
 
   it('rejects fewer than 2 options with 400', async () => {
+    mockCommitteeLookup();
     const { status, json } = await request('POST', '/api/v1/polls', {
       headers: authC,
       body: { question: 'Pick one?', options: ['Only one'] },
@@ -823,6 +861,7 @@ describe('POST /polls', () => {
   });
 
   it('rejects more than 6 options with 400', async () => {
+    mockCommitteeLookup();
     const { status } = await request('POST', '/api/v1/polls', {
       headers: authC,
       body: { question: 'Too many?', options: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] },
@@ -831,6 +870,7 @@ describe('POST /polls', () => {
   });
 
   it('rejects missing question with 400', async () => {
+    mockCommitteeLookup();
     const { status } = await request('POST', '/api/v1/polls', {
       headers: authC,
       body: { options: ['Yes', 'No'] },
@@ -839,6 +879,7 @@ describe('POST /polls', () => {
   });
 
   it('rejects bad closesAt with 400', async () => {
+    mockCommitteeLookup();
     const { status, json } = await request('POST', '/api/v1/polls', {
       headers: authC,
       body: { question: 'Valid?', options: ['Yes', 'No'], closesAt: 'not-a-date' },
@@ -848,7 +889,9 @@ describe('POST /polls', () => {
   });
 
   it('rejects targetBlockId not in community with 400', async () => {
-    // queryOne 1: block lookup returns null (block not found)
+    // queryOne 1: committee-standing lookup (resolveCaller)
+    // queryOne 2: block lookup returns null (block not found)
+    mockCommitteeLookup();
     queryOne.mockResolvedValueOnce(null);
 
     const { status, json } = await request('POST', '/api/v1/polls', {
@@ -865,9 +908,11 @@ describe('POST /polls', () => {
 
   it('creates poll for committee member and returns 201 (myOptionId null, votes 0)', async () => {
     // Call order (no targetBlockId):
-    //  1. queryOne → INSERT poll RETURNING
-    //  2. queryOne → INSERT option 0 RETURNING
-    //  3. queryOne → INSERT option 1 RETURNING
+    //  1. queryOne → committee-standing lookup (resolveCaller)
+    //  2. queryOne → INSERT poll RETURNING
+    //  3. queryOne → INSERT option 0 RETURNING
+    //  4. queryOne → INSERT option 1 RETURNING
+    mockCommitteeLookup();
     queryOne
       .mockResolvedValueOnce({
         id: 'p-new',
@@ -899,10 +944,12 @@ describe('POST /polls', () => {
   it('creates poll with valid targetBlockId for committee member', async () => {
     const blockId = '00000000-0000-0000-0000-000000000001';
     // Call order (with targetBlockId):
-    //  1. queryOne → block lookup (found)
-    //  2. queryOne → INSERT poll RETURNING
-    //  3. queryOne → INSERT option 0
-    //  4. queryOne → INSERT option 1
+    //  1. queryOne → committee-standing lookup (resolveCaller)
+    //  2. queryOne → block lookup (found)
+    //  3. queryOne → INSERT poll RETURNING
+    //  4. queryOne → INSERT option 0
+    //  5. queryOne → INSERT option 1
+    mockCommitteeLookup();
     queryOne
       .mockResolvedValueOnce({ id: blockId })                              // block found
       .mockResolvedValueOnce({
@@ -945,6 +992,51 @@ describe('POST /polls', () => {
       body: { question: 'Admin poll?', options: ['Yes', 'No'] },
     });
     expect(status).toBe(201);
+  });
+
+  // The defect this fix closes: committee standing must be read fresh from
+  // residents.committee_role, never trusted from the JWT's is_committee
+  // claim — that claim is only ever as fresh as the caller's last login.
+
+  it('a resident whose JWT says is_committee:false but who holds a fresh committee_role CAN create a poll', async () => {
+    // freshCommitteeToken (declared below the token block) carries
+    // is_committee: false — old-token behaviour would 403 here. The residents
+    // lookup below is what canManagePolls now goes by instead.
+    queryOne
+      .mockResolvedValueOnce({ committee_role: 'treasurer', resident_type: 'owner' }) // resolveCaller
+      .mockResolvedValueOnce({
+        id: 'p-fresh',
+        question: 'Newly appointed?',
+        status: 'open',
+        closes_at: null,
+        target_block_id: null,
+        author_name: 'Newly Appointed',
+        created_at: new Date().toISOString(),
+      })
+      .mockResolvedValueOnce({ id: 'o-1', label: 'Yes', position: 0 })
+      .mockResolvedValueOnce({ id: 'o-2', label: 'No', position: 1 });
+
+    const { status, json } = await request('POST', '/api/v1/polls', {
+      headers: authFreshCommittee,
+      body: { question: 'Newly appointed?', options: ['Yes', 'No'] },
+    });
+    expect(status).toBe(201);
+    expect(json.data.canManage).toBe(true);
+  });
+
+  it('a resident whose JWT says is_committee:true but who has no committee_role in the DB CANNOT create a poll', async () => {
+    // committeeToken (authC) carries is_committee: true, but the residents
+    // lookup below comes back with no committee_role — e.g. removed from the
+    // committee since the token was minted. Old behaviour trusted the stale
+    // JWT claim and would let this through with a 201.
+    queryOne.mockResolvedValueOnce({ committee_role: null, resident_type: 'owner' }); // resolveCaller
+
+    const { status, json } = await request('POST', '/api/v1/polls', {
+      headers: authC,
+      body: { question: 'Should this work?', options: ['Yes', 'No'] },
+    });
+    expect(status).toBe(403);
+    expect(json.error.message).toMatch(/committee/i);
   });
 });
 
@@ -1047,9 +1139,11 @@ describe('POST /polls/:id/vote', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /polls/:id/close
 // ─────────────────────────────────────────────────────────────────────────────
-// Call order:
-//   1. queryOne → poll existence check (SELECT id FROM polls WHERE id=$1 AND community_id=$2)
-//   2. queryOne → UPDATE polls SET status='closed' WHERE id=$1
+// Call order for a non-admin (committee) caller:
+//   1. queryOne → committee-standing lookup (resolveCaller, SELECT committee_role, type FROM residents)
+//   2. queryOne → poll existence check (SELECT id FROM polls WHERE id=$1 AND community_id=$2)
+//   3. queryOne → UPDATE polls SET status='closed' WHERE id=$1
+// Admin tokens skip call 1 (isAdmin fast path).
 
 describe('POST /polls/:id/close', () => {
   it('returns 403 for a plain resident', async () => {
@@ -1061,7 +1155,9 @@ describe('POST /polls/:id/close', () => {
   });
 
   it('returns 404 when poll not found', async () => {
-    queryOne.mockResolvedValueOnce(null);
+    queryOne
+      .mockResolvedValueOnce({ committee_role: 'secretary', resident_type: 'owner' }) // resolveCaller
+      .mockResolvedValueOnce(null); // poll lookup
     const { status } = await request('POST', '/api/v1/polls/no-such/close', {
       headers: authC,
     });
@@ -1070,9 +1166,11 @@ describe('POST /polls/:id/close', () => {
 
   it('returns { id, status: "closed" } for committee member', async () => {
     // Call order:
-    //  1. queryOne → poll found
-    //  2. queryOne → UPDATE (returns null — no RETURNING needed)
+    //  1. queryOne → committee-standing lookup (resolveCaller)
+    //  2. queryOne → poll found
+    //  3. queryOne → UPDATE (returns null — no RETURNING needed)
     queryOne
+      .mockResolvedValueOnce({ committee_role: 'secretary', resident_type: 'owner' })
       .mockResolvedValueOnce({ id: 'p1' })
       .mockResolvedValueOnce(null); // UPDATE doesn't need a return value
 
@@ -1082,6 +1180,19 @@ describe('POST /polls/:id/close', () => {
     expect(status).toBe(200);
     expect(json.data.id).toBe('p1');
     expect(json.data.status).toBe('closed');
+  });
+
+  it('a committee token whose committee_role has since been revoked in the DB gets 403 on close', async () => {
+    // committeeToken (authC) still carries is_committee: true from login, but
+    // the fresh residents lookup shows no committee_role — proves the close
+    // route also stopped trusting the JWT claim.
+    queryOne.mockResolvedValueOnce({ committee_role: null, resident_type: 'owner' }); // resolveCaller
+
+    const { status, json } = await request('POST', '/api/v1/polls/p1/close', {
+      headers: authC,
+    });
+    expect(status).toBe(403);
+    expect(json.error.message).toMatch(/committee/i);
   });
 
   it('allows admin to close a poll', async () => {

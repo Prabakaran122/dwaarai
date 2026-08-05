@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { authenticateJWT } from '../middleware/auth.js';
+import { resolveCaller } from '../lib/committee.js';
 
 const router = Router();
 
@@ -12,9 +13,20 @@ function isAdmin(user) {
   return user.role === 'admin' || user.role === 'community_admin' || user.role === 'super_admin';
 }
 
-/** Committee members OR admins may create/close polls. */
-function canManagePolls(user) {
-  return user.is_committee === true || isAdmin(user);
+/**
+ * Committee members OR admins may create/close polls.
+ *
+ * Admins take a fast path with no DB round trip — an admin token's `sub` is
+ * an admins.id, which would never match a residents row anyway. Everyone
+ * else is checked fresh against `residents.committee_role` via
+ * resolveCaller, never from `user.is_committee` on the JWT: that claim is
+ * minted at login, so a resident appointed to (or removed from) the
+ * committee afterwards would keep the stale answer until they log in again.
+ */
+async function canManagePolls(user) {
+  if (isAdmin(user)) return true;
+  const caller = await resolveCaller(queryOne, user);
+  return caller.isCommittee;
 }
 
 // ── Audience rules (BRD poll rules) ─────────────────────────────────────────
@@ -117,7 +129,6 @@ export function assemblePolls(polls, options, myVotes, canManage = false) {
 router.get('/polls', authenticateJWT(['resident', 'admin']), async (req, res) => {
   try {
     const { community_id, unit_id } = req.user;
-    const manage = canManagePolls(req.user);
 
     // Resolve the caller's block_id (needed for audience filter)
     // queryOne call 1: SELECT block_id FROM units WHERE id=$1
@@ -159,6 +170,11 @@ router.get('/polls', authenticateJWT(['resident', 'admin']), async (req, res) =>
       [pollIds, unit_id]
     );
 
+    // Computed after the queries above so it cannot shift their positional
+    // mock/call order (community.test.js and poll-rules.test.js both assert
+    // it) — the same reasoning community-feed.js's `me` lookup documents.
+    const manage = await canManagePolls(req.user);
+
     return success(res, assemblePolls(polls, options, myVotes, manage));
   } catch (err) {
     console.error('GET /polls error:', err);
@@ -174,7 +190,7 @@ router.post('/polls', authenticateJWT(['resident', 'admin']), async (req, res) =
     // Committee / admin gate — plain residents (and guards, who never reach
     // this role check because authenticateJWT already rejects a 'guard' role
     // token above) are blocked here.
-    if (!canManagePolls(req.user)) {
+    if (!(await canManagePolls(req.user))) {
       return error(res, 'Only committee members can create polls', 403);
     }
 
@@ -374,7 +390,7 @@ router.post('/polls/:id/vote', authenticateJWT(['resident', 'admin']), async (re
 
 router.post('/polls/:id/close', authenticateJWT(['resident', 'admin']), async (req, res) => {
   try {
-    if (!canManagePolls(req.user)) {
+    if (!(await canManagePolls(req.user))) {
       return error(res, 'Only committee members can close polls', 403);
     }
 
