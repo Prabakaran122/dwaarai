@@ -16,7 +16,7 @@ export default function PollCard({
   onClose?: (pollId: string) => void;
 }) {
   const voted = !!poll.myOptionId || poll.status !== 'open';
-  const total = poll.totalVotes || poll.options.reduce((s, o) => s + o.votes, 0);
+  const total = poll.totalVotes ?? poll.options.reduce((s, o) => s + (o.votes ?? 0), 0);
 
   const statusLine = poll.status === 'closed'
     ? 'Closed'
@@ -32,7 +32,7 @@ export default function PollCard({
       {poll.targetBlockId ? <Text style={styles.blockCaption}>Block-only</Text> : null}
       <View style={styles.options}>
         {poll.options.map((o) => {
-          const pct = total > 0 ? Math.round((o.votes / total) * 100) : 0;
+          const pct = total > 0 ? Math.round(((o.votes ?? 0) / total) * 100) : 0;
           const mine = poll.myOptionId === o.id;
           if (voted) {
             return (
