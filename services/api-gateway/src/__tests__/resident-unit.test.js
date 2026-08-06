@@ -39,7 +39,8 @@ describe('GET /resident/unit', () => {
         { id: 'v1', plate_display: 'KA01AB1234', plate: 'KA01AB1234', make: 'Maruti', model: 'Swift', type: 'car', fastag_linked: true },
       ])
       .mockResolvedValueOnce([{ id: 'p1', name: 'Bruno', species: 'dog', breed: 'Labrador' }])
-      .mockResolvedValueOnce([{ base_amount: 4000, penalty_amount: 500 }]);
+      .mockResolvedValueOnce([{ base_amount: 4000, penalty_amount: 500 }])
+      .mockResolvedValueOnce([{ id: 'd1', title: 'Sale Deed', category: 'ownership' }]);
     const { status, json } = await request('GET', '/api/v1/resident/unit', { headers: { Authorization: `Bearer ${resident}` } });
     expect(status).toBe(200);
     expect(json.data.unit).toEqual({ unitNumber: 'A-204', floor: 2, wing: 'A', ownershipType: 'owner', communityName: 'Green Valley', verified: true });
@@ -48,6 +49,10 @@ describe('GET /resident/unit', () => {
     expect(json.data.members[1].faceEnrolled).toBe(false);
     expect(json.data.vehicles[0]).toEqual({ id: 'v1', plate: 'KA01AB1234', makeModel: 'Maruti Swift', type: 'car', fastagLinked: true });
     expect(json.data.pets[0]).toEqual({ id: 'p1', name: 'Bruno', species: 'dog', breed: 'Labrador' });
+    // The document tile only needs enough to identify and open a document —
+    // file_path is a server filesystem path and must never reach the client.
+    expect(json.data.documents).toEqual([{ id: 'd1', title: 'Sale Deed', category: 'ownership' }]);
+    expect(JSON.stringify(json.data.documents)).not.toMatch(/file_path|filePath/);
     expect(json.data.dues).toEqual({ outstanding: 4500, pendingCount: 1 });
   });
 });

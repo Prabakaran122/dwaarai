@@ -2,7 +2,7 @@
   "expo": {
     "name": "Nazar",
     "slug": "communitygate-guard",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "orientation": "portrait",
     "platforms": [
       "android",
@@ -10,7 +10,7 @@
     ],
     "android": {
       "package": "com.communitygate.guard",
-      "versionCode": 2
+      "versionCode": 3
     },
     "extra": {
       "eas": {

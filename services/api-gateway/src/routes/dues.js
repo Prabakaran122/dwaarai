@@ -6,6 +6,7 @@ import { success, error } from '../middleware/response.js';
 import { authenticateJWT } from '../middleware/auth.js';
 import { createOrder, verifyWebhookSignature, getKeyId, isLiveMode } from '../lib/razorpay.js';
 import { sendNotification } from '../lib/fcm.js';
+import { sendTransactionalSMS } from '../lib/msg91.js';
 
 const router = Router();
 
@@ -288,6 +289,82 @@ router.post('/payments/webhook', async (req, res) => {
             }).catch((e) => console.error('[Push] payment confirm failed:', e.message));
           }
         }
+      } else {
+        // Not a dues payment. Events module (stalls/donations) share one
+        // payment_orders ledger (migration 041) instead of due_payments.
+        //
+        // Idempotency (gateways retry deliveries): settle with a conditional
+        // UPDATE — WHERE status = 'created' — and act on the row count. A
+        // "read the row, then decide" approach races the retry: two
+        // concurrent deliveries could both read status='created' and both
+        // proceed to settle. The conditional UPDATE lets Postgres itself be
+        // the single arbiter — only the delivery that actually flips the row
+        // gets rows back, so a replay naturally finds zero rows and no-ops.
+        const orderUpdate = await query(
+          `UPDATE payment_orders
+              SET status = 'paid', gateway_payment_id = $1, paid_at = NOW()
+            WHERE gateway_order_id = $2 AND status = 'created'
+            RETURNING id, purpose, subject_id`,
+          [paymentId, orderId]
+        );
+
+        if (orderUpdate.rows.length) {
+          const order = orderUpdate.rows[0];
+          if (order.purpose === 'stall') {
+            // Only a 'reserved' booking may be promoted — never re-stamp
+            // booked_at on a replay.
+            const stallUpdate = await query(
+              `UPDATE stall_bookings
+                  SET status = 'booked', booked_at = NOW()
+                WHERE id = $1 AND status = 'reserved'`,
+              [order.subject_id]
+            );
+
+            // FR-GST-04 (P0): guest bookers get an SMS receipt with stall,
+            // event, date, and amount paid. Hang this off rowCount, not the
+            // orderUpdate branch alone — a replay finds this UPDATE matching
+            // zero rows (status already 'booked'), so it must send nothing.
+            // Resident bookers get a push elsewhere, not this SMS.
+            if (stallUpdate.rowCount > 0) {
+              try {
+                const booking = await queryOne(
+                  `SELECT sb.booker_kind, sb.guest_mobile, es.code AS stall_code,
+                          e.title AS event_title, e.starts_at AS event_date
+                     FROM stall_bookings sb
+                     JOIN event_stalls es ON es.id = sb.stall_id
+                     JOIN events e ON e.id = sb.event_id
+                    WHERE sb.id = $1`,
+                  [order.subject_id]
+                );
+                if (booking?.booker_kind === 'guest' && booking.guest_mobile) {
+                  const amount = (order.amount_paise / 100).toFixed(2);
+                  const eventDate = booking.event_date
+                    ? new Date(booking.event_date).toLocaleDateString('en-IN', {
+                        day: '2-digit', month: 'short', year: 'numeric',
+                      })
+                    : '';
+                  const message = `Your stall ${booking.stall_code} for ${booking.event_title}` +
+                    (eventDate ? ` on ${eventDate}` : '') +
+                    ` is booked. Amount paid: Rs ${amount}.`;
+                  // Never let a failed SMS affect the (already committed) settlement.
+                  await sendTransactionalSMS(booking.guest_mobile, message);
+                }
+              } catch (smsErr) {
+                console.error('POST /payments/webhook stall SMS failed:', smsErr.message);
+              }
+            }
+          } else if (order.purpose === 'donation') {
+            await query(
+              `UPDATE donations
+                  SET status = 'paid', paid_at = NOW()
+                WHERE id = $1 AND status = 'created'`,
+              [order.subject_id]
+            );
+          }
+        }
+        // else: unknown order id, or a replay of an already-settled order —
+        // no writes, and we still fall through to the 200 below so Razorpay
+        // does not retry forever on something already handled.
       }
     }
 

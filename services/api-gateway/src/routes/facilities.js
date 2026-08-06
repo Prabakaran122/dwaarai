@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
-import { authenticateJWT } from '../middleware/auth.js';
+import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
+import { sendNotification } from '../lib/fcm.js';
 
 const router = Router();
 
@@ -13,6 +14,38 @@ const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 function istNow() { return new Date(Date.now() + IST_OFFSET_MS); }
 function istTodayStr() { return istNow().toISOString().slice(0, 10); }   // 'YYYY-MM-DD' in IST
 function istNowHHMM() { return istNow().toISOString().slice(11, 16); }   // 'HH:MM' in IST
+
+// The booking window, cancellation cutoff and per-unit-per-day cap were all
+// hardcoded (7 days / 60 minutes / 1). The BRD makes them admin-configurable
+// per facility (040_facility_policy.sql), so they now live on the facility
+// row — this helper is the single place that applies the *same* hardcoded
+// values as defaults when a column is null/undefined, which is what keeps
+// every pre-existing facility behaving exactly as it did before the migration.
+export function bookingPolicy(facility) {
+  return {
+    advanceDays: facility?.advance_days ?? 7,
+    cancelCutoffMinutes: facility?.cancel_cutoff_minutes ?? 60,
+    maxPerUnitPerDay: facility?.max_per_unit_per_day ?? 1,
+  };
+}
+
+// After a booking commits, best-effort notify the resident who booked it.
+// Never allowed to affect the response — see the try/catch at the call site,
+// mirroring notifyIssueResolved in routes/issues.js.
+async function notifyBookingConfirmed({ residentId, communityId, facilityName, date, start, end }) {
+  const rows = await queryRows(
+    `SELECT fcm_token FROM residents WHERE id = $1 AND community_id = $2 AND is_active = true`,
+    [residentId, communityId]
+  );
+  const token = rows?.[0]?.fcm_token;
+  if (!token) return;
+  await sendNotification(
+    token,
+    'Booking confirmed',
+    `${facilityName} — ${date} ${start}-${end} is booked.`,
+    { type: 'facility_booking_confirmed', date, start, end }
+  );
+}
 
 // Pure slot-status decision so it can be unit-tested deterministically.
 // bookedByUnit: the unit_id that booked this slot start (or null if unbooked).
@@ -41,6 +74,19 @@ const bookSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   start: z.string().regex(/^\d{2}:\d{2}$/),
 });
+
+// Admin-configurable booking policy (040_facility_policy.sql). Bounds keep the
+// values meaningful, not just "a positive integer": an advance_days of 3650
+// makes the 7-day availability strip pointless, and an unbounded cancel
+// cutoff or per-day cap is equally nonsensical for a facility slot.
+const facilityPolicySchema = z
+  .object({
+    advance_days: z.number().int().min(1).max(90),
+    cancel_cutoff_minutes: z.number().int().min(0).max(1440),
+    max_per_unit_per_day: z.number().int().min(1).max(10),
+  })
+  .partial()
+  .refine((v) => Object.keys(v).length > 0, { message: 'At least one field is required' });
 
 // ---------------------------------------------------------------------------
 // GET /facilities/mine  — MUST be registered BEFORE /facilities/:id/...
@@ -130,7 +176,8 @@ router.get('/facilities/:id/availability', authenticateJWT(['resident']), async 
 
     // Load facility (must belong to this community)
     const facility = await queryOne(
-      `SELECT id, name, sport, open_time, close_time, slot_minutes
+      `SELECT id, name, sport, open_time, close_time, slot_minutes,
+              advance_days, cancel_cutoff_minutes, max_per_unit_per_day
        FROM facilities
        WHERE id = $1 AND community_id = $2 AND is_active = TRUE`,
       [facilityId, user.community_id]
@@ -203,7 +250,8 @@ router.post('/facilities/:id/book', authenticateJWT(['resident']), async (req, r
 
     // Load facility
     const facility = await queryOne(
-      `SELECT id, name, sport, open_time, close_time, slot_minutes
+      `SELECT id, name, sport, open_time, close_time, slot_minutes,
+              advance_days, cancel_cutoff_minutes, max_per_unit_per_day
        FROM facilities
        WHERE id = $1 AND community_id = $2 AND is_active = TRUE`,
       [facilityId, user.community_id]
@@ -211,6 +259,7 @@ router.post('/facilities/:id/book', authenticateJWT(['resident']), async (req, r
     if (!facility) {
       return error(res, 'Facility not found', 404);
     }
+    const policy = bookingPolicy(facility);
 
     // Validate slot
     const slots = buildSlots(String(facility.open_time), String(facility.close_time), facility.slot_minutes);
@@ -220,9 +269,9 @@ router.post('/facilities/:id/book', authenticateJWT(['resident']), async (req, r
     }
     const end = matchedSlot.end;
 
-    // Window check: today .. today+7 (inclusive) — all in IST
+    // Window check: today .. today+advanceDays (inclusive) — all in IST
     const today = istTodayStr();
-    const maxDate = new Date(istNow().getTime() + 7 * 86400000).toISOString().slice(0, 10);
+    const maxDate = new Date(istNow().getTime() + policy.advanceDays * 86400000).toISOString().slice(0, 10);
     if (date < today) {
       return error(res, 'Date in the past', 400);
     }
@@ -245,9 +294,10 @@ router.post('/facilities/:id/book', authenticateJWT(['resident']), async (req, r
       return error(res, 'Slot already booked', 409);
     }
 
-    // One-per-sport-per-day-per-unit: check if this unit already has a booking for this sport on this date
-    const sportConflict = await queryOne(
-      `SELECT fb.id FROM facility_bookings fb
+    // Per-sport-per-day-per-unit cap (facility.max_per_unit_per_day, default 1):
+    // count this unit's existing bookings for this sport on this date.
+    const sportBookingCount = await queryOne(
+      `SELECT COUNT(*)::int AS n FROM facility_bookings fb
        JOIN facilities f ON f.id = fb.facility_id
        WHERE fb.unit_id = $1
          AND fb.booking_date = $2
@@ -255,7 +305,7 @@ router.post('/facilities/:id/book', authenticateJWT(['resident']), async (req, r
          AND fb.status = 'booked'`,
       [user.unit_id, date, facility.sport]
     );
-    if (sportConflict) {
+    if ((sportBookingCount?.n ?? 0) >= policy.maxPerUnitPerDay) {
       return error(res, 'You already have a slot for this sport today', 409);
     }
 
@@ -275,6 +325,22 @@ router.post('/facilities/:id/book', authenticateJWT(['resident']), async (req, r
         return error(res, 'Slot already booked', 409);
       }
       throw dbErr;
+    }
+
+    // Booking confirmation push — strictly after the booking above committed.
+    // Its own try/catch: a notification failure must never surface as a
+    // booking failure, mirroring notifyIssueResolved in routes/issues.js.
+    try {
+      await notifyBookingConfirmed({
+        residentId: user.sub,
+        communityId: user.community_id,
+        facilityName: facility.name,
+        date: booking.booking_date,
+        start: String(booking.start_time).slice(0, 5),
+        end: String(booking.end_time).slice(0, 5),
+      });
+    } catch (notifyErr) {
+      console.error('[facilities] booking confirmation push failed:', notifyErr.message);
     }
 
     return success(res, {
@@ -299,24 +365,29 @@ router.delete('/facilities/bookings/:id', authenticateJWT(['resident']), async (
     const user = req.user;
     const bookingId = req.params.id;
 
-    // Load booking — must belong to this unit and be booked
+    // Load booking — must belong to this unit and be booked. cancel_cutoff_minutes
+    // comes from the facility row (bookingPolicy applies the historical
+    // 60-minute default), not a fixed constant.
     const booking = await queryOne(
-      `SELECT id, booking_date::text AS booking_date, start_time
-       FROM facility_bookings
-       WHERE id = $1 AND unit_id = $2 AND status = 'booked'`,
+      `SELECT fb.id, fb.booking_date::text AS booking_date, fb.start_time,
+              f.cancel_cutoff_minutes
+       FROM facility_bookings fb
+       JOIN facilities f ON f.id = fb.facility_id
+       WHERE fb.id = $1 AND fb.unit_id = $2 AND fb.status = 'booked'`,
       [bookingId, user.unit_id]
     );
     if (!booking) {
       return error(res, 'Booking not found', 404);
     }
+    const { cancelCutoffMinutes } = bookingPolicy(booking);
 
-    // Cutoff: cannot cancel if less than 1 hour from the slot start.
+    // Cutoff: cannot cancel if less than cancelCutoffMinutes from the slot start.
     // Normalize date and time robustly (handles both string 'YYYY-MM-DD' and Date objects).
     const dateStr = String(booking.booking_date).slice(0, 10);
     const startStr = String(booking.start_time).slice(0, 5); // 'HH:MM'
     // Anchor to IST so the cutoff is server-TZ-independent
     const slotStart = new Date(`${dateStr}T${startStr}:00+05:30`);
-    if (slotStart.getTime() - Date.now() < 3600000) {
+    if (slotStart.getTime() - Date.now() < cancelCutoffMinutes * 60000) {
       return error(res, 'Too late to cancel', 409);
     }
 
@@ -329,6 +400,57 @@ router.delete('/facilities/bookings/:id', authenticateJWT(['resident']), async (
     return success(res, { cancelled: true });
   } catch (err) {
     console.error('DELETE /facilities/bookings/:id error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /admin/facilities/:id — admin-configurable booking policy
+// (advance_days / cancel_cutoff_minutes / max_per_unit_per_day). Task 5 read
+// these columns everywhere but never gave the admin portal a way to write
+// them, which left the BRD's "admin-configurable" requirement half-done.
+// ---------------------------------------------------------------------------
+router.put('/admin/facilities/:id', authenticateJWT(['admin']), async (req, res) => {
+  try {
+    if (!isAdminUser(req.user)) {
+      return error(res, 'Insufficient permissions', 403);
+    }
+
+    const parsed = facilityPolicySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return error(res, 'Validation error', 400, parsed.error.issues);
+    }
+    const fields = parsed.data;
+
+    const setClauses = [];
+    const values = [];
+    let idx = 1;
+    for (const [key, val] of Object.entries(fields)) {
+      setClauses.push(`${key} = $${idx}`);
+      values.push(val);
+      idx += 1;
+    }
+
+    // Scoped by community_id so an admin can never edit another society's
+    // facility — a mismatch (or a nonexistent id) both come back as 404.
+    values.push(req.params.id, req.user.community_id);
+    const facility = await queryOne(
+      `UPDATE facilities
+          SET ${setClauses.join(', ')}
+        WHERE id = $${idx} AND community_id = $${idx + 1}
+        RETURNING id, advance_days, cancel_cutoff_minutes, max_per_unit_per_day`,
+      values
+    );
+    if (!facility) {
+      return error(res, 'Facility not found', 404);
+    }
+
+    return success(res, {
+      id: facility.id,
+      ...bookingPolicy(facility),
+    });
+  } catch (err) {
+    console.error('PUT /admin/facilities/:id error:', err);
     return error(res, 'Internal server error', 500);
   }
 });

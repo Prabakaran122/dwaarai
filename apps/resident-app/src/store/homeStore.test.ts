@@ -3,6 +3,7 @@ import * as api from '../api/client';
 import { useHomeStore } from './homeStore';
 
 const sample = {
+  unreadCount: 3,
   gateGlance: { visitors: { expected: 2 }, parcels: { pending: 1 }, helpers: { expected: 3, arrived: 1 } },
   recentActivity: [],
   dues: { outstanding: 4500, earliestDueDate: '2026-06-30', pendingCount: 1 },
@@ -20,6 +21,7 @@ describe('homeStore', () => {
     await useHomeStore.getState().fetch();
     const s = useHomeStore.getState();
     expect(s.summary?.gateGlance.parcels.pending).toBe(1);
+    expect(s.summary?.unreadCount).toBe(3);
     expect(s.error).toBe(false);
     expect(s.loading).toBe(false);
   });

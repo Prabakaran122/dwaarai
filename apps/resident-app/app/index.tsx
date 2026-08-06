@@ -53,8 +53,10 @@ function ResidentApp() {
   const [tab, setTab] = useState<TabKey>('home');
   const [approvalOverlay, setApprovalOverlay] = useState<{ id: string; data: any } | null>(null);
   const [pendingIssueId, setPendingIssueId] = useState<string | null>(null);
+  const [pendingFacilityBooking, setPendingFacilityBooking] = useState(false);
 
-  const selectTab = (key: TabKey) => { setPendingIssueId(null); setTab(key); };
+  const selectTab = (key: TabKey) => { setPendingIssueId(null); setPendingFacilityBooking(false); setTab(key); };
+  const bookFacility = () => { setPendingFacilityBooking(true); setTab('myunit'); };
 
   useEffect(() => {
     registerForPushNotifications();
@@ -74,8 +76,8 @@ function ResidentApp() {
     <View style={{ flex: 1, backgroundColor: colors.mist }}>
       {/* Content */}
       <View style={{ flex: 1, backgroundColor: colors.mist }}>
-        {tab === 'home' && <HomeScreen onNavigate={setTab} />}
-        {tab === 'myunit' && <MyUnitScreen onNavigate={setTab} />}
+        {tab === 'home' && <HomeScreen onNavigate={setTab} onBookFacility={bookFacility} />}
+        {tab === 'myunit' && <MyUnitScreen onNavigate={setTab} initialOverlay={pendingFacilityBooking ? 'facilities' : undefined} />}
         {tab === 'community' && <CommunityScreen initialIssueId={pendingIssueId ?? undefined} />}
         {tab === 'events' && <EventsScreen />}
         {tab === 'profile' && <ProfileTabScreen />}

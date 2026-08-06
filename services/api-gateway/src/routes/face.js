@@ -326,4 +326,195 @@ router.post('/face/verify-driver', authenticateJWT(['guard']), async (req, res) 
   }
 });
 
+// -- Member-scoped face routes ------------------------------------------------
+// A household member is a row in `residents` (013_family_members.sql), and
+// `face_enrollments.resident_id` is UNIQUE, so a member's enrolment is just
+// their own row — no schema change is needed. Authorisation is "the target
+// resident is in the caller's own unit", checked against the database, never
+// against anything the client sent. Out-of-unit targets 404 (not 403) so we
+// never confirm the existence of residents outside the caller's unit.
+
+/**
+ * A resident may act on another resident's face record ONLY when both live in
+ * the same unit. Household members are rows in `residents` (013_family_members),
+ * so this is the whole authorisation rule — checked against the database, never
+ * against anything the client sent.
+ */
+export async function assertSameUnit(queryOneFn, actorSub, targetResidentId) {
+  return queryOneFn(
+    `SELECT t.id, t.unit_id, t.community_id, t.name
+       FROM residents t
+       JOIN residents a
+         ON a.unit_id = t.unit_id
+        AND a.community_id = t.community_id
+        AND a.id = $1
+        AND a.is_active = true
+      WHERE t.id = $2 AND t.is_active = true`,
+    [actorSub, targetResidentId]
+  );
+}
+
+// -- GET /members/:id/face — enrolment status + consent map ------------------
+
+router.get('/members/:id/face', authenticateJWT(['resident']), async (req, res) => {
+  try {
+    const target = await assertSameUnit(queryOne, req.user.sub, req.params.id);
+    if (!target) return error(res, 'Member not found', 404);
+
+    const enrollment = await queryOne(
+      'SELECT status, enrolled_at, activated_at FROM face_enrollments WHERE resident_id = $1',
+      [target.id]
+    );
+    const consents = await queryRows(
+      'SELECT location, enabled FROM biometric_consents WHERE resident_id = $1',
+      [target.id]
+    );
+    return success(res, {
+      status: enrollment && enrollment.status !== 'deleted' ? enrollment.status : 'not_enrolled',
+      enrolled_at: enrollment?.enrolled_at || null,
+      activated_at: enrollment?.activated_at || null,
+      consents: consentMap(consents),
+      locations: LOCATIONS,
+    });
+  } catch (err) {
+    console.error('GET /members/:id/face error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- POST /members/:id/face/enroll --------------------------------------------
+// Mirrors POST /face/enroll exactly, for a member of the caller's own unit.
+//
+// The server derives the vector from a transient scan via the recognition
+// service — it NEVER accepts a vector from the client. A client-supplied
+// vector is an arbitrary value that would then match a real face at the gate,
+// so accepting one would let any resident mint a gate credential for anyone.
+//
+// DPDP Act 2023: the scan is used only to derive the vector and is never
+// stored; only the vector is persisted (016_face_identity.sql:13). Enrolment
+// stays 'pending' unless vectorisation actually succeeded.
+
+const memberEnrollSchema = z.object({
+  scan_b64: z.string().min(1).optional(),
+  consent_acknowledged: z.boolean(),
+  consent_locations: z.array(z.enum(['gate', 'pool', 'clubhouse', 'gym'])).optional(),
+});
+
+router.post('/members/:id/face/enroll', authenticateJWT(['resident']), async (req, res) => {
+  try {
+    // A caller must never supply the vector itself — see the note above.
+    if (req.body && ('vector' in req.body || 'image' in req.body || 'photo' in req.body)) {
+      return error(res, 'Send a scan; the vector is derived server-side', 400);
+    }
+
+    const target = await assertSameUnit(queryOne, req.user.sub, req.params.id);
+    if (!target) return error(res, 'Member not found', 404);
+
+    const parsed = memberEnrollSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return error(res, 'Validation error', 400, parsed.error.issues);
+    }
+    if (!parsed.data.consent_acknowledged) {
+      return error(res, 'Consent is required before enrollment', 400);
+    }
+
+    // Same derivation as self-enrolment: the scan is transient and never
+    // stored; without a successful vectorisation the record stays 'pending'.
+    let vector = null;
+    let status = 'pending';
+    if (parsed.data.scan_b64) {
+      try {
+        vector = await vectorize(parsed.data.scan_b64);
+        if (vector) status = 'active';
+      } catch (e) {
+        console.error('[Face] member vectorize failed:', e.message);
+        return error(res, 'Could not process the face scan. Please try again.', 502);
+      }
+    }
+
+    const enrollment = await queryOne(
+      `INSERT INTO face_enrollments (community_id, unit_id, resident_id, status, vector, enrolled_at, activated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW(), $6)
+       ON CONFLICT (resident_id) DO UPDATE
+         SET status = EXCLUDED.status,
+             vector = EXCLUDED.vector,
+             enrolled_at = NOW(),
+             activated_at = EXCLUDED.activated_at,
+             deleted_at = NULL
+       RETURNING status, enrolled_at, activated_at`,
+      [target.community_id, target.unit_id, target.id, status, vector,
+       status === 'active' ? new Date().toISOString() : null]
+    );
+
+    if (parsed.data.consent_locations?.length) {
+      for (const loc of parsed.data.consent_locations) {
+        await query(
+          `INSERT INTO biometric_consents (resident_id, location, enabled, updated_at)
+           VALUES ($1, $2, true, NOW())
+           ON CONFLICT (resident_id, location) DO UPDATE SET enabled = true, updated_at = NOW()`,
+          [target.id, loc]
+        );
+      }
+    }
+
+    return success(res, { status: enrollment.status }, 201);
+  } catch (err) {
+    console.error('POST /members/:id/face/enroll error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- PUT /members/:id/face/consent — toggle a location ------------------------
+
+router.put('/members/:id/face/consent', authenticateJWT(['resident']), async (req, res) => {
+  try {
+    const target = await assertSameUnit(queryOne, req.user.sub, req.params.id);
+    if (!target) return error(res, 'Member not found', 404);
+
+    const parsed = consentSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return error(res, 'Validation error', 400, parsed.error.issues);
+    }
+    const { location, enabled } = parsed.data;
+    await query(
+      `INSERT INTO biometric_consents (resident_id, location, enabled, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (resident_id, location) DO UPDATE SET enabled = $3, updated_at = NOW()`,
+      [target.id, location, enabled]
+    );
+    const consents = await queryRows(
+      'SELECT location, enabled FROM biometric_consents WHERE resident_id = $1',
+      [target.id]
+    );
+    return success(res, { consents: consentMap(consents) });
+  } catch (err) {
+    console.error('PUT /members/:id/face/consent error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+// -- DELETE /members/:id/face — permanent deletion, real-time ----------------
+
+router.delete('/members/:id/face', authenticateJWT(['resident']), async (req, res) => {
+  try {
+    const target = await assertSameUnit(queryOne, req.user.sub, req.params.id);
+    if (!target) return error(res, 'Member not found', 404);
+
+    await query(
+      `UPDATE face_enrollments
+          SET status = 'deleted', vector = NULL, deleted_at = NOW(), activated_at = NULL
+        WHERE resident_id = $1`,
+      [target.id]
+    );
+    await query(
+      'UPDATE biometric_consents SET enabled = false, updated_at = NOW() WHERE resident_id = $1',
+      [target.id]
+    );
+    return success(res, { deleted: true });
+  } catch (err) {
+    console.error('DELETE /members/:id/face error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
 export default router;

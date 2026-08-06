@@ -57,6 +57,25 @@ router.get('/resident/home', authenticateJWT(['resident']), async (req, res) => 
         ORDER BY starts_at ASC LIMIT 1`,
       [community_id]
     ),
+    // -- unread count for the notification bell --------------------------
+    // There is no per-resident read-state table in this schema, and adding
+    // one is a schema decision outside this task's scope. Rather than fake
+    // a number against "things since last open" (not knowable), this counts
+    // things the resident has genuinely not yet acted on:
+    //   - approval_requests a guard raised for this unit that are still
+    //     'pending' and not yet expired (the resident owes a yes/no), and
+    //   - deliveries sitting at the gate for this unit with status
+    //     'waiting' (the resident hasn't collected them).
+    // Both are real obligations, not a proxy for "new since last visit".
+    queryOne(
+      `SELECT
+          (SELECT COUNT(*)::int FROM approval_requests
+            WHERE community_id = $1 AND unit_id = $2 AND status = 'pending' AND expires_at > NOW())
+        + (SELECT COUNT(*)::int FROM deliveries
+            WHERE community_id = $1 AND unit_id = $2 AND status = 'waiting')
+        AS c`,
+      [community_id, unit_id]
+    ),
   ]);
 
   const val = (i, fallback) => {
@@ -72,12 +91,14 @@ router.get('/resident/home', authenticateJWT(['resident']), async (req, res) => 
   const dues = val(4, []) || [];
   const notice = val(5, null);
   const upcoming = val(6, null);
+  const unread = val(7, null);
 
   const outstanding = Number(
     dues.reduce((s, d) => s + Number(d.base_amount || 0) + Number(d.penalty_amount || 0), 0).toFixed(2)
   );
 
   return success(res, {
+    unreadCount: unread?.c ?? 0,
     gateGlance: {
       visitors: { expected: visitors?.c ?? 0 },
       parcels: { pending: parcels?.c ?? 0 },

@@ -2,8 +2,13 @@ import axios from 'axios';
 import { z } from 'zod';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// dwaarai.in lost its A record on 1 Aug 2026 and resolves to nothing. It was
+// the fallback here, and EXPO_PUBLIC_API_URL is not set by any build profile,
+// so every shipped APK silently called a dead host — login failed with a
+// network error and no server-side trace. The default must be a host that
+// actually exists; eas.json also sets it explicitly per profile now.
 const API_BASE =
-  process.env.EXPO_PUBLIC_API_URL || 'https://dwaarai.in/api/v1';
+  process.env.EXPO_PUBLIC_API_URL || 'https://dwaarai.com/api/v1';
 
 const SERVER_ORIGIN = API_BASE.replace(/\/api\/v1\/?$/, '');
 export function uploadUrl(p?: string | null): string | null {
@@ -193,6 +198,26 @@ export const setFaceConsent = (location: string, enabled: boolean) =>
 export const deleteFaceData = () => api.delete('/face');
 
 export const getFaceAccessLog = () => api.get('/face/access-log');
+
+// Face identity & consent — household members (owner enrols on their behalf,
+// scoped server-side to residents of the same unit)
+export const getMemberFace = (id: string) => api.get(`/members/${id}/face`);
+// The server derives the vector from the scan and never accepts one from the
+// client — a caller-supplied vector would be an arbitrary value that then
+// matches a real face at the gate. `scanB64` is optional: without it the
+// enrolment is recorded as 'pending' until a scan is captured.
+export const enrollMemberFace = (id: string, scanB64?: string) =>
+  api.post(`/members/${id}/face/enroll`, {
+    consent_acknowledged: true,
+    ...(scanB64 ? { scan_b64: scanB64 } : {}),
+  });
+// NOTE: the server's PUT /members/:id/face/consent mirrors the self-scoped
+// PUT /face/consent — it toggles ONE { location, enabled } pair per call
+// (see services/api-gateway/src/routes/face.js's shared consentSchema), not
+// a bulk `consents` array as an earlier draft of this client assumed.
+export const setMemberFaceConsent = (id: string, location: string, enabled: boolean) =>
+  api.put(`/members/${id}/face/consent`, { location, enabled });
+export const deleteMemberFace = (id: string) => api.delete(`/members/${id}/face`);
 
 // Unit documents (vault)
 export const getDocuments = () => api.get('/documents');

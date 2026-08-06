@@ -21,4 +21,23 @@ describe('GateGlanceCard', () => {
     fireEvent.press(getByTestId('glance-parcels'));
     expect(onParcels).toHaveBeenCalledTimes(1);
   });
+
+  it('shows "All quiet at the gate" when every count is zero and there is no latest event', () => {
+    const emptyGlance = { visitors: { expected: 0 }, parcels: { pending: 0 }, helpers: { expected: 0, arrived: 0 } };
+    const { getByText, queryByText } = render(<GateGlanceCard glance={emptyGlance} latest={null} />);
+    expect(getByText('All quiet at the gate')).toBeTruthy();
+    expect(queryByText('Visitors')).toBeNull();
+  });
+
+  it('does not show the empty state when a count is non-zero', () => {
+    const { queryByText } = render(<GateGlanceCard glance={glance} latest={null} />);
+    expect(queryByText('All quiet at the gate')).toBeNull();
+  });
+
+  it('does not show the empty state when all counts are zero but a latest event exists', () => {
+    const emptyGlance = { visitors: { expected: 0 }, parcels: { pending: 0 }, helpers: { expected: 0, arrived: 0 } };
+    const latest = { plate: 'KA01AB1234', residentName: null, direction: 'entry', ts: new Date().toISOString() } as any;
+    const { queryByText } = render(<GateGlanceCard glance={emptyGlance} latest={latest} />);
+    expect(queryByText('All quiet at the gate')).toBeNull();
+  });
 });

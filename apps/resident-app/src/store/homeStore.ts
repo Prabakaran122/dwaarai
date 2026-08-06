@@ -26,6 +26,7 @@ export interface UpcomingEvent {
 }
 
 export interface HomeSummary {
+  unreadCount: number;
   gateGlance: {
     visitors: { expected: number };
     parcels: { pending: number };

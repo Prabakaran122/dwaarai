@@ -1,14 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable } from 'react-native';
 import { colors } from '../theme/colors';
-import { spacing } from '../theme/spacing';
+import { spacing, radius } from '../theme/spacing';
 import { type } from '../theme/typography';
 import { AppBar, SectionHeader, Card } from '../components/ui';
 import UnitHero from '../components/UnitHero';
 import MemberRow from '../components/MemberRow';
 import VehicleRow from '../components/VehicleRow';
 import DuesSnapshotCard from '../components/DuesSnapshotCard';
-import { useUnitStore } from '../store/unitStore';
+import { useUnitStore, UnitMember } from '../store/unitStore';
 import MembersScreen from './MembersScreen';
 import VehiclesScreen from './VehiclesScreen';
 import DuesScreen from './DuesScreen';
@@ -16,20 +16,29 @@ import PetsScreen from './PetsScreen';
 import PetRow from '../components/PetRow';
 import DocumentsScreen from './DocumentsScreen';
 import FacilityBookingScreen from './FacilityBookingScreen';
+import MemberDetailScreen from './MemberDetailScreen';
 
 type Overlay = 'members' | 'vehicles' | 'dues' | 'pets' | 'documents' | 'facilities' | null;
 
-interface Props { onNavigate?: (tab: 'home' | 'myunit' | 'community' | 'events' | 'profile') => void; }
+const DOC_CATEGORY_LABEL: Record<string, string> = { ownership: 'Ownership', maintenance: 'Maintenance', id_proof: 'ID proof', other: 'Other' };
 
-export default function MyUnitScreen({ onNavigate }: Props) {
+interface Props {
+  onNavigate?: (tab: 'home' | 'myunit' | 'community' | 'events' | 'profile') => void;
+  /** Set by Home's "Book facility" quick action to skip straight to the booking sub-screen. */
+  initialOverlay?: 'facilities';
+}
+
+export default function MyUnitScreen({ onNavigate, initialOverlay }: Props) {
   const { profile, error, fetch } = useUnitStore();
   const [refreshing, setRefreshing] = useState(false);
-  const [overlay, setOverlay] = useState<Overlay>(null);
+  const [overlay, setOverlay] = useState<Overlay>(initialOverlay ?? null);
+  const [member, setMember] = useState<UnitMember | null>(null);
 
   const load = useCallback(async () => { await fetch(); }, [fetch]);
   useEffect(() => { load(); }, [load]);
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
+  if (member) return <MemberDetailScreen member={member} onBack={() => { setMember(null); load(); }} />;
   if (overlay === 'members') return <MembersScreen onClose={() => { setOverlay(null); load(); }} />;
   if (overlay === 'vehicles') return <VehiclesScreen onClose={() => { setOverlay(null); load(); }} />;
   if (overlay === 'dues') return <DuesScreen onClose={() => { setOverlay(null); load(); }} />;
@@ -40,6 +49,7 @@ export default function MyUnitScreen({ onNavigate }: Props) {
   const members = profile?.members ?? [];
   const vehicles = profile?.vehicles ?? [];
   const pets = profile?.pets ?? [];
+  const documents = profile?.documents ?? [];
   const dues = profile?.dues ?? { outstanding: 0, pendingCount: 0 };
 
   return (
@@ -51,7 +61,11 @@ export default function MyUnitScreen({ onNavigate }: Props) {
         <View style={styles.block}>
           <SectionHeader title="Members" actionLabel="Manage" onAction={() => setOverlay('members')} />
           <Card>
-            {members.length === 0 ? <Text style={type.bodySecondary}>No members yet</Text> : members.map((m) => <MemberRow key={m.id} member={m} />)}
+            {members.length === 0 ? <Text style={type.bodySecondary}>No members yet</Text> : members.map((m) => (
+              <Pressable key={m.id} onPress={() => setMember(m)}>
+                <MemberRow member={m} />
+              </Pressable>
+            ))}
           </Card>
         </View>
 
@@ -75,7 +89,17 @@ export default function MyUnitScreen({ onNavigate }: Props) {
 
         <View style={styles.block}>
           <SectionHeader title="Documents" actionLabel="Open" onAction={() => setOverlay('documents')} />
-          <Card><Text style={type.bodySecondary}>Ownership deed, maintenance receipts, ID proof — your secure unit vault.</Text></Card>
+          <View style={styles.docGrid}>
+            {documents.map((d) => (
+              <Pressable key={d.id} style={styles.docTile} onPress={() => setOverlay('documents')}>
+                <Text style={type.h3} numberOfLines={1}>{d.title}</Text>
+                <Text style={type.micro}>{DOC_CATEGORY_LABEL[d.category] || 'Other'}</Text>
+              </Pressable>
+            ))}
+            <Pressable style={styles.docTile} onPress={() => setOverlay('documents')}>
+              <Text style={type.h3}>+ Add document</Text>
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.block}>
@@ -90,4 +114,15 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.mist },
   scroll: { padding: spacing.lg, paddingBottom: spacing['3xl'], gap: spacing.sm },
   block: { marginTop: spacing.md },
+  docGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  docTile: {
+    width: '47%',
+    flexGrow: 1,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.surfaceBorder,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: 4,
+  },
 });

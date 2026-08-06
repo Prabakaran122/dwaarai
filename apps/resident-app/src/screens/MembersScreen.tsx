@@ -6,6 +6,7 @@ import { spacing, radius } from '../theme/spacing';
 import { type as textType } from '../theme/typography';
 import { AppBar, Avatar, Button, Card, Input } from '../components/ui';
 import { useMemberStore, Member } from '../store/memberStore';
+import { createRecurringPass } from '../api/client';
 
 const RELATIONSHIPS = ['spouse', 'child', 'parent', 'sibling', 'other'] as const;
 type Relationship = (typeof RELATIONSHIPS)[number];
@@ -18,6 +19,13 @@ const relationshipIcons: Record<string, string> = {
   other: 'account',
 };
 
+// House help / staff (BRD 4.4) are not a new concept — they are recurring
+// passes (see `RecurringPassCard` / VisitorsScreen's full flow). This is a
+// lightweight entry point into the same mechanism, scoped to the common
+// helper roles, so a resident doesn't have to leave My Household to add one.
+const HELPER_ROLES = ['maid', 'cook', 'driver', 'other'] as const;
+type HelperRole = (typeof HELPER_ROLES)[number];
+
 export default function MembersScreen({ onClose }: { onClose: () => void }) {
   const { members, loading, fetch, add, update, remove } = useMemberStore();
   const [showForm, setShowForm] = useState(false);
@@ -27,7 +35,37 @@ export default function MembersScreen({ onClose }: { onClose: () => void }) {
   const [relationship, setRelationship] = useState<Relationship>('spouse');
   const [notify, setNotify] = useState(true);
 
+  const [showHelperForm, setShowHelperForm] = useState(false);
+  const [helperName, setHelperName] = useState('');
+  const [helperRole, setHelperRole] = useState<HelperRole>('maid');
+  const [helperSaving, setHelperSaving] = useState(false);
+
   useEffect(() => { fetch(); }, []);
+
+  const resetHelperForm = () => {
+    setHelperName(''); setHelperRole('maid'); setShowHelperForm(false);
+  };
+
+  const openHelperForm = () => { resetHelperForm(); setShowHelperForm(true); };
+
+  const handleSaveHelper = async () => {
+    if (!helperName.trim()) { Alert.alert('Error', 'Name is required'); return; }
+    setHelperSaving(true);
+    try {
+      await createRecurringPass({
+        visitor_name: helperName.trim(),
+        visitor_role: helperRole,
+        schedule_type: 'daily',
+        time_from: '06:00',
+        time_until: '10:00',
+      });
+      resetHelperForm();
+    } catch (err: any) {
+      Alert.alert('Could not save', err?.response?.data?.error?.message || 'Please try again.');
+    } finally {
+      setHelperSaving(false);
+    }
+  };
 
   const resetForm = () => {
     setName(''); setMobile(''); setRelationship('spouse'); setNotify(true);
@@ -138,6 +176,15 @@ export default function MembersScreen({ onClose }: { onClose: () => void }) {
             <Text style={styles.emptySubtext}>Tap + to add a family member</Text>
           </View>
         }
+        ListFooterComponent={
+          <TouchableOpacity style={styles.ghostRow} onPress={openHelperForm} activeOpacity={0.7}>
+            <View style={styles.ghostIcon}>
+              <MaterialCommunityIcons name="broom" size={18} color={colors.textTertiary} />
+            </View>
+            <Text style={styles.ghostText}>Add house help / staff</Text>
+            <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textTertiary} />
+          </TouchableOpacity>
+        }
       />
 
       {/* FAB */}
@@ -217,6 +264,48 @@ export default function MembersScreen({ onClose }: { onClose: () => void }) {
           </Card>
         </View>
       </Modal>
+
+      {/* Helper (house help / staff) form — creates a recurring pass */}
+      <Modal visible={showHelperForm} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <Card style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Add house help / staff</Text>
+            <Text style={styles.helperHint}>
+              They get a recurring gate pass for the hours you set — no need to approve them each day.
+            </Text>
+
+            <Input
+              placeholder="Name"
+              value={helperName}
+              onChangeText={setHelperName}
+              style={styles.inputSpaced}
+            />
+
+            <Text style={styles.fieldLabel}>Role</Text>
+            <View style={styles.chips}>
+              {HELPER_ROLES.map((r) => (
+                <TouchableOpacity
+                  key={r}
+                  onPress={() => setHelperRole(r)}
+                  style={helperRole === r ? styles.chipActive : styles.chipInactive}
+                >
+                  <Text style={helperRole === r ? styles.chipTextActive : styles.chipText}>{r}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.modalButtons}>
+              <View style={{ flex: 1 }}>
+                <Button title="Cancel" variant="destructive" onPress={resetHelperForm} />
+              </View>
+              <View style={{ width: spacing.md }} />
+              <View style={{ flex: 1 }}>
+                <Button title="Save" variant="primary" icon="check-circle" onPress={handleSaveHelper} disabled={helperSaving} />
+              </View>
+            </View>
+          </Card>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -238,6 +327,17 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', gap: spacing.sm, marginTop: spacing['5xl'] },
   emptyText: { color: colors.textSecondary, fontSize: 16, fontWeight: '600' },
   emptySubtext: { color: colors.textTertiary, fontSize: 13 },
+  ghostRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    borderWidth: 1, borderStyle: 'dashed', borderColor: colors.surfaceBorder,
+    borderRadius: radius.md, padding: spacing.md, marginTop: spacing.xs,
+  },
+  ghostIcon: {
+    width: 32, height: 32, borderRadius: radius.sm,
+    backgroundColor: colors.mist, alignItems: 'center', justifyContent: 'center',
+  },
+  ghostText: { flex: 1, fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+  helperHint: { ...textType.bodySecondary, lineHeight: 18, marginBottom: spacing.lg } as any,
   fabWrap: { position: 'absolute', right: 20, bottom: 24 },
   fab: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },

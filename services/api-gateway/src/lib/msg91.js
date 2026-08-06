@@ -32,6 +32,37 @@ export async function sendOTP(phone) {
 }
 
 /**
+ * Send a generic transactional SMS via MSG91 (not OTP — e.g. payment receipts).
+ * Phone should be 10-digit Indian mobile (without country code).
+ * When MSG91 credentials are not configured (dev mode), this degrades to a
+ * no-op and resolves instead of throwing — mirroring how the OTP flows above
+ * are gated behind isConfigured() by their callers, so callers here don't
+ * need their own env check to stay safe in dev/CI.
+ */
+export async function sendTransactionalSMS(phone, message) {
+  if (!AUTH_KEY) {
+    return { type: 'skipped', reason: 'not-configured' };
+  }
+  const mobile = phone.startsWith('91') ? phone : `91${phone}`;
+  const res = await fetch(`${MSG91_BASE}/flow`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', authkey: AUTH_KEY },
+    body: JSON.stringify({
+      sender: process.env.MSG91_SENDER_ID || '',
+      short_url: '0',
+      mobiles: mobile,
+      message,
+    }),
+    signal: AbortSignal.timeout(10000),
+  });
+  const data = await res.json();
+  if (data?.type === 'error') {
+    throw new Error(data.message || 'MSG91 send failed');
+  }
+  return data;
+}
+
+/**
  * Verify OTP via MSG91.
  * Returns true if OTP is valid, false if invalid/expired.
  * Does NOT throw on invalid OTP.

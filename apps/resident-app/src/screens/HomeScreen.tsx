@@ -27,9 +27,11 @@ type Overlay = 'parcels' | 'dues' | 'visitors' | 'activity' | null;
 
 interface Props {
   onNavigate?: (tab: 'home' | 'myunit' | 'community' | 'events' | 'profile') => void;
+  /** Deep-links straight into the facility booking sub-screen on My Unit, instead of just switching tabs. */
+  onBookFacility?: () => void;
 }
 
-export default function HomeScreen({ onNavigate }: Props) {
+export default function HomeScreen({ onNavigate, onBookFacility }: Props) {
   const user = useAuthStore((s) => s.user);
   const { summary, error, fetch } = useHomeStore();
   const [refreshing, setRefreshing] = useState(false);
@@ -60,7 +62,7 @@ export default function HomeScreen({ onNavigate }: Props) {
   const quickActions: QuickAction[] = [
     { key: 'invite', label: 'Invite Visitor', sub: 'One-time pass', icon: 'account-plus', onPress: () => setOverlay('visitors') },
     { key: 'preapprove', label: 'Pre-approve', sub: 'Silent entry', icon: 'shield-check', onPress: () => setOverlay('visitors') },
-    { key: 'facility', label: 'Book facility', sub: 'Courts & halls', icon: 'calendar-check', onPress: () => onNavigate?.('myunit') },
+    { key: 'facility', label: 'Book facility', sub: 'Courts & halls', icon: 'calendar-check', onPress: () => (onBookFacility ? onBookFacility() : onNavigate?.('myunit')) },
     { key: 'myunit', label: 'My Unit', sub: 'Members & vehicles', icon: 'home-city', onPress: () => onNavigate?.('myunit') },
     { key: 'ticket', label: 'Raise ticket', sub: 'Report an issue', icon: 'alert-circle-outline', onPress: () => onNavigate?.('community') },
     { key: 'announce', label: 'Announcements', sub: 'Notices', icon: 'bullhorn', onPress: () => onNavigate?.('community') },
@@ -68,7 +70,7 @@ export default function HomeScreen({ onNavigate }: Props) {
 
   return (
     <View style={styles.container}>
-      <AppBar title={user?.communityName || 'Home'} bellCount={0} onBell={() => onNavigate?.('community')} />
+      <AppBar title={user?.communityName || 'Home'} bellCount={summary?.unreadCount ?? 0} onBell={() => onNavigate?.('community')} />
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.teal} />}
