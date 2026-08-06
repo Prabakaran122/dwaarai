@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import DataTable from '@/components/DataTable';
 import StatusBadge from '@/components/StatusBadge';
 import StallLayoutBuilder from '@/components/StallLayoutBuilder';
@@ -268,6 +269,14 @@ export default function CommunityEventsPage() {
       key: 'actions', label: 'Actions',
       render: (row: EventItem) => (
         <div className="flex items-center gap-3">
+          {/* next/link, never a raw anchor — the portal runs under
+              basePath '/admin' and Next only prepends it for Link. */}
+          <Link
+            href={`/community-events/${row.id}`}
+            className="text-sm text-teal-600 hover:text-teal-700 font-medium transition-all duration-300"
+          >
+            Bookings
+          </Link>
           <button
             onClick={() => setLayoutEvent(row)}
             className="text-sm text-teal-600 hover:text-teal-700 font-medium transition-all duration-300"

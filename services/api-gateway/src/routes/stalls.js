@@ -28,12 +28,28 @@ const stallLayoutSchema = z.object({
 // status <> 'released' — this predicate MUST match uniq_live_booking_per_stall
 // exactly (migration 041), otherwise the map here disagrees with what the
 // database will actually allow to be booked.
+// How long an unpaid reservation may hold a stall. Nothing ever wrote
+// 'released', so a resident who reserved a stall and closed the app blocked it
+// permanently — there is no sweep, no admin release, and the unique index
+// counts any non-released row as live.
+export const RESERVATION_TTL_MINUTES = 15;
+
+// The join is deliberately MORE permissive than uniq_live_booking_per_stall:
+// it also ignores a `reserved` row older than the TTL, so the map shows such a
+// stall as free. The booking path then actually releases that row inside its
+// transaction before inserting, so the index agrees by the time it matters.
+// Erring this way is safe — the worst case is offering a stall the booking
+// path immediately reclaims. The reverse (index laxer than the map) would show
+// a free stall the database then refuses, which is the confusing failure.
 const LIST_SQL = `
   SELECT es.id, es.code, es.stall_type, es.price_paise, es.row_index, es.col_index,
          sb.status AS booking_status
     FROM event_stalls es
     LEFT JOIN stall_bookings sb
-      ON sb.stall_id = es.id AND sb.status <> 'released'
+      ON sb.stall_id = es.id
+     AND sb.status <> 'released'
+     AND NOT (sb.status = 'reserved'
+              AND sb.created_at < NOW() - (${RESERVATION_TTL_MINUTES} || ' minutes')::interval)
    WHERE es.event_id = $1 AND es.is_active = true
    ORDER BY es.row_index ASC, es.col_index ASC`;
 
@@ -173,6 +189,19 @@ router.post('/events/:id/stalls/:stallId/book', authenticateJWT(['resident']), a
       return error(res, 'Stall not found', 404);
     }
     const stall = stallResult.rows[0];
+
+    // Reclaim an abandoned reservation on THIS stall, inside the same
+    // transaction and after the lock, so it cannot race another booker. Only
+    // 'reserved' rows expire — a 'booked' row means money moved and is never
+    // touched here.
+    await client.query(
+      `UPDATE stall_bookings
+          SET status = 'released', released_at = NOW()
+        WHERE stall_id = $1
+          AND status = 'reserved'
+          AND created_at < NOW() - ($2 || ' minutes')::interval`,
+      [stall.id, RESERVATION_TTL_MINUTES]
+    );
 
     const stallFeePaise = Number(stall.price_paise);
     const platformFee = platformFeePaise(stallFeePaise);

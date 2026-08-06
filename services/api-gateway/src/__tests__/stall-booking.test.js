@@ -120,6 +120,7 @@ describe('POST /events/:id/stalls/:stallId/book', () => {
       .mockResolvedValueOnce({ rows: [{ id: 'e1' }] }) // event lookup
       .mockResolvedValueOnce({}) // BEGIN
       .mockResolvedValueOnce({ rows: [{ id: 's1', code: 'A1', price_paise: 100000 }] }) // stall FOR UPDATE
+      .mockResolvedValueOnce({}) // release expired reservations on this stall
       .mockResolvedValueOnce({ rows: [{ id: 'booking-1' }] }) // insert stall_bookings
       .mockResolvedValueOnce({ rows: [{ id: 'order-1' }] }) // insert payment_orders
       .mockResolvedValueOnce({}) // update payment_orders gateway_order_id
@@ -155,6 +156,7 @@ describe('POST /events/:id/stalls/:stallId/book', () => {
       .mockResolvedValueOnce({ rows: [{ id: 'e1' }] })
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [{ id: 's1', code: 'A1', price_paise: 125000 }] })
+      .mockResolvedValueOnce({}) // release expired reservations on this stall
       .mockResolvedValueOnce({ rows: [{ id: 'booking-1' }] })
       .mockResolvedValueOnce({ rows: [{ id: 'order-1' }] })
       .mockResolvedValueOnce({})
@@ -186,6 +188,7 @@ describe('POST /events/:id/stalls/:stallId/book', () => {
       .mockResolvedValueOnce({ rows: [{ id: 'e1' }] }) // event lookup
       .mockResolvedValueOnce({}) // BEGIN
       .mockResolvedValueOnce({ rows: [{ id: 's1', code: 'A1', price_paise: 100000 }] }) // stall FOR UPDATE
+      .mockResolvedValueOnce({}) // release expired reservations on this stall
       .mockRejectedValueOnce(conflictErr) // insert stall_bookings -> 23505 (the race, not app logic)
       .mockResolvedValueOnce({}); // ROLLBACK
 
@@ -204,6 +207,7 @@ describe('POST /events/:id/stalls/:stallId/book', () => {
       .mockResolvedValueOnce({ rows: [{ id: 'e1' }] })
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [{ id: 's1', code: 'B2', price_paise: 50000 }] })
+      .mockResolvedValueOnce({}) // release expired reservations on this stall
       .mockRejectedValueOnce(conflictErr)
       .mockResolvedValueOnce({});
 
@@ -218,6 +222,7 @@ describe('POST /events/:id/stalls/:stallId/book', () => {
       .mockResolvedValueOnce({ rows: [{ id: 'e1' }] })
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [{ id: 's1', code: 'A1', price_paise: 100000 }] })
+      .mockResolvedValueOnce({}) // release expired reservations on this stall
       .mockResolvedValueOnce({ rows: [{ id: 'booking-1' }] })
       .mockResolvedValueOnce({ rows: [{ id: 'order-1' }] })
       .mockResolvedValueOnce({}); // ROLLBACK
@@ -237,6 +242,7 @@ describe('POST /events/:id/stalls/:stallId/book', () => {
       .mockResolvedValueOnce({ rows: [{ id: 'e1' }] })
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [{ id: 's1', code: 'A1', price_paise: 100000 }] })
+      .mockResolvedValueOnce({}) // release expired reservations on this stall
       .mockResolvedValueOnce({ rows: [{ id: 'booking-2' }] }) // insert succeeds — no conflict
       .mockResolvedValueOnce({ rows: [{ id: 'order-2' }] })
       .mockResolvedValueOnce({})
@@ -246,5 +252,35 @@ describe('POST /events/:id/stalls/:stallId/book', () => {
     const { status, json } = await request('POST', BOOK_PATH, { headers: residentHeader });
     expect(status).toBe(201);
     expect(json.data.bookingId).toBe('booking-2');
+  });
+});
+
+// An unpaid reservation must not hold a stall forever. Nothing ever wrote
+// 'released', so before this a resident who reserved and closed the app
+// blocked the stall permanently.
+describe('abandoned reservations', () => {
+  it('reclaims an expired reservation on the stall before inserting', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({ rows: [{ id: 'e1' }] })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [{ id: 's1', code: 'A1', price_paise: 100000 }] })
+      .mockResolvedValueOnce({}) // release expired reservations
+      .mockResolvedValueOnce({ rows: [{ id: 'booking-1' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'order-1' }] })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({});
+
+    const { status } = await request('POST', BOOK_PATH, { headers: residentHeader });
+    expect(status).toBe(201);
+
+    const release = mockClient.query.mock.calls.find(
+      (c) => typeof c[0] === 'string' && /UPDATE stall_bookings/.test(c[0]) && /released/.test(c[0])
+    );
+    expect(release).toBeTruthy();
+    // Only unpaid holds expire — a booked stall means money moved.
+    expect(release[0]).toMatch(/status = 'reserved'/);
+    expect(release[0]).toMatch(/created_at </);
+    expect(release[1][0]).toBe('s1');
   });
 });
