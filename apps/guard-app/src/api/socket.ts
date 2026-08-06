@@ -1,6 +1,8 @@
 import { io, Socket } from 'socket.io-client';
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://dwaarai.in/api/v1';
+// Same dead-host fallback as api/client.ts had — dwaarai.in has no A record
+// since 1 Aug 2026, so live gate updates silently never connected.
+const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://dwaarai.com/api/v1';
 const SOCKET_URL = API_BASE.replace(/\/api\/v1\/?$/, '');
 
 let socket: Socket | null = null;

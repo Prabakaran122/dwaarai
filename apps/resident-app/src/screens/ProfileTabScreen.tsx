@@ -71,7 +71,7 @@ export default function ProfileTabScreen() {
         <View style={styles.block}>
           <SectionHeader title="Support" />
           <Card>
-            <Row icon="lifebuoy" label="Help & support" onPress={() => Linking.openURL('mailto:support@dwaarai.in')} />
+            <Row icon="lifebuoy" label="Help & support" onPress={() => Linking.openURL('mailto:hello@dwaarai.com')} />
             <View style={styles.divider} />
             <Row icon="information-outline" label="About" value="Dwaar AI v1.0" />
           </Card>

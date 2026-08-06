@@ -2,8 +2,13 @@ import axios from 'axios';
 import { z } from 'zod';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// dwaarai.in lost its A record on 1 Aug 2026 and resolves to nothing. It was
+// the fallback here, and EXPO_PUBLIC_API_URL is not set by any build profile,
+// so every shipped APK silently called a dead host — login failed with a
+// network error and no server-side trace. The default must be a host that
+// actually exists; eas.json also sets it explicitly per profile now.
 const API_BASE =
-  process.env.EXPO_PUBLIC_API_URL || 'https://dwaarai.in/api/v1';
+  process.env.EXPO_PUBLIC_API_URL || 'https://dwaarai.com/api/v1';
 
 const SERVER_ORIGIN = API_BASE.replace(/\/api\/v1\/?$/, '');
 export function uploadUrl(p?: string | null): string | null {
