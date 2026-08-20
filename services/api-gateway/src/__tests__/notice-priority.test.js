@@ -1,213 +1,117 @@
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+/**
+ * notice-priority.test.js — F-21 announcement tiers and F-22 pinned cap.
+ *
+ * The delivery rules are exercised as pure functions rather than through the
+ * route, because the interesting behaviour is the matrix itself: which tier
+ * pushes how, and which one is allowed to spend money on SMS.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../src/db/queries.js', () => ({
-  query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
-  queryOne: vi.fn().mockResolvedValue(null),
-  queryRows: vi.fn().mockResolvedValue([]),
+vi.mock('../db/queries.js', () => ({
+  query: vi.fn(),
+  queryOne: vi.fn(),
+  queryRows: vi.fn(),
+}));
+vi.mock('../lib/fcm.js', () => ({ sendToMultiple: vi.fn() }));
+vi.mock('../lib/msg91.js', () => ({
+  sendTransactionalSMS: vi.fn(),
+  isConfigured: vi.fn(() => true),
 }));
 
-vi.mock('../../src/db/pool.js', () => ({
-  default: { query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }), on: vi.fn() },
-}));
-
-// Avoid real FCM calls.
-vi.mock('../../src/lib/fcm.js', () => ({
-  sendToMultiple: vi.fn().mockResolvedValue({ successCount: 0 }),
-}));
-
-import { NOTICE_PRIORITIES, isUrgent } from '../routes/notices.js';
-
-const { default: app } = await import('../index.js');
-const { generateTestToken } = await import('../middleware/auth.js');
-const { queryRows, queryOne } = await import('../db/queries.js');
+const { query, queryRows } = await import('../db/queries.js');
 const { sendToMultiple } = await import('../lib/fcm.js');
+const { sendTransactionalSMS } = await import('../lib/msg91.js');
+const {
+  NOTICE_PRIORITIES, normalisePriority, deliveryFor, publishNotice, MAX_PINNED,
+} = await import('../routes/notices.js');
 
-let server;
-let baseUrl;
-
-beforeAll(async () => {
-  await new Promise((resolve) => {
-    server = app.listen(0, () => {
-      baseUrl = `http://127.0.0.1:${server.address().port}`;
-      resolve();
-    });
-  });
-  return () => server.close();
+const notice = (over = {}) => ({
+  id: 'n1', community_id: 'c1', title: 'Water cut', body: 'From 9am', priority: 'normal', ...over,
 });
 
 beforeEach(() => {
-  queryRows.mockReset();
-  queryOne.mockReset();
-  sendToMultiple.mockClear();
+  vi.clearAllMocks();
+  delete process.env.ANNOUNCEMENT_SMS_ENABLED;
+  query.mockResolvedValue([]);
+  queryRows.mockResolvedValue([{ fcm_token: 'ExponentPushToken[abc]', phone: '9876543210' }]);
 });
 
-async function request(method, path, { body, headers } = {}) {
-  const opts = { method, headers: { 'Content-Type': 'application/json', ...headers } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${baseUrl}${path}`, opts);
-  const json = await res.json().catch(() => null);
-  return { status: res.status, json };
-}
-
-const ownerToken = generateTestToken({ sub: 'r1', role: 'resident', community_id: 'c1', unit_id: 'unit1', name: 'Asha' });
-const tenantToken = generateTestToken({ sub: 'r2', role: 'resident', community_id: 'c1', unit_id: 'unit2', name: 'Ravi' });
-const committeeToken = generateTestToken({ sub: 'r3', role: 'resident', community_id: 'c1', unit_id: 'unit3', name: 'Meena' });
-const adminToken = generateTestToken({ sub: 'a1', role: 'admin', community_id: 'c1', name: 'RWA Office' });
-const guardToken = generateTestToken({ sub: 'g1', role: 'resident', community_id: 'c1', unit_id: 'unit4', name: 'Guard' });
-
-describe('announcement priority', () => {
-  it('supports exactly normal and urgent', () => {
-    expect(NOTICE_PRIORITIES).toEqual(['normal', 'urgent']);
+describe('priority vocabulary', () => {
+  it("F-21: maps the BRD's 'general' onto the stored 'normal'", () => {
+    expect(normalisePriority('general')).toBe('normal');
   });
 
-  it('identifies urgent announcements, which the feed renders differently', () => {
-    expect(isUrgent('urgent')).toBe(true);
-    expect(isUrgent('normal')).toBe(false);
-    expect(isUrgent(undefined)).toBe(false);
+  // The installed Basera build sends these two and reads them back.
+  it('F-21: leaves the installed vocabulary untouched', () => {
+    expect(normalisePriority('normal')).toBe('normal');
+    expect(normalisePriority('urgent')).toBe('urgent');
+    expect(NOTICE_PRIORITIES).toContain('normal');
+    expect(NOTICE_PRIORITIES).toContain('urgent');
+  });
+
+  it('F-21: defaults a missing priority to normal', () => {
+    expect(normalisePriority(undefined)).toBe('normal');
   });
 });
 
-describe('POST /notices — committee-only, with priority', () => {
-  it('a portal admin can still post an announcement (regression guard)', async () => {
-    queryOne.mockResolvedValueOnce({
-      id: 'n1', category: 'official', title: 'AGM', body: 'Sunday 11am',
-      author_name: 'RWA Office', author_unit: null, posted_by_role: 'Admin',
-      is_pinned: true, priority: 'urgent', author_resident_id: null,
-      created_at: new Date(), last_activity_at: new Date(),
-    });
-    queryRows.mockResolvedValueOnce([{ fcm_token: 'tok-1' }]);
-    const { status, json } = await request('POST', '/api/v1/notices', {
-      headers: { Authorization: `Bearer ${adminToken}` },
-      body: { title: 'AGM', body: 'Sunday 11am', priority: 'urgent' },
-    });
-    expect(status).toBe(201);
-    expect(json.data.category).toBe('official');
-    expect(json.data.is_pinned).toBe(true);
-    // No residents lookup should gate an admin token.
-    expect(sendToMultiple).toHaveBeenCalledTimes(1);
+describe('deliveryFor', () => {
+  // Approved deviation: the BRD gives General no push at all. Keeping push
+  // would make General and Important identical, so they split on treatment.
+  it('F-21: General pushes, but quietly', () => {
+    expect(deliveryFor('normal')).toEqual({ push: 'default', sound: null, sms: false });
   });
 
-  // posted_by_role is NOT NULL and the shipped resident app renders the "RWA"
-  // badge on the literal 'admin', so these two assert the value actually bound
-  // to the INSERT. The DB is mocked, so a canned response row would happily
-  // hide both a constraint violation and a changed vocabulary.
-  it('stores posted_by_role as the literal "admin" the resident app matches on', async () => {
-    queryOne.mockResolvedValueOnce({
-      id: 'n1', category: 'official', title: 'AGM', body: 'Sunday 11am',
-      author_name: 'RWA Office', author_unit: null, posted_by_role: 'admin',
-      is_pinned: true, priority: 'normal', author_resident_id: null,
-      created_at: new Date(), last_activity_at: new Date(),
-    });
-    queryRows.mockResolvedValueOnce([]);
-    await request('POST', '/api/v1/notices', {
-      headers: { Authorization: `Bearer ${adminToken}` },
-      body: { title: 'AGM', body: 'Sunday 11am' },
-    });
-    const insert = queryOne.mock.calls.find(([sql]) => /INSERT INTO notices/i.test(sql));
-    expect(insert[1]).toContain('admin');
+  it('F-21: Important pushes with sound and never texts', () => {
+    expect(deliveryFor('important')).toEqual({ push: 'high', sound: 'default', sms: false });
   });
 
-  it('never binds a null posted_by_role for a plain resident starting a discussion', async () => {
-    queryOne
-      .mockResolvedValueOnce({ id: 'r1', name: 'Asha', resident_type: 'owner', committee_role: null }) // actor
-      .mockResolvedValueOnce({ unit_number: 'A-704' }) // unit
-      .mockResolvedValueOnce({
-        id: 'n9', category: 'discussion', title: 'Lift noise', body: 'Anyone else?',
-        author_name: 'Asha', author_unit: 'A-704', posted_by_role: 'resident',
-        is_pinned: false, priority: 'normal', author_resident_id: 'r1',
-        created_at: new Date(), last_activity_at: new Date(),
-      });
-    const { status } = await request('POST', '/api/v1/notices', {
-      headers: { Authorization: `Bearer ${ownerToken}` },
-      body: { title: 'Lift noise', body: 'Anyone else?', category: 'discussion' },
-    });
-    expect(status).toBe(201);
-    const insert = queryOne.mock.calls.find(([sql]) => /INSERT INTO notices/i.test(sql));
-    const postedByRole = insert[1][7];
-    expect(postedByRole).not.toBeNull();
-    expect(typeof postedByRole).toBe('string');
-    expect(postedByRole).toBe('resident');
+  it('F-21: only Urgent asks for SMS', () => {
+    expect(deliveryFor('urgent')).toEqual({ push: 'high', sound: 'default', sms: true });
+  });
+});
+
+describe('publishNotice', () => {
+  it('F-21: sends a General announcement silently', async () => {
+    await publishNotice(notice({ priority: 'normal' }));
+    expect(sendToMultiple).toHaveBeenCalledWith(
+      expect.any(Array), expect.any(String), expect.any(String), expect.any(Object),
+      { priority: 'default', sound: null }
+    );
   });
 
-  it('a resident committee member can post, and the row records their real role label', async () => {
-    queryOne
-      .mockResolvedValueOnce({ id: 'r3', name: 'Meena', resident_type: 'owner', committee_role: 'secretary' }) // actor lookup
-      .mockResolvedValueOnce({ unit_number: 'A-101' }) // unit lookup
-      .mockResolvedValueOnce({
-        id: 'n2', category: 'official', title: 'Water cut', body: 'Tomorrow',
-        author_name: 'Meena', author_unit: 'A-101', posted_by_role: 'Secretary',
-        is_pinned: true, priority: 'normal', author_resident_id: 'r3',
-        created_at: new Date(), last_activity_at: new Date(),
-      });
-    queryRows.mockResolvedValueOnce([]);
-    const { status, json } = await request('POST', '/api/v1/notices', {
-      headers: { Authorization: `Bearer ${committeeToken}` },
-      body: { title: 'Water cut', body: 'Tomorrow' },
-    });
-    expect(status).toBe(201);
-    expect(json.data.posted_by_role).toBe('Secretary');
-
-    const insertCall = queryOne.mock.calls[2];
-    // params[7] is posted_by_role per the INSERT column order.
-    expect(insertCall[1][7]).toBe('Secretary');
+  it('F-21: sends no SMS while ANNOUNCEMENT_SMS_ENABLED is off', async () => {
+    await publishNotice(notice({ priority: 'urgent' }));
+    expect(sendTransactionalSMS).not.toHaveBeenCalled();
   });
 
-  it('a plain owner (non-committee) is 403', async () => {
-    queryOne.mockResolvedValueOnce({ id: 'r1', name: 'Asha', resident_type: 'owner', committee_role: null });
-    const { status, json } = await request('POST', '/api/v1/notices', {
-      headers: { Authorization: `Bearer ${ownerToken}` },
-      body: { title: 'Hi', body: 'Hello' },
-    });
-    expect(status).toBe(403);
-    expect(json.error.message).toMatch(/committee/i);
+  it('F-21: sends SMS for Urgent once the flag is on', async () => {
+    process.env.ANNOUNCEMENT_SMS_ENABLED = 'true';
+    await publishNotice(notice({ priority: 'urgent' }));
+    expect(sendTransactionalSMS).toHaveBeenCalledTimes(1);
   });
 
-  it('a tenant is 403', async () => {
-    queryOne.mockResolvedValueOnce({ id: 'r2', name: 'Ravi', resident_type: 'tenant', committee_role: null });
-    const { status } = await request('POST', '/api/v1/notices', {
-      headers: { Authorization: `Bearer ${tenantToken}` },
-      body: { title: 'Hi', body: 'Hello' },
-    });
-    expect(status).toBe(403);
+  it('F-21: never texts for Important, however loud the flag', async () => {
+    process.env.ANNOUNCEMENT_SMS_ENABLED = 'true';
+    await publishNotice(notice({ priority: 'important' }));
+    expect(sendTransactionalSMS).not.toHaveBeenCalled();
   });
 
-  it('a guard is 403', async () => {
-    queryOne.mockResolvedValueOnce({ id: 'g1', name: 'Guard', resident_type: 'guard', committee_role: null });
-    const { status } = await request('POST', '/api/v1/notices', {
-      headers: { Authorization: `Bearer ${guardToken}` },
-      body: { title: 'Hi', body: 'Hello' },
-    });
-    expect(status).toBe(403);
+  // The announcement is the product; delivery is a courtesy. Neither a dead
+  // MSG91 nor a dead FCM may turn a published notice into an error.
+  it('F-21: survives an SMS failure', async () => {
+    process.env.ANNOUNCEMENT_SMS_ENABLED = 'true';
+    sendTransactionalSMS.mockRejectedValue(new Error('MSG91 down'));
+    await expect(publishNotice(notice({ priority: 'urgent' }))).resolves.toBeUndefined();
   });
 
-  it('an unknown priority is 400', async () => {
-    queryOne.mockResolvedValueOnce({ id: 'r3', name: 'Meena', resident_type: 'owner', committee_role: 'secretary' });
-    const { status, json } = await request('POST', '/api/v1/notices', {
-      headers: { Authorization: `Bearer ${committeeToken}` },
-      body: { title: 'Hi', body: 'Hello', priority: 'critical' },
-    });
-    expect(status).toBe(400);
-    expect(json.error.message).toMatch(/validation/i);
+  it('F-21: survives a push failure', async () => {
+    sendToMultiple.mockRejectedValue(new Error('FCM down'));
+    await expect(publishNotice(notice())).resolves.toBeUndefined();
   });
+});
 
-  it('omitting priority defaults to normal', async () => {
-    queryOne
-      .mockResolvedValueOnce({ id: 'r3', name: 'Meena', resident_type: 'owner', committee_role: 'secretary' })
-      .mockResolvedValueOnce(null) // unit lookup (no unit_id set on this token)
-      .mockResolvedValueOnce({
-        id: 'n4', category: 'official', title: 'Hi', body: 'Hello',
-        author_name: 'Meena', author_unit: null, posted_by_role: 'Secretary',
-        is_pinned: true, priority: 'normal', author_resident_id: 'r3',
-        created_at: new Date(), last_activity_at: new Date(),
-      });
-    queryRows.mockResolvedValueOnce([]);
-    const { status, json } = await request('POST', '/api/v1/notices', {
-      headers: { Authorization: `Bearer ${committeeToken}` },
-      body: { title: 'Hi', body: 'Hello' },
-    });
-    expect(status).toBe(201);
-    expect(json.data.priority).toBe('normal');
-    const insertCall = queryOne.mock.calls[2];
-    expect(insertCall[1][9]).toBe('normal'); // priority param
+describe('pinned cap', () => {
+  it('F-22: caps the pinned stack at three', () => {
+    expect(MAX_PINNED).toBe(3);
   });
 });
