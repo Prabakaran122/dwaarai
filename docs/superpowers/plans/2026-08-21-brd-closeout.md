@@ -787,11 +787,11 @@ cd apps/resident-app && eas build -p android --profile preview
 ```
 Bump `version`/`versionCode` first — `react-native-razorpay` is native, so this cannot ship over OTA.
 
-- [ ] **Step 5: Publish**
+- [x] **Step 5: Publish**
 
 Download the artifact, scp to `/opt/communitygate/landing/apps/dwaar-resident.apk` on EC2, keeping a `.bak-<ts>` of the old one, and verify by md5.
 
-- [ ] **Step 6: Commit and open the PR**
+- [x] **Step 6: Commit and open the PR**
 
 ---
 
