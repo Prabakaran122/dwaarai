@@ -43,6 +43,7 @@ import guestBookingRoutes from './routes/guest-booking.js';
 import dashboardRoutes from './routes/dashboard.js';
 import entitlementRoutes from './routes/entitlements.js';
 import { startVisitCron } from './cron/generate-visits.js';
+import { startPollCloseCron } from './cron/close-polls.js';
 import { initWebSocket } from './websocket.js';
 
 const app = express();
@@ -121,6 +122,7 @@ if (process.env.NODE_ENV !== 'test') {
   initWebSocket(server, CORS_ORIGINS);
   server.listen(PORT, () => console.log(`API Gateway listening on port ${PORT}`));
     startVisitCron();
+    startPollCloseCron();
 }
 
 export default app;
