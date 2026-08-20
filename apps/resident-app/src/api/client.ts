@@ -301,7 +301,11 @@ export const uploadIssuePhotos = (id: string, uris: string[]) => {
   });
 };
 
-export const createAnnouncement = (data: { title: string; body: string; priority?: 'normal' | 'urgent' }) =>
+// Three tiers per F-21. 'normal' is the stored value for the BRD's "General";
+// the server also accepts the literal 'general' as an alias.
+export type NoticePriority = 'normal' | 'important' | 'urgent';
+
+export const createAnnouncement = (data: { title: string; body: string; priority?: NoticePriority; scheduledAt?: string; repliesEnabled?: boolean }) =>
   api.post('/notices', { ...data, category: 'official' });
 
 export const createDiscussion = (data: { title: string; body: string }) =>

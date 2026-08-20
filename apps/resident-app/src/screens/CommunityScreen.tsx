@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
-import { spacing } from '../theme/spacing';
+import { spacing, radius } from '../theme/spacing';
 import { type } from '../theme/typography';
 import { AppBar, Card } from '../components/ui';
 import AnnouncementCard from '../components/AnnouncementCard';
@@ -14,11 +14,25 @@ import ComposeSheet from './ComposeSheet';
 import IssueDetailScreen from './IssueDetailScreen';
 import NoticeBoardScreen from './NoticeBoardScreen';
 import PollCreateScreen from './PollCreateScreen';
+import * as api from '../api/client';
 import { useCommunityStore } from '../store/communityStore';
 import type { FeedPost } from '../store/communityStore';
 
+export function matchesTerm(post: { title?: string; question?: string; body?: string }, term: string): boolean {
+  const haystack = `${post.title ?? ''} ${post.question ?? ''} ${post.body ?? ''}`.toLowerCase();
+  return haystack.includes(term.toLowerCase());
+}
+
 export default function CommunityScreen({ initialIssueId }: { initialIssueId?: string } = {}) {
   const { me, error, filter, fetch, setFilter, visiblePosts, toggleUpvote, castVote } = useCommunityStore();
+  const [trending, setTrending] = useState<{ term: string; count: number }[]>([]);
+  const [term, setTerm] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.getTrending()
+      .then((r) => setTrending(r.data?.data ?? []))
+      .catch(() => setTrending([]));
+  }, []);
   const [refreshing, setRefreshing] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [noticesOpen, setNoticesOpen] = useState(false);
@@ -46,7 +60,11 @@ export default function CommunityScreen({ initialIssueId }: { initialIssueId?: s
     );
   }
 
-  const posts = visiblePosts();
+  // A trending chip narrows the feed to posts mentioning that term; the tabs
+  // above already handle post type, so the two compose rather than compete.
+  const posts = term
+    ? visiblePosts().filter((p) => matchesTerm(p, term))
+    : visiblePosts();
 
   const renderPost = (post: FeedPost) => {
     switch (post.type) {
@@ -71,6 +89,24 @@ export default function CommunityScreen({ initialIssueId }: { initialIssueId?: s
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.teal} />}
       >
+        {/* Trending chips (F-06). Tapping searches the feed for that term
+            rather than switching post-type filters, which the tabs above
+            already do. */}
+        {trending.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trending}>
+            {trending.map((t) => (
+              <Pressable
+                key={t.term}
+                testID={`trending-${t.term}`}
+                onPress={() => setTerm(term === t.term ? null : t.term)}
+                style={[styles.trendChip, term === t.term && styles.trendChipActive]}
+              >
+                <Text style={term === t.term ? styles.trendLabelActive : styles.trendLabel}>#{t.term}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+
         <Pressable style={styles.compose} onPress={() => setComposeOpen(true)}>
           <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.textSecondary} />
           <Text style={type.bodySecondary}>Share something with your community…</Text>
@@ -102,5 +138,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.mist },
   scroll: { padding: spacing.lg, paddingBottom: spacing['5xl'] },
   item: { marginTop: spacing.sm },
+  trending: { gap: spacing.xs, paddingBottom: spacing.sm },
+  trendChip: {
+    paddingHorizontal: spacing.md, paddingVertical: spacing.xs,
+    borderRadius: radius.pill, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.surfaceBorder,
+  },
+  trendChipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  trendLabel: { ...type.caption, color: colors.textSecondary },
+  trendLabelActive: { ...type.caption, color: colors.textInverse },
   compose: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.surfaceBorder, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
 });
