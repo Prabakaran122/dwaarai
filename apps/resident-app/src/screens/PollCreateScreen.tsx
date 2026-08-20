@@ -19,12 +19,39 @@ const MAX_TOPIC = 80;
 const MAX_QUESTION = 280;
 const MAX_OPTION = 120;
 
+// The BRD (F-14) makes the closing date required and defaults it to a week
+// out. The server keeps it optional so the installed Basera build — which
+// never sends one — carries on working; this is where the requirement lives.
+export const DEFAULT_CLOSE_DAYS = 7;
+
+export function defaultClosesAt(now: Date = new Date(), days: number = DEFAULT_CLOSE_DAYS): string {
+  return new Date(now.getTime() + days * 86400_000).toISOString();
+}
+
+// Duration chips rather than a date-time picker: the BRD asks for a picker,
+// but that means another native module on top of the Razorpay one, and for a
+// poll "close in a week" is the actual decision being made — an exact clock
+// time is not. The resolved date is shown underneath so nothing is hidden.
+const CLOSE_CHOICES = [
+  { days: 3, label: '3 days' },
+  { days: 7, label: '1 week' },
+  { days: 14, label: '2 weeks' },
+  { days: 30, label: '1 month' },
+];
+
+export function formatCloses(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return `Closes ${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+}
+
 interface Draft {
   topic?: string;
   question: string;
   options: string[];
   audience: PollAudience;
   targetBlockId: string | null;
+  closesAt: string;
 }
 
 /**
@@ -41,6 +68,11 @@ export function canSubmitPoll(draft: Draft): boolean {
   if (filled.some((o) => o.length > MAX_OPTION)) return false;
   if ((draft.topic ?? '').trim().length > MAX_TOPIC) return false;
   if (draft.audience === 'block' && !draft.targetBlockId) return false;
+  // A poll that starts already closed is a dead poll; the server rejects it
+  // with a 422, so refuse it here rather than sending it.
+  if (!draft.closesAt) return false;
+  const closes = new Date(draft.closesAt);
+  if (isNaN(closes.getTime()) || closes <= new Date()) return false;
   return true;
 }
 
@@ -60,6 +92,8 @@ export default function PollCreateScreen({ onCancel, onCreated }: { onCancel: ()
   const [oneVotePerUnit, setOneVotePerUnit] = useState(true);
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [showLiveResults, setShowLiveResults] = useState(true);
+  const [closeDays, setCloseDays] = useState(DEFAULT_CLOSE_DAYS);
+  const [closesAt, setClosesAt] = useState(defaultClosesAt());
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -68,7 +102,7 @@ export default function PollCreateScreen({ onCancel, onCreated }: { onCancel: ()
       .catch(() => setBlocks([]));
   }, []);
 
-  const draft: Draft = { topic, question, options, audience, targetBlockId };
+  const draft: Draft = { topic, question, options, audience, targetBlockId, closesAt };
   const valid = canSubmitPoll(draft);
 
   const setOption = (i: number, value: string) =>
@@ -93,6 +127,7 @@ export default function PollCreateScreen({ onCancel, onCreated }: { onCancel: ()
         oneVotePerUnit,
         isAnonymous,
         showLiveResults,
+        closesAt,
       });
       onCreated();
     } catch {
@@ -164,6 +199,26 @@ export default function PollCreateScreen({ onCancel, onCreated }: { onCancel: ()
               ))}
             </View>
           )}
+        </Card>
+
+        <Card style={styles.block}>
+          <Text style={type.caption}>Poll closes on</Text>
+          <View style={styles.chips}>
+            {CLOSE_CHOICES.map((c) => {
+              const value = defaultClosesAt(new Date(), c.days);
+              const active = closeDays === c.days;
+              return (
+                <Pressable
+                  key={c.days}
+                  onPress={() => { setCloseDays(c.days); setClosesAt(value); }}
+                  style={[styles.chip, active && styles.chipActive]}
+                >
+                  <Text style={active ? styles.chipLabelActive : styles.chipLabel}>{c.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={type.micro} testID="closes-on">{formatCloses(closesAt)}</Text>
         </Card>
 
         <Card style={styles.block}>
