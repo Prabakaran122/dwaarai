@@ -1,112 +1,216 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
-import { font, type } from '../theme/typography';
-import { AppBar, Card, Input, Button } from '../components/ui';
-import EventCard, { EventItem } from '../components/EventCard';
-import * as api from '../api/client';
+import { type } from '../theme/typography';
+import { AppBar, Card, Button } from '../components/ui';
+import { useEventsStore, EventItem, Fund, tagsFor } from '../store/eventsStore';
+import type { EventFilter } from '../api/client';
+import StallBookingScreen, { inr } from './StallBookingScreen';
+import DonateSheet from './DonateSheet';
+import BookingConfirmationScreen from './BookingConfirmationScreen';
 
-const CATS = ['general', 'sports', 'festival', 'meeting', 'kids'];
+const FILTERS: { key: EventFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'upcoming', label: 'Upcoming' },
+  { key: 'stalls', label: 'Stall Booking' },
+  { key: 'donations', label: 'Donations' },
+  { key: 'past', label: 'Past' },
+];
+
+export function formatEventDate(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+type Screen =
+  | { screen: 'list' }
+  | { screen: 'stalls'; event: EventItem }
+  | { screen: 'donate'; fund: Fund }
+  | { screen: 'confirmed'; event: EventItem; stallCode: string; amountPaise: number };
 
 export default function EventsScreen() {
-  const [scope, setScope] = useState<'upcoming' | 'past'>('upcoming');
-  const [items, setItems] = useState<EventItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { events, featured, funds, filter, loading, error, fetch, setFilter, fetchFunds } = useEventsStore();
+  const [view, setView] = useState<Screen>({ screen: 'list' });
   const [refreshing, setRefreshing] = useState(false);
-  const [composeOpen, setComposeOpen] = useState(false);
-  // create form
-  const [title, setTitle] = useState('');
-  const [desc, setDesc] = useState('');
-  const [loc, setLoc] = useState('');
-  const [cat, setCat] = useState('general');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { const r = await api.getEvents(scope); setItems(r.data.data || []); } catch { /* keep */ } finally { setLoading(false); }
-  }, [scope]);
-  useEffect(() => { load(); }, [load]);
-  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
+  useEffect(() => { fetch(); fetchFunds(); }, [fetch, fetchFunds]);
 
-  const onRsvp = async (id: string, status: 'going' | 'maybe' | 'no') => {
-    setItems((prev) => prev.map((e) => e.id === id ? { ...e, myRsvp: status } : e));
-    try { await api.rsvpEvent(id, status); await load(); } catch { /* ignore */ }
-  };
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([fetch(), fetchFunds()]);
+    setRefreshing(false);
+  }, [fetch, fetchFunds]);
 
-  const submit = async () => {
-    setMsg(null);
-    if (!title.trim() || !date.trim() || !time.trim()) { setMsg('Title, date and time are required.'); return; }
-    const startsAt = `${date.trim()}T${time.trim()}:00+05:30`;
-    if (isNaN(new Date(startsAt).getTime())) { setMsg('Use date YYYY-MM-DD and time HH:MM.'); return; }
-    setSaving(true);
-    try {
-      await api.createEvent({ title: title.trim(), description: desc.trim() || undefined, location: loc.trim() || undefined, category: cat, startsAt });
-      setTitle(''); setDesc(''); setLoc(''); setCat('general'); setDate(''); setTime(''); setComposeOpen(false);
-      setScope('upcoming'); await load();
-    } catch { setMsg('Could not create the event.'); } finally { setSaving(false); }
-  };
+  // The app has no navigation stack; sub-screens are swapped in by local
+  // state and props, matching every other tab in this app.
+  if (view.screen === 'stalls') {
+    return (
+      <StallBookingScreen
+        eventId={view.event.id}
+        eventTitle={view.event.title}
+        onBack={() => setView({ screen: 'list' })}
+        onBooked={(stallCode, amountPaise) =>
+          setView({ screen: 'confirmed', event: view.event, stallCode, amountPaise })}
+      />
+    );
+  }
+
+  if (view.screen === 'donate') {
+    return (
+      <DonateSheet
+        fund={view.fund}
+        onClose={() => setView({ screen: 'list' })}
+        onDonated={() => { setView({ screen: 'list' }); fetchFunds(); }}
+      />
+    );
+  }
+
+  if (view.screen === 'confirmed') {
+    return (
+      <BookingConfirmationScreen
+        stallCode={view.stallCode}
+        eventTitle={view.event.title}
+        eventDate={formatEventDate(view.event.startsAt)}
+        amountPaise={view.amountPaise}
+        onDone={() => { setView({ screen: 'list' }); fetch(); }}
+      />
+    );
+  }
 
   return (
     <View style={styles.container}>
       <AppBar title="Events" />
-      <View style={styles.scopeRow}>
-        {(['upcoming', 'past'] as const).map((s) => (
-          <Text key={s} onPress={() => setScope(s)} style={[styles.scope, scope === s && styles.scopeOn]}>{s === 'upcoming' ? 'Upcoming' : 'Past'}</Text>
-        ))}
-      </View>
-      <ScrollView contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.teal} />}>
-        {loading ? null : items.length === 0 ? (
-          <Card><Text style={type.bodySecondary}>{scope === 'upcoming' ? 'No upcoming events' : 'No past events'}</Text></Card>
-        ) : items.map((e) => <View key={e.id} style={styles.item}><EventCard event={e} onRsvp={onRsvp} /></View>)}
-      </ScrollView>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+          {FILTERS.map((f) => (
+            <Pressable
+              key={f.key}
+              onPress={() => setFilter(f.key)}
+              accessibilityState={{ selected: filter === f.key }}
+              style={[styles.chip, filter === f.key && styles.chipActive]}
+            >
+              <Text style={filter === f.key ? styles.chipLabelActive : styles.chipLabel}>{f.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
 
-      <Pressable style={styles.fab} onPress={() => setComposeOpen(true)}>
-        <MaterialCommunityIcons name="calendar-plus" size={24} color={colors.textInverse} />
-      </Pressable>
+        {loading && !events.length && !featured ? (
+          <ActivityIndicator style={styles.block} color={colors.brandPrimary} />
+        ) : null}
 
-      <Modal visible={composeOpen} animationType="slide" transparent onRequestClose={() => setComposeOpen(false)}>
-        <View style={styles.backdrop}>
-          <View style={styles.sheet}>
-            <ScrollView contentContainerStyle={styles.form}>
-              <Text style={type.h2}>New event</Text>
-              <Input label="Title" placeholder="e.g. Holi Bash" value={title} onChangeText={setTitle} />
-              <Input label="Date (YYYY-MM-DD)" placeholder="2026-06-20" value={date} onChangeText={setDate} />
-              <Input label="Time (HH:MM)" placeholder="17:00" value={time} onChangeText={setTime} />
-              <Input label="Location (optional)" placeholder="Clubhouse" value={loc} onChangeText={setLoc} />
-              <Input testID="event-desc" label="Details (optional)" placeholder="What's happening" value={desc} onChangeText={setDesc} multiline style={{ minHeight: 80, textAlignVertical: 'top' }} />
-              <View style={styles.cats}>
-                {CATS.map((c) => <Text key={c} onPress={() => setCat(c)} style={[styles.cat, cat === c && styles.catOn]}>{c}</Text>)}
+        {error && !events.length && (
+          <Card style={styles.block}>
+            <Text style={type.body}>Could not load events. Pull down to try again.</Text>
+          </Card>
+        )}
+
+        {featured && (
+          <View testID="featured-hero">
+          <Card variant="hero" style={styles.hero}>
+            <Text style={styles.heroTag}>Featured</Text>
+            <Text style={styles.heroTitle}>{featured.title}</Text>
+            <Text style={styles.heroMeta}>
+              {formatEventDate(featured.startsAt)}{featured.location ? ` · ${featured.location}` : ''}
+            </Text>
+            <Tags event={featured} />
+            {featured.hasStalls && (
+              <View style={styles.heroCta}>
+                <Button title="Book a stall" onPress={() => setView({ screen: 'stalls', event: featured })} />
               </View>
-              {msg ? <Text style={styles.msg}>{msg}</Text> : null}
-              <Button title="Create event" onPress={submit} loading={saving} style={styles.create} />
-              <Text onPress={() => setComposeOpen(false)} style={styles.cancel}>Cancel</Text>
-            </ScrollView>
+            )}
+          </Card>
           </View>
-        </View>
-      </Modal>
+        )}
+
+        {funds.filter((f) => f.isOpen).map((fund) => (
+          <Card key={fund.id} style={styles.block}>
+            <Text style={type.caption}>Donation drive</Text>
+            <Text style={type.h3}>{fund.name}</Text>
+            <Text style={styles.raised}>
+              {inr(fund.raisedPaise)} raised of {inr(fund.targetPaise)}
+            </Text>
+            <View style={styles.cta}>
+              <Button title="Donate" onPress={() => setView({ screen: 'donate', fund })} />
+            </View>
+          </Card>
+        ))}
+
+        {events.map((e) => (
+          <Card key={e.id} style={styles.block}>
+            <Text style={type.h3}>{e.title}</Text>
+            <Text style={styles.meta}>
+              {formatEventDate(e.startsAt)}{e.location ? ` · ${e.location}` : ''}
+            </Text>
+            <Tags event={e} />
+            {e.hasStalls && (
+              <View style={styles.cta}>
+                <Button title="Book a stall" onPress={() => setView({ screen: 'stalls', event: e })} />
+              </View>
+            )}
+          </Card>
+        ))}
+
+        {!loading && !error && !events.length && !featured && (
+          <Card style={styles.block}>
+            <MaterialCommunityIcons name="calendar-blank" size={28} color={colors.textTertiary} />
+            <Text style={styles.empty}>Nothing here yet. New events will show up as your RWA publishes them.</Text>
+          </Card>
+        )}
+      </ScrollView>
     </View>
   );
 }
+
+function Tags({ event }: { event: EventItem }) {
+  const tags = tagsFor(event);
+  if (!tags.length) return null;
+  return (
+    <View style={styles.tags}>
+      {tags.map((t) => (
+        <View key={t} style={styles.tag}>
+          <Text style={styles.tagLabel}>{t}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.mist },
-  scopeRow: { flexDirection: 'row', gap: spacing.xs, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  scope: { ...font(500), fontSize: 13, color: colors.textSecondary, backgroundColor: colors.surface, borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, overflow: 'hidden' },
-  scopeOn: { backgroundColor: colors.brandPrimary, color: colors.textInverse },
-  scroll: { padding: spacing.lg, paddingBottom: spacing['5xl'] },
-  item: { marginTop: spacing.sm },
-  fab: { position: 'absolute', right: spacing.lg, bottom: spacing.xl, width: 56, height: 56, borderRadius: 28, backgroundColor: colors.actionPrimary, alignItems: 'center', justifyContent: 'center' },
-  backdrop: { flex: 1, backgroundColor: 'rgba(13,37,53,0.45)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: colors.mist, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, maxHeight: '90%' },
-  form: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing['3xl'] },
-  cats: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  cat: { ...font(500), fontSize: 12, color: colors.textSecondary, backgroundColor: colors.surface, borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, overflow: 'hidden', textTransform: 'capitalize' },
-  catOn: { backgroundColor: colors.teal, color: colors.textInverse },
-  msg: { ...font(400), fontSize: 12, color: colors.textError },
-  create: { marginTop: spacing.sm, alignSelf: 'flex-start' },
-  cancel: { ...font(500), fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm },
+  container: { flex: 1, backgroundColor: colors.bgPrimary },
+  scroll: { padding: spacing.md, paddingBottom: spacing.xl },
+  block: { marginTop: spacing.md },
+  chips: { gap: spacing.xs, paddingVertical: spacing.xs },
+  chip: {
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    borderRadius: radius.pill, borderWidth: 1, borderColor: colors.surfaceBorder,
+    backgroundColor: colors.surface,
+  },
+  // Active chip underlined in Amber, per the BRD.
+  chipActive: {
+    backgroundColor: colors.surface, borderColor: colors.actionPrimary,
+    borderBottomWidth: 3, borderBottomColor: colors.actionPrimary,
+  },
+  chipLabel: { ...type.caption, color: colors.textSecondary },
+  chipLabelActive: { ...type.caption, color: colors.textPrimary },
+  hero: { marginTop: spacing.md, backgroundColor: colors.brandPrimary },
+  heroTag: { ...type.micro, color: colors.actionPrimary },
+  heroTitle: { ...type.h1, color: colors.textInverse, marginTop: spacing.xs },
+  heroMeta: { ...type.bodySecondary, color: colors.mist, marginTop: spacing.xs },
+  heroCta: { marginTop: spacing.md },
+  cta: { marginTop: spacing.md },
+  meta: { ...type.bodySecondary, marginTop: spacing.xs },
+  raised: { ...type.caption, marginTop: spacing.xs },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm },
+  tag: {
+    paddingHorizontal: spacing.sm, paddingVertical: 2,
+    borderRadius: radius.pill, backgroundColor: colors.mist,
+  },
+  tagLabel: { ...type.micro, color: colors.textPrimary },
+  empty: { ...type.body, marginTop: spacing.sm },
 });
