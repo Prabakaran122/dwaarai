@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render, fireEvent, waitFor, within } from '@testing-library/react-native';
 import ComposeSheet from './ComposeSheet';
 import * as api from '../api/client';
 import { pickIssuePhotos } from '../lib/photos';
@@ -107,5 +107,57 @@ describe('ComposeSheet type selector', () => {
     fireEvent.press(getByText('Post'));
     await waitFor(() => expect(api.uploadIssuePhotos).toHaveBeenCalled());
     await waitFor(() => expect(onPosted).toHaveBeenCalled());
+  });
+});
+
+describe('announcement composer', () => {
+  const openAnnounce = () => {
+    const utils = render(
+      <ComposeSheet visible isCommittee onClose={() => {}} onPosted={() => {}} />
+    );
+    fireEvent.press(utils.getByText('Announce'));
+    return utils;
+  };
+
+  it('F-21: offers all three priority tiers', () => {
+    const { getByText } = openAnnounce();
+    ['General', 'Important', 'Urgent'].forEach((t) => expect(getByText(t)).toBeTruthy());
+  });
+
+  // Urgent costs money and reaches everyone; the composer should say so.
+  it('F-21: spells out what each tier actually does', () => {
+    const { getByText } = openAnnounce();
+    fireEvent.press(getByText('Urgent'));
+    expect(getByText(/SMS/i)).toBeTruthy();
+  });
+
+  it('F-21: posts the chosen tier', async () => {
+    const { getByText, getByPlaceholderText } = openAnnounce();
+    fireEvent.changeText(getByPlaceholderText('Title'), 'Water cut');
+    fireEvent.changeText(getByPlaceholderText('Write something…'), 'From 9am');
+    fireEvent.press(getByText('Important'));
+    fireEvent.press(getByText('Post'));
+    await waitFor(() => expect(api.createAnnouncement).toHaveBeenCalledWith(
+      expect.objectContaining({ priority: 'important' })
+    ));
+  });
+
+  it('F-23: previews the announcement as it is typed', () => {
+    const { getByPlaceholderText, getByTestId } = openAnnounce();
+    fireEvent.changeText(getByPlaceholderText('Title'), 'Water cut Thursday');
+    expect(within(getByTestId('announcement-preview')).getByText('Water cut Thursday')).toBeTruthy();
+  });
+
+  it('F-23: shows placeholder copy before anything is typed', () => {
+    const { getByTestId } = openAnnounce();
+    expect(within(getByTestId('announcement-preview')).getByText(/Your announcement title/)).toBeTruthy();
+  });
+
+  it('F-23: only the announcement tab previews', () => {
+    const { getByText, queryByTestId } = render(
+      <ComposeSheet visible isCommittee onClose={() => {}} onPosted={() => {}} />
+    );
+    fireEvent.press(getByText('Report issue'));
+    expect(queryByTestId('announcement-preview')).toBeNull();
   });
 });

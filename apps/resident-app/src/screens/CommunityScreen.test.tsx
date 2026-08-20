@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
-import CommunityScreen from './CommunityScreen';
+import CommunityScreen, { matchesTerm } from './CommunityScreen';
 import * as api from '../api/client';
 import { useCommunityStore } from '../store/communityStore';
 
@@ -22,6 +22,7 @@ beforeEach(() => {
   useCommunityStore.setState({ posts: [], me: null, loading: false, error: false, filter: 'all' });
   jest.clearAllMocks();
   (api.getCommunityFeed as jest.Mock).mockResolvedValue({ data: { data: feed } });
+  (api.getTrending as jest.Mock).mockResolvedValue({ data: { data: [] } });
   (api.upvoteIssue as jest.Mock).mockResolvedValue({ data: { data: { upvoted: true } } });
   (api.getBlocks as jest.Mock).mockResolvedValue({ data: { data: [] } });
 });
@@ -63,5 +64,31 @@ describe('CommunityScreen', () => {
     await waitFor(() => expect(getByText('New poll')).toBeTruthy());
     expect(queryByText('Share something with your community…')).toBeNull();
     expect(queryByText('Report issue')).toBeNull();
+  });
+});
+
+describe('matchesTerm (F-06 trending chips)', () => {
+  it('F-06: matches a term in the title', () => {
+    expect(matchesTerm({ title: 'Water outage Thursday' }, 'water')).toBe(true);
+  });
+
+  it('F-06: matches a poll question, not just a title', () => {
+    expect(matchesTerm({ question: 'Should the water tank be cleaned?' }, 'water')).toBe(true);
+  });
+
+  it('F-06: matches the body too', () => {
+    expect(matchesTerm({ title: 'Notice', body: 'The lift is down' }, 'lift')).toBe(true);
+  });
+
+  it('F-06: is case-insensitive', () => {
+    expect(matchesTerm({ title: 'WATER cut' }, 'water')).toBe(true);
+  });
+
+  it('F-06: excludes posts that do not mention the term', () => {
+    expect(matchesTerm({ title: 'Gym timings' }, 'water')).toBe(false);
+  });
+
+  it('F-06: tolerates a post with no text fields at all', () => {
+    expect(matchesTerm({}, 'water')).toBe(false);
   });
 });

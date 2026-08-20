@@ -16,6 +16,11 @@ import EventsScreen from '../src/screens/EventsScreen';
 import ProfileTabScreen from '../src/screens/ProfileTabScreen';
 import { registerForPushNotifications, setupNotificationListeners } from '../src/lib/notifications';
 import { useAppFonts } from '../src/lib/fonts';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as api from '../src/api/client';
+import { hasUnseenEvents } from '../src/store/eventsStore';
+
+const EVENTS_LAST_SEEN_KEY = 'events:lastSeenAt';
 
 type TabKey = 'home' | 'myunit' | 'community' | 'events' | 'profile';
 
@@ -27,7 +32,11 @@ const tabs: { key: TabKey; label: string; icon: string }[] = [
   { key: 'profile', label: 'Profile', icon: 'account' },
 ];
 
-function TabBar({ active, onSelect }: { active: TabKey; onSelect: (key: TabKey) => void }) {
+function TabBar({ active, onSelect, badges }: {
+  active: TabKey;
+  onSelect: (key: TabKey) => void;
+  badges?: Partial<Record<TabKey, boolean>>;
+}) {
   const insets = useSafeAreaInsets();
   return (
     <View style={[tabStyles.bar, { paddingBottom: insets.bottom || spacing.sm }]}>
@@ -42,6 +51,9 @@ function TabBar({ active, onSelect }: { active: TabKey; onSelect: (key: TabKey) 
             />
             <Text style={[tabStyles.label, isActive && tabStyles.labelActive]}>{tab.label}</Text>
             {isActive && <View style={tabStyles.dot} />}
+            {/* Distinct from the active-tab dot below the label: this is an
+                unread marker on the icon, so the two cannot be confused. */}
+            {!isActive && badges?.[tab.key] && <View testID={`badge-${tab.key}`} style={tabStyles.badge} />}
           </TouchableOpacity>
         );
       })}
@@ -55,7 +67,39 @@ function ResidentApp() {
   const [pendingIssueId, setPendingIssueId] = useState<string | null>(null);
   const [pendingFacilityBooking, setPendingFacilityBooking] = useState(false);
 
-  const selectTab = (key: TabKey) => { setPendingIssueId(null); setPendingFacilityBooking(false); setTab(key); };
+  const [eventsUnseen, setEventsUnseen] = useState(false);
+
+  // FR-EVT-05: dot the Events tab when something has been published since the
+  // resident last opened it. Last-seen lives on the device; no server state.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [seen, res] = await Promise.all([
+          AsyncStorage.getItem(EVENTS_LAST_SEEN_KEY),
+          api.getEventsFeed('upcoming'),
+        ]);
+        const newest = (res.data?.data ?? [])
+          .map((e: { createdAt: string }) => e.createdAt)
+          .sort()
+          .pop() ?? null;
+        if (!cancelled) setEventsUnseen(hasUnseenEvents(newest, seen));
+      } catch {
+        // A failed check simply means no dot; it must never block the shell.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const selectTab = (key: TabKey) => {
+    setPendingIssueId(null);
+    setPendingFacilityBooking(false);
+    if (key === 'events') {
+      setEventsUnseen(false);
+      AsyncStorage.setItem(EVENTS_LAST_SEEN_KEY, new Date().toISOString()).catch(() => {});
+    }
+    setTab(key);
+  };
   const bookFacility = () => { setPendingFacilityBooking(true); setTab('myunit'); };
 
   useEffect(() => {
@@ -84,7 +128,7 @@ function ResidentApp() {
       </View>
 
       {/* Tab Bar */}
-      <TabBar active={tab} onSelect={selectTab} />
+      <TabBar active={tab} onSelect={selectTab} badges={{ events: eventsUnseen }} />
 
       {approvalOverlay && (
         <ApprovalScreen
@@ -132,5 +176,9 @@ const tabStyles = StyleSheet.create({
   tab: { flex: 1, alignItems: 'center', paddingTop: spacing.xs, gap: 2 },
   label: { ...font(500), fontSize: 10, color: colors.textTertiary },
   labelActive: { color: colors.brandPrimary },
+  badge: {
+    position: 'absolute', top: 4, right: 22,
+    width: 8, height: 8, borderRadius: 4, backgroundColor: colors.notifBadge,
+  },
   dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: colors.actionPrimary, marginTop: 2 },
 });

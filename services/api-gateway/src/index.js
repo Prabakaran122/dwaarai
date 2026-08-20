@@ -37,12 +37,16 @@ import unitRoutes from './routes/units.js';
 import residentAdminRoutes from './routes/residents-admin.js';
 import communityFeedRoutes from './routes/community-feed.js';
 import communityEventRoutes from './routes/community-events.js';
+import trendingRoutes from './routes/trending.js';
 import stallRoutes from './routes/stalls.js';
 import donationRoutes from './routes/donations.js';
 import guestBookingRoutes from './routes/guest-booking.js';
+import paymentOrderRoutes from './routes/payment-orders.js';
 import dashboardRoutes from './routes/dashboard.js';
 import entitlementRoutes from './routes/entitlements.js';
 import { startVisitCron } from './cron/generate-visits.js';
+import { startPollCloseCron } from './cron/close-polls.js';
+import { startNoticePublishCron } from './cron/publish-notices.js';
 import { initWebSocket } from './websocket.js';
 
 const app = express();
@@ -100,9 +104,11 @@ app.use('/api/v1', facilityRoutes);
 // Community: /community/feed must be mounted before :id-style routes
 app.use('/api/v1', communityFeedRoutes);
 app.use('/api/v1', communityEventRoutes);
+app.use('/api/v1', trendingRoutes);
 app.use('/api/v1', stallRoutes);
 app.use('/api/v1', donationRoutes);
 app.use('/api/v1', guestBookingRoutes);
+app.use('/api/v1', paymentOrderRoutes);
 app.use('/api/v1', issueRoutes);
 app.use('/api/v1', pollRoutes);
 app.use('/api/v1', blockRoutes);
@@ -121,6 +127,8 @@ if (process.env.NODE_ENV !== 'test') {
   initWebSocket(server, CORS_ORIGINS);
   server.listen(PORT, () => console.log(`API Gateway listening on port ${PORT}`));
     startVisitCron();
+    startPollCloseCron();
+    startNoticePublishCron();
 }
 
 export default app;

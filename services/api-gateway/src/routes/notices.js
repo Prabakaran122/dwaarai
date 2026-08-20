@@ -5,23 +5,138 @@ import { success, error } from '../middleware/response.js';
 import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
 import { canAnnounce, isGuard, roleLabel } from '../lib/committee.js';
 import { sendToMultiple } from '../lib/fcm.js';
+import { sendTransactionalSMS, isConfigured as smsConfigured } from '../lib/msg91.js';
 
 const router = Router();
 
-// Exactly two priority levels (BRD: announcement composer with priority
-// levels). isUrgent is pure and exported so the feed's "renders differently"
-// rule is unit-testable without a request.
-export const NOTICE_PRIORITIES = ['normal', 'urgent'];
+// Announcements are pinned, but the BRD caps the pinned stack at three and
+// unpins the oldest (F-22).
+export const MAX_PINNED = 3;
+
+async function trimPinned(communityId) {
+  await query(
+    `UPDATE notices SET is_pinned = false
+      WHERE community_id = $1 AND category = 'official' AND is_pinned = true
+        AND id NOT IN (
+          SELECT id FROM notices
+           WHERE community_id = $1 AND category = 'official' AND is_pinned = true
+           ORDER BY created_at DESC
+           LIMIT ${MAX_PINNED})`,
+    [communityId]
+  );
+}
+
+/**
+ * Deliver an announcement: push to every registered device, and for Urgent
+ * also SMS. Shared by immediate posting and by the scheduled-release cron
+ * (F-24) so the two can never drift on how a notice reaches people.
+ *
+ * Delivery failures are logged, never thrown. The announcement is the
+ * product; the notification is a courtesy, and a dead MSG91 must not turn a
+ * published notice into a 500.
+ */
+/**
+ * Committee members and admins see queued announcements; residents do not.
+ * Read fresh rather than from the token — a member removed from the committee
+ * must stop seeing the queue immediately.
+ */
+async function canSeeScheduled(user) {
+  if (isAdminUser(user)) return true;
+  const actor = await queryOne(
+    `SELECT id, name, type AS resident_type, committee_role
+       FROM residents WHERE id = $1 AND community_id = $2 AND is_active = true`,
+    [user.sub, user.community_id]
+  );
+  return Boolean(actor) && canAnnounce({ ...actor, role: user.role });
+}
+
+export async function publishNotice(notice) {
+  const { push, sound, sms } = deliveryFor(notice.priority || 'normal');
+  const preview = notice.body.length > 120 ? `${notice.body.slice(0, 117)}...` : notice.body;
+
+  try {
+    const recipients = await queryRows(
+      `SELECT fcm_token FROM residents
+        WHERE community_id = $1 AND is_active = true AND fcm_token IS NOT NULL`,
+      [notice.community_id]
+    );
+    const tokens = recipients.map((r) => r.fcm_token).filter(Boolean);
+    if (tokens.length) {
+      await sendToMultiple(
+        tokens,
+        `📢 ${notice.title}`,
+        preview,
+        { type: 'notice', notice_id: notice.id },
+        { priority: push, sound }
+      );
+    }
+  } catch (e) {
+    console.error('[Push] notice fan-out failed:', e.message);
+  }
+
+  if (!sms || !smsEnabled() || !smsConfigured()) return;
+
+  try {
+    const targets = await queryRows(
+      `SELECT phone FROM residents
+        WHERE community_id = $1 AND is_active = true AND phone IS NOT NULL`,
+      [notice.community_id]
+    );
+    for (const t of targets) {
+      await sendTransactionalSMS(t.phone, `${notice.title} - ${preview}`);
+    }
+  } catch (e) {
+    console.error('[SMS] urgent announcement failed:', e.message);
+  }
+}
+
+// Three priority levels (F-21). The BRD names them General / Important /
+// Urgent; 'normal' is retained as the stored value for General because the
+// installed Basera build sends and reads it, and 'general' is accepted as an
+// input alias so a client speaking the BRD's vocabulary also works.
+export const NOTICE_PRIORITIES = ['normal', 'important', 'urgent'];
+export const NOTICE_PRIORITY_INPUTS = ['general', 'normal', 'important', 'urgent'];
+
+export function normalisePriority(input) {
+  return input === 'general' ? 'normal' : (input || 'normal');
+}
 
 export function isUrgent(priority) {
   return priority === 'urgent';
+}
+
+/**
+ * How a tier is delivered.
+ *
+ * DEVIATION FROM THE BRD, approved by the product owner: the document has
+ * General skip push entirely. Silently dropping notifications for the most
+ * common announcement type is a worse regression than notification fatigue,
+ * so General still pushes — quietly. That would leave General and Important
+ * identical, so the tiers separate on push treatment instead of push-or-not.
+ */
+export function deliveryFor(priority) {
+  switch (priority) {
+    case 'urgent':    return { push: 'high',    sound: 'default', sms: true };
+    case 'important': return { push: 'high',    sound: 'default', sms: false };
+    default:          return { push: 'default', sound: null,      sms: false };
+  }
+}
+
+// Urgent SMS reaches every resident and costs money per send, so it stays
+// behind a flag that is off unless explicitly switched on.
+export function smsEnabled() {
+  return process.env.ANNOUNCEMENT_SMS_ENABLED === 'true';
 }
 
 const createSchema = z.object({
   title: z.string().min(1).max(200),
   body: z.string().min(1).max(5000),
   category: z.enum(['official', 'discussion']).optional(),
-  priority: z.enum(NOTICE_PRIORITIES).default('normal'),
+  priority: z.enum(NOTICE_PRIORITY_INPUTS).default('normal'),
+  scheduledAt: z.string().datetime({ offset: true })
+    .refine((v) => new Date(v) > new Date(), { message: 'scheduledAt must be in the future' })
+    .optional(),
+  repliesEnabled: z.boolean().optional().default(true),
 });
 
 const replySchema = z.object({
@@ -47,6 +162,8 @@ function shapeNotice(n) {
     reply_count: n.reply_count !== undefined ? Number(n.reply_count) : undefined,
     created_at: n.created_at,
     last_activity_at: n.last_activity_at,
+    scheduledAt: n.scheduled_at || null,
+    repliesEnabled: n.replies_enabled !== false,
   };
 }
 
@@ -74,9 +191,13 @@ router.get('/notices', authenticateJWT(['resident', 'admin']), async (req, res) 
                 WHERE r.notice_id = n.id AND r.is_removed = false) AS reply_count
          FROM notices n
         WHERE n.community_id = $1 AND n.is_removed = false
+          -- A pending scheduled announcement is invisible to residents but
+          -- must stay visible to the committee, who need to see and manage
+          -- what they queued.
+          AND ($2::boolean OR n.scheduled_at IS NULL OR n.scheduled_at <= NOW())
         ORDER BY n.is_pinned DESC, n.last_activity_at DESC
         LIMIT 100`,
-      [req.user.community_id]
+      [req.user.community_id, await canSeeScheduled(req.user)]
     );
     return success(res, rows.map(shapeNotice));
   } catch (err) {
@@ -122,7 +243,9 @@ router.post('/notices', authenticateJWT(['resident', 'admin']), async (req, res)
     if (!parsed.success) {
       return error(res, 'Validation error', 400, parsed.error.issues);
     }
-    const { title, body, priority } = parsed.data;
+    const { title, body } = parsed.data;
+    const priority = normalisePriority(parsed.data.priority);
+    const { scheduledAt, repliesEnabled } = parsed.data;
     const user = req.user;
     const admin = isAdminUser(user);
 
@@ -179,31 +302,19 @@ router.post('/notices', authenticateJWT(['resident', 'admin']), async (req, res)
 
     const notice = await queryOne(
       `INSERT INTO notices
-         (community_id, category, title, body, author_resident_id, author_name, author_unit, posted_by_role, is_pinned, priority)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         (community_id, category, title, body, author_resident_id, author_name, author_unit, posted_by_role, is_pinned, priority, scheduled_at, replies_enabled)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
-      [user.community_id, category, title, body, authorResidentId, authorName, authorUnit, role, isPinned, priority]
+      [user.community_id, category, title, body, authorResidentId, authorName, authorUnit, role, isPinned, priority,
+       scheduledAt || null, repliesEnabled]
     );
 
-    // Push for official notices only (never for every discussion thread).
-    if (category === 'official') {
-      try {
-        const recipients = await queryRows(
-          `SELECT fcm_token FROM residents
-            WHERE community_id = $1 AND is_active = true AND fcm_token IS NOT NULL`,
-          [user.community_id]
-        );
-        const tokens = recipients.map((r) => r.fcm_token).filter(Boolean);
-        if (tokens.length) {
-          const preview = body.length > 120 ? `${body.slice(0, 117)}...` : body;
-          sendToMultiple(tokens, `📢 ${title}`, preview, {
-            type: 'notice',
-            notice_id: notice.id,
-          }).catch((e) => console.error('[Push] notice fan-out failed:', e.message));
-        }
-      } catch (e) {
-        console.error('[Push] notice recipient lookup failed:', e.message);
-      }
+    // Discussions never notify; only announcements do — and a scheduled one
+    // must stay silent until the cron releases it, or the notification would
+    // arrive days before the announcement itself is visible.
+    if (category === 'official' && !scheduledAt) {
+      await trimPinned(user.community_id);
+      await publishNotice(notice);
     }
 
     return success(res, shapeNotice(notice), 201);
@@ -225,11 +336,15 @@ router.post('/notices/:id/replies', authenticateJWT(['resident', 'admin']), asyn
     const admin = isAdmin(user);
 
     const notice = await queryOne(
-      'SELECT id FROM notices WHERE id = $1 AND community_id = $2 AND is_removed = false',
+      'SELECT id, replies_enabled FROM notices WHERE id = $1 AND community_id = $2 AND is_removed = false',
       [req.params.id, user.community_id]
     );
     if (!notice) {
       return error(res, 'Notice not found', 404);
+    }
+    // Hiding the composer is presentation; this is the enforcement (F-25).
+    if (notice.replies_enabled === false) {
+      return error(res, 'Replies are turned off for this post', 403);
     }
 
     let authorResidentId = null;

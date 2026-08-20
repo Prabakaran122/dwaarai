@@ -11,8 +11,27 @@ beforeEach(() => {
   (api.createPoll as jest.Mock).mockResolvedValue({ data: { data: { id: 'p1' } } });
 });
 
+// F-14 makes a future closing date mandatory, so every draft the suite builds
+// on now carries one — a draft without it is no longer submittable by design.
+const future = () => new Date(Date.now() + 7 * 86400_000).toISOString();
+
 describe('canSubmitPoll', () => {
-  const base = { question: 'Gym hours?', options: ['6am', '7am'], audience: 'all' as const, targetBlockId: null };
+  const base = {
+    question: 'Gym hours?', options: ['6am', '7am'], audience: 'all' as const,
+    targetBlockId: null, closesAt: future(),
+  };
+
+  it('F-14: rejects a draft with no closing date', () => {
+    expect(canSubmitPoll({ ...base, closesAt: '' })).toBe(false);
+  });
+
+  it('F-14: rejects a closing date in the past', () => {
+    expect(canSubmitPoll({ ...base, closesAt: new Date(Date.now() - 3600_000).toISOString() })).toBe(false);
+  });
+
+  it('F-14: accepts a closing date in the future', () => {
+    expect(canSubmitPoll(base)).toBe(true);
+  });
 
   it('accepts two filled options and a question', () => {
     expect(canSubmitPoll(base)).toBe(true);

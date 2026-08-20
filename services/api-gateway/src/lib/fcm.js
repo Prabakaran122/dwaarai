@@ -85,7 +85,15 @@ export async function sendApprovalRequest(token, approvalId, visitorName, gateNa
   return result;
 }
 
-export async function sendToMultiple(tokens, title, body, data = {}) {
+/**
+ * @param {object} [opts] delivery treatment. Defaults reproduce the behaviour
+ *   every existing caller relies on, so adding announcement tiers (F-21) does
+ *   not quietly change how visitor alerts or SOS pushes arrive.
+ * @param {'default'|'high'} [opts.priority]
+ * @param {'default'|null} [opts.sound] null sends silently.
+ */
+export async function sendToMultiple(tokens, title, body, data = {}, opts = {}) {
+  const { priority = 'high', sound = 'default' } = opts;
   const validTokens = tokens.filter((t) => t && t.startsWith('ExponentPushToken['));
   if (validTokens.length === 0) {
     console.log(`[Push-DEV] "${title}" — "${body}" → ${tokens.length} tokens (none valid)`);
@@ -97,8 +105,8 @@ export async function sendToMultiple(tokens, title, body, data = {}) {
     title,
     body,
     data,
-    sound: 'default',
-    priority: 'high',
+    sound,
+    priority,
     channelId: 'communitygate',
   }));
 

@@ -301,7 +301,11 @@ export const uploadIssuePhotos = (id: string, uris: string[]) => {
   });
 };
 
-export const createAnnouncement = (data: { title: string; body: string; priority?: 'normal' | 'urgent' }) =>
+// Three tiers per F-21. 'normal' is the stored value for the BRD's "General";
+// the server also accepts the literal 'general' as an alias.
+export type NoticePriority = 'normal' | 'important' | 'urgent';
+
+export const createAnnouncement = (data: { title: string; body: string; priority?: NoticePriority; scheduledAt?: string; repliesEnabled?: boolean }) =>
   api.post('/notices', { ...data, category: 'official' });
 
 export const createDiscussion = (data: { title: string; body: string }) =>
@@ -361,3 +365,28 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+// -- Events commerce (Events BRD v1.0) ---------------------------------------
+// `filter` drives the BRD's chips; the older `scope` param still works
+// server-side for the installed build.
+export type EventFilter = 'all' | 'upcoming' | 'stalls' | 'donations' | 'past';
+
+export const getEventsFeed = (filter: EventFilter = 'all') =>
+  api.get('/community-events', { params: { filter } });
+
+export const getStalls = (eventId: string) => api.get(`/events/${eventId}/stalls`);
+
+export const bookStall = (eventId: string, stallId: string) =>
+  api.post(`/events/${eventId}/stalls/${stallId}/book`, {});
+
+export const getDonationFunds = () => api.get('/donation-funds');
+
+export const getDonationFund = (id: string) => api.get(`/donation-funds/${id}`);
+
+export const donate = (fundId: string, amountPaise: number, isAnonymous = false) =>
+  api.post(`/donation-funds/${fundId}/donate`, { amountPaise, isAnonymous });
+
+// Polled after checkout: the gateway callback is not proof of payment.
+export const getPaymentOrder = (id: string) => api.get(`/payment-orders/${id}`);
+
+export const getTrending = () => api.get('/community/trending');

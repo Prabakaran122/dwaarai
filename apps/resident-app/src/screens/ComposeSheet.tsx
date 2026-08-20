@@ -5,6 +5,7 @@ import { spacing, radius } from '../theme/spacing';
 import { font, type } from '../theme/typography';
 import { Input, Button } from '../components/ui';
 import * as api from '../api/client';
+import AnnouncementCard from '../components/AnnouncementCard';
 import { pickIssuePhotos, MAX_ISSUE_PHOTOS } from '../lib/photos';
 
 type Kind = 'issue' | 'poll' | 'discussion' | 'announcement';
@@ -17,10 +18,16 @@ const KINDS: { key: Kind; label: string; committeeOnly: boolean }[] = [
 ];
 
 const ISSUE_CATS = ['maintenance', 'security', 'amenities', 'general'] as const;
+// Three tiers per F-21. 'normal' is the stored value for the BRD's "General"
+// -- the server accepts both, and sending the stored value keeps this screen
+// working against an older API too.
 const PRIORITIES = [
-  { key: 'normal', label: 'Normal' },
-  { key: 'urgent', label: 'Urgent' },
+  { key: 'normal', label: 'General', hint: 'Feed and a quiet notification' },
+  { key: 'important', label: 'Important', hint: 'Notifies everyone with sound' },
+  { key: 'urgent', label: 'Urgent', hint: 'Notification and SMS. Use sparingly.' },
 ] as const;
+
+export type Priority = (typeof PRIORITIES)[number]['key'];
 
 export default function ComposeSheet({
   visible,
@@ -41,7 +48,7 @@ export default function ComposeSheet({
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [category, setCategory] = useState('general');
-  const [priority, setPriority] = useState<'normal' | 'urgent'>('normal');
+  const [priority, setPriority] = useState<Priority>('normal');
   const [photos, setPhotos] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -117,13 +124,32 @@ export default function ComposeSheet({
               </>
             ) : null}
             {kind === 'announcement' ? (
-              <View style={styles.cats}>
-                {PRIORITIES.map((p) => (
-                  <Text key={p.key} onPress={() => setPriority(p.key)} style={[styles.cat, priority === p.key && styles.catActive]}>
-                    {p.label}
-                  </Text>
-                ))}
-              </View>
+              <>
+                <View style={styles.cats}>
+                  {PRIORITIES.map((p) => (
+                    <Text key={p.key} onPress={() => setPriority(p.key)} style={[styles.cat, priority === p.key && styles.catActive]}>
+                      {p.label}
+                    </Text>
+                  ))}
+                </View>
+                <Text style={styles.hint}>{PRIORITIES.find((p) => p.key === priority)?.hint}</Text>
+
+                {/* Live preview (F-23). Renders the same AnnouncementCard the
+                    feed uses, so the preview cannot drift from what residents
+                    actually see. */}
+                <Text style={styles.previewLabel}>Preview</Text>
+                <View testID="announcement-preview" style={styles.preview}>
+                  <AnnouncementCard
+                    announcement={{
+                      id: 'preview',
+                      title: title.trim() || 'Your announcement title',
+                      body: body.trim() || 'Your message will appear here.',
+                      authorName: 'You',
+                      createdAt: new Date().toISOString(),
+                    }}
+                  />
+                </View>
+              </>
             ) : null}
             {msg ? <Text style={styles.msg}>{msg}</Text> : null}
             <Button title="Post" onPress={submit} loading={saving} style={styles.post} />
@@ -147,6 +173,9 @@ const styles = StyleSheet.create({
   catActive: { backgroundColor: colors.teal, color: colors.textInverse },
   addPhotos: { ...font(500), fontSize: 13, color: colors.brandPrimary, marginTop: spacing.xs },
   msg: { ...font(400), fontSize: 12, color: colors.textError, marginTop: spacing.xs },
+  hint: { ...type.micro, marginTop: spacing.xs },
+  previewLabel: { ...type.caption, marginTop: spacing.md },
+  preview: { marginTop: spacing.xs },
   post: { marginTop: spacing.sm, alignSelf: 'flex-start' },
   cancel: { ...font(500), fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm },
 });
