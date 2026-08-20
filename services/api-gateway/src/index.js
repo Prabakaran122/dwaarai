@@ -44,6 +44,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import entitlementRoutes from './routes/entitlements.js';
 import { startVisitCron } from './cron/generate-visits.js';
 import { startPollCloseCron } from './cron/close-polls.js';
+import { startNoticePublishCron } from './cron/publish-notices.js';
 import { initWebSocket } from './websocket.js';
 
 const app = express();
@@ -123,6 +124,7 @@ if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, () => console.log(`API Gateway listening on port ${PORT}`));
     startVisitCron();
     startPollCloseCron();
+    startNoticePublishCron();
 }
 
 export default app;

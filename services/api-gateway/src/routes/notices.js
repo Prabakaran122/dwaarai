@@ -35,6 +35,21 @@ async function trimPinned(communityId) {
  * product; the notification is a courtesy, and a dead MSG91 must not turn a
  * published notice into a 500.
  */
+/**
+ * Committee members and admins see queued announcements; residents do not.
+ * Read fresh rather than from the token — a member removed from the committee
+ * must stop seeing the queue immediately.
+ */
+async function canSeeScheduled(user) {
+  if (isAdminUser(user)) return true;
+  const actor = await queryOne(
+    `SELECT id, name, type AS resident_type, committee_role
+       FROM residents WHERE id = $1 AND community_id = $2 AND is_active = true`,
+    [user.sub, user.community_id]
+  );
+  return Boolean(actor) && canAnnounce({ ...actor, role: user.role });
+}
+
 export async function publishNotice(notice) {
   const { push, sound, sms } = deliveryFor(notice.priority || 'normal');
   const preview = notice.body.length > 120 ? `${notice.body.slice(0, 117)}...` : notice.body;
@@ -118,6 +133,10 @@ const createSchema = z.object({
   body: z.string().min(1).max(5000),
   category: z.enum(['official', 'discussion']).optional(),
   priority: z.enum(NOTICE_PRIORITY_INPUTS).default('normal'),
+  scheduledAt: z.string().datetime({ offset: true })
+    .refine((v) => new Date(v) > new Date(), { message: 'scheduledAt must be in the future' })
+    .optional(),
+  repliesEnabled: z.boolean().optional().default(true),
 });
 
 const replySchema = z.object({
@@ -143,6 +162,8 @@ function shapeNotice(n) {
     reply_count: n.reply_count !== undefined ? Number(n.reply_count) : undefined,
     created_at: n.created_at,
     last_activity_at: n.last_activity_at,
+    scheduledAt: n.scheduled_at || null,
+    repliesEnabled: n.replies_enabled !== false,
   };
 }
 
@@ -170,9 +191,13 @@ router.get('/notices', authenticateJWT(['resident', 'admin']), async (req, res) 
                 WHERE r.notice_id = n.id AND r.is_removed = false) AS reply_count
          FROM notices n
         WHERE n.community_id = $1 AND n.is_removed = false
+          -- A pending scheduled announcement is invisible to residents but
+          -- must stay visible to the committee, who need to see and manage
+          -- what they queued.
+          AND ($2::boolean OR n.scheduled_at IS NULL OR n.scheduled_at <= NOW())
         ORDER BY n.is_pinned DESC, n.last_activity_at DESC
         LIMIT 100`,
-      [req.user.community_id]
+      [req.user.community_id, await canSeeScheduled(req.user)]
     );
     return success(res, rows.map(shapeNotice));
   } catch (err) {
@@ -220,6 +245,7 @@ router.post('/notices', authenticateJWT(['resident', 'admin']), async (req, res)
     }
     const { title, body } = parsed.data;
     const priority = normalisePriority(parsed.data.priority);
+    const { scheduledAt, repliesEnabled } = parsed.data;
     const user = req.user;
     const admin = isAdminUser(user);
 
@@ -276,14 +302,17 @@ router.post('/notices', authenticateJWT(['resident', 'admin']), async (req, res)
 
     const notice = await queryOne(
       `INSERT INTO notices
-         (community_id, category, title, body, author_resident_id, author_name, author_unit, posted_by_role, is_pinned, priority)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         (community_id, category, title, body, author_resident_id, author_name, author_unit, posted_by_role, is_pinned, priority, scheduled_at, replies_enabled)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
-      [user.community_id, category, title, body, authorResidentId, authorName, authorUnit, role, isPinned, priority]
+      [user.community_id, category, title, body, authorResidentId, authorName, authorUnit, role, isPinned, priority,
+       scheduledAt || null, repliesEnabled]
     );
 
-    // Discussions never notify; only announcements do.
-    if (category === 'official') {
+    // Discussions never notify; only announcements do — and a scheduled one
+    // must stay silent until the cron releases it, or the notification would
+    // arrive days before the announcement itself is visible.
+    if (category === 'official' && !scheduledAt) {
       await trimPinned(user.community_id);
       await publishNotice(notice);
     }
@@ -307,11 +336,15 @@ router.post('/notices/:id/replies', authenticateJWT(['resident', 'admin']), asyn
     const admin = isAdmin(user);
 
     const notice = await queryOne(
-      'SELECT id FROM notices WHERE id = $1 AND community_id = $2 AND is_removed = false',
+      'SELECT id, replies_enabled FROM notices WHERE id = $1 AND community_id = $2 AND is_removed = false',
       [req.params.id, user.community_id]
     );
     if (!notice) {
       return error(res, 'Notice not found', 404);
+    }
+    // Hiding the composer is presentation; this is the enforcement (F-25).
+    if (notice.replies_enabled === false) {
+      return error(res, 'Replies are turned off for this post', 403);
     }
 
     let authorResidentId = null;
