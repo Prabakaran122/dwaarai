@@ -361,3 +361,28 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+// -- Events commerce (Events BRD v1.0) ---------------------------------------
+// `filter` drives the BRD's chips; the older `scope` param still works
+// server-side for the installed build.
+export type EventFilter = 'all' | 'upcoming' | 'stalls' | 'donations' | 'past';
+
+export const getEventsFeed = (filter: EventFilter = 'all') =>
+  api.get('/community-events', { params: { filter } });
+
+export const getStalls = (eventId: string) => api.get(`/events/${eventId}/stalls`);
+
+export const bookStall = (eventId: string, stallId: string) =>
+  api.post(`/events/${eventId}/stalls/${stallId}/book`, {});
+
+export const getDonationFunds = () => api.get('/donation-funds');
+
+export const getDonationFund = (id: string) => api.get(`/donation-funds/${id}`);
+
+export const donate = (fundId: string, amountPaise: number, isAnonymous = false) =>
+  api.post(`/donation-funds/${fundId}/donate`, { amountPaise, isAnonymous });
+
+// Polled after checkout: the gateway callback is not proof of payment.
+export const getPaymentOrder = (id: string) => api.get(`/payment-orders/${id}`);
+
+export const getTrending = () => api.get('/community/trending');
