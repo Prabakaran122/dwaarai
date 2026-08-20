@@ -64,7 +64,7 @@
 - Consumes: nothing
 - Produces: `POST /polls` rejects a past `closesAt` with 400; absent `closesAt` still succeeds
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 it('F-14: rejects a poll whose closesAt is already in the past', async () => {
@@ -83,12 +83,19 @@ it('F-14: still accepts a poll with no closesAt (installed APK compatibility)', 
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `pnpm --filter api-gateway exec vitest run src/__tests__/community.test.js -t "F-14"`
 Expected: the past-date test FAILS with 201 instead of 400.
 
-- [ ] **Step 3: Add the validation**
+- [x] **Step 3: Add the validation**
+
+> **Correction, found during execution:** this validation already existed.
+> `routes/polls.js` rejects a non-date with 400 and a past date with 422 in the
+> handler, not the schema — the audit that produced this plan read only the
+> zod line. F-14's real gap was the client never requiring a date at all, so
+> the work moved to Task 8; the server was left alone and the tests below were
+> kept as a regression guard on behaviour nothing had pinned.
 
 In the `createSchema`, replace `closesAt: z.string().optional()` with:
 
@@ -98,12 +105,12 @@ closesAt: z.string().datetime({ offset: true })
   .optional(),
 ```
 
-- [ ] **Step 4: Run to verify they pass**
+- [x] **Step 4: Run to verify they pass**
 
 Run: `pnpm --filter api-gateway exec vitest run src/__tests__/community.test.js`
 Expected: PASS, and every pre-existing test in the file still passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/api-gateway/src/routes/polls.js services/api-gateway/src/__tests__/community.test.js
@@ -123,7 +130,7 @@ git commit -m "feat(api): reject poll closing dates in the past (F-14)"
 - Consumes: nothing
 - Produces: `closeDuePolls(): Promise<number>` (count closed), `startPollCloseCron(): void`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 import { closeDuePolls } from '../cron/close-polls.js';
@@ -139,21 +146,21 @@ it('F-19: leaves polls whose closes_at is still in the future alone', async () =
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `pnpm --filter api-gateway exec vitest run src/__tests__/close-polls.test.js`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Follow `src/cron/generate-visits.js` exactly for structure and logging prefix. `closeDuePolls()` selects `id, question, community_id` from polls where `closes_at < NOW() AND status <> 'closed'`, updates each to `closed`, then pushes a summary. Wrap the push in try/catch so a notification failure never blocks the state flip — the close is the product, the push is a courtesy. Schedule with `cron.schedule('*/5 * * * *', ...)` in `startPollCloseCron()`.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `pnpm --filter api-gateway exec vitest run src/__tests__/close-polls.test.js`
 Expected: PASS
 
-- [ ] **Step 5: Wire into index.js next to `startVisitCron()` and commit**
+- [x] **Step 5: Wire into index.js next to `startVisitCron()` and commit**
 
 ```bash
 git add services/api-gateway/src/cron/close-polls.js services/api-gateway/src/index.js services/api-gateway/src/__tests__/close-polls.test.js
@@ -171,7 +178,7 @@ git commit -m "feat(api): auto-close due polls and push a result summary (F-19)"
 **Interfaces:**
 - Produces: `sendToMultiple(tokens, title, body, data = {}, opts = {})` where `opts` is `{ priority?: 'default'|'high', sound?: 'default'|null }`, defaulting to `high`/`default` so every existing caller is unchanged.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 it('F-21: defaults to high priority with sound so existing callers are unchanged', async () => {
@@ -185,10 +192,10 @@ it('F-21: honours a normal-priority silent push', async () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
-- [ ] **Step 3: Add the `opts` parameter, defaulting `priority: 'high'`, `sound: 'default'`**
-- [ ] **Step 4: Run the whole api-gateway suite** — this touches a shared helper, so `pnpm --filter api-gateway test` must stay fully green, not just the new file.
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run to verify it fails**
+- [x] **Step 3: Add the `opts` parameter, defaulting `priority: 'high'`, `sound: 'default'`**
+- [x] **Step 4: Run the whole api-gateway suite** — this touches a shared helper, so `pnpm --filter api-gateway test` must stay fully green, not just the new file.
+- [x] **Step 5: Commit**
 
 ```bash
 git commit -am "refactor(api): let sendToMultiple take push priority and sound (F-21)"
@@ -214,7 +221,7 @@ Delivery matrix — note the approved deviation: General **keeps** push.
 | `important` | `high` | yes | no |
 | `urgent` | `high` | yes | yes, if `ANNOUNCEMENT_SMS_ENABLED` |
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 it("F-21: maps the BRD's 'general' onto the stored 'normal'", () => {
@@ -259,10 +266,10 @@ it('F-21: still accepts the installed APK vocabulary', async () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
-- [ ] **Step 3: Implement.** Extend `NOTICE_PRIORITIES`, accept `general` in the zod enum and normalise before insert, extract the existing inline push block into `publishNotice()`, and add the SMS branch guarded by `isConfigured()` and the env flag. Keep `isUrgent()` exported — the feed's rendering rule already uses it.
-- [ ] **Step 4: Run to verify they pass**
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run to verify they fail**
+- [x] **Step 3: Implement.** Extend `NOTICE_PRIORITIES`, accept `general` in the zod enum and normalise before insert, extract the existing inline push block into `publishNotice()`, and add the SMS branch guarded by `isConfigured()` and the env flag. Keep `isUrgent()` exported — the feed's rendering rule already uses it.
+- [x] **Step 4: Run to verify they pass**
+- [x] **Step 5: Commit**
 
 ```bash
 git commit -am "feat(api): three announcement tiers with env-gated urgent SMS (F-21)"
@@ -276,7 +283,7 @@ git commit -am "feat(api): three announcement tiers with env-gated urgent SMS (F
 - Modify: `services/api-gateway/src/routes/notices.js`
 - Test: `services/api-gateway/src/__tests__/notice-priority.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 it('F-22: pinning a fourth announcement unpins the oldest', async () => {
@@ -289,8 +296,8 @@ it('F-22: pinning a fourth announcement unpins the oldest', async () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails** — expect four pinned rows.
-- [ ] **Step 3: Implement** in the same transaction as the insert:
+- [x] **Step 2: Run to verify it fails** — expect four pinned rows.
+- [x] **Step 3: Implement** in the same transaction as the insert:
 
 ```sql
 UPDATE notices SET is_pinned = false
@@ -301,8 +308,8 @@ UPDATE notices SET is_pinned = false
       ORDER BY created_at DESC LIMIT 3)
 ```
 
-- [ ] **Step 4: Run to verify it passes**
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Run to verify it passes**
+- [x] **Step 5: Commit**
 
 ```bash
 git commit -am "feat(api): keep at most three pinned announcements (F-22)"
@@ -322,7 +329,7 @@ git commit -am "feat(api): keep at most three pinned announcements (F-22)"
 - Consumes: `publishNotice()` from Task 4
 - Produces: `releaseDueNotices(): Promise<number>`, `startNoticePublishCron(): void`
 
-- [ ] **Step 1: Write the migration**
+- [x] **Step 1: Write the migration**
 
 ```sql
 -- Scheduled announcements (F-24) and per-post reply control (F-25).
@@ -331,7 +338,7 @@ ALTER TABLE notices ADD COLUMN IF NOT EXISTS replies_enabled BOOLEAN NOT NULL DE
 CREATE INDEX IF NOT EXISTS idx_notices_scheduled ON notices(scheduled_at) WHERE scheduled_at IS NOT NULL;
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 ```js
 it('F-24: a future-scheduled announcement is withheld from residents', async () => {
@@ -372,13 +379,13 @@ it('F-25: replies stay enabled by default', async () => {
 });
 ```
 
-- [ ] **Step 3: Run to verify they fail**
-- [ ] **Step 4: Implement.** Add `scheduledAt` and `repliesEnabled` to `createSchema` and `shapeNotice`; filter `scheduled_at IS NULL OR scheduled_at <= NOW()` from resident list queries; skip `publishNotice()` when scheduling; `releaseDueNotices()` clears `scheduled_at` and calls `publishNotice()`; reply route 403s when `replies_enabled` is false.
-- [ ] **Step 5: Verify migration idempotency**
+- [x] **Step 3: Run to verify they fail**
+- [x] **Step 4: Implement.** Add `scheduledAt` and `repliesEnabled` to `createSchema` and `shapeNotice`; filter `scheduled_at IS NULL OR scheduled_at <= NOW()` from resident list queries; skip `publishNotice()` when scheduling; `releaseDueNotices()` clears `scheduled_at` and calls `publishNotice()`; reply route 403s when `replies_enabled` is false.
+- [x] **Step 5: Verify migration idempotency**
 
 Run: `pnpm --filter api-gateway migrate` twice. Expected: the second run prints "up to date".
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A services/api-gateway
@@ -397,7 +404,7 @@ git commit -m "feat(api): scheduled announcements and per-post replies toggle (F
 **Interfaces:**
 - Produces: `GET /community/trending` → `{ data: [{ term, count }] }`, max 5; `STOPWORDS: Set<string>`; `topTerms(titles, limit)` pure and exported for unit testing.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 it('F-06: returns at most five terms', () => {
@@ -416,10 +423,10 @@ it('F-06: ranks by frequency', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
-- [ ] **Step 3: Implement.** Query titles from notices and issues over 7 days for the caller's community, lowercase, split on non-letters, drop stopwords and words under 3 characters, count, sort desc, take 5.
-- [ ] **Step 4: Run to verify they pass**
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run to verify they fail**
+- [x] **Step 3: Implement.** Query titles from notices and issues over 7 days for the caller's community, lowercase, split on non-letters, drop stopwords and words under 3 characters, count, sort desc, take 5.
+- [x] **Step 4: Run to verify they pass**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A services/api-gateway && git commit -m "feat(api): trending community topics (F-06)"
@@ -433,7 +440,7 @@ git add -A services/api-gateway && git commit -m "feat(api): trending community 
 - Modify: `apps/resident-app/src/screens/PollCreateScreen.tsx`, `src/screens/ComposeSheet.tsx`, `src/screens/CommunityScreen.tsx`, `src/store/communityStore.ts`, `src/api/client.ts`
 - Test: `apps/resident-app/src/screens/ComposeSheet.test.tsx`, `src/screens/PollCreateScreen.test.tsx`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```tsx
 it('F-14: keeps Post poll disabled until a future closing date is set', () => {
@@ -453,13 +460,13 @@ it('F-21: offers all three priority tiers', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `pnpm --filter resident-app exec jest src/screens/ComposeSheet.test.tsx src/screens/PollCreateScreen.test.tsx`
 
-- [ ] **Step 3: Implement.** Poll close date defaults to today + 7 days and gates the submit button. ComposeSheet gains a three-chip priority selector (announcement tab only) and renders the real feed card component as a live preview. CommunityScreen renders trending chips above the feed that set the existing filter.
-- [ ] **Step 4: Run to verify they pass, then the full resident-app suite**
-- [ ] **Step 5: Commit**
+- [x] **Step 3: Implement.** Poll close date defaults to today + 7 days and gates the submit button. ComposeSheet gains a three-chip priority selector (announcement tab only) and renders the real feed card component as a live preview. CommunityScreen renders trending chips above the feed that set the existing filter.
+- [x] **Step 4: Run to verify they pass, then the full resident-app suite**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A apps/resident-app && git commit -m "feat(app): poll close date, priority tiers, live preview, trending chips"
@@ -477,7 +484,7 @@ git add -A apps/resident-app && git commit -m "feat(app): poll close date, prior
 **Interfaces:**
 - Produces: `GET /payment-orders/:id` → `{ id, purpose, status, amountPaise, platformFeePaise, subjectId, testMode }`, resident-scoped to their own community.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 it('FR-STL-07: reports a paid order so the app can confirm from the server', async () => {
@@ -494,10 +501,10 @@ it('FR-STL-07: does not leak an order from another community', async () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
-- [ ] **Step 3: Implement.** Single select from `payment_orders` filtered by `id` **and** `community_id = user.community_id`. Return 404, not 403, for a foreign order — a 403 confirms the id exists.
-- [ ] **Step 4: Run to verify they pass**
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run to verify they fail**
+- [x] **Step 3: Implement.** Single select from `payment_orders` filtered by `id` **and** `community_id = user.community_id`. Return 404, not 403, for a foreign order — a 403 confirms the id exists.
+- [x] **Step 4: Run to verify they pass**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A services/api-gateway && git commit -m "feat(api): payment order status endpoint for booking confirmation"
@@ -516,13 +523,13 @@ git add -A services/api-gateway && git commit -m "feat(api): payment order statu
 - Produces: `payWithRazorpay(order, user): Promise<{ ok: boolean; reason?: 'unavailable'|'cancelled'|'failed' }>` and `confirmPayment(orderId, { attempts, delayMs }): Promise<'paid'|'pending'|'failed'>`
 - API client: `getEventsFeed(filter)`, `getStalls(eventId)`, `bookStall(eventId, stallId)`, `getDonationFunds()`, `donate(fundId, amountPaise)`, `getPaymentOrder(id)`
 
-- [ ] **Step 1: Add the dependency**
+- [x] **Step 1: Add the dependency**
 
 ```bash
 pnpm --filter resident-app add react-native-razorpay
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 ```ts
 it('FR-STL-05: reports unavailable when the native module is absent', async () => {
@@ -542,10 +549,10 @@ it('FR-STL-07: gives up as pending rather than claiming success', async () => {
 });
 ```
 
-- [ ] **Step 3: Run to verify they fail**
-- [ ] **Step 4: Implement.** Reuse the `getRazorpayCheckout()` soft-require shape already in `DuesScreen.tsx` — move it into `checkout.ts` and have DuesScreen import it, so there is one copy. `confirmPayment` polls `GET /payment-orders/:id`; never treat the SDK callback alone as proof of payment.
-- [ ] **Step 5: Run to verify they pass**
-- [ ] **Step 6: Commit**
+- [x] **Step 3: Run to verify they fail**
+- [x] **Step 4: Implement.** Reuse the `getRazorpayCheckout()` soft-require shape already in `DuesScreen.tsx` — move it into `checkout.ts` and have DuesScreen import it, so there is one copy. `confirmPayment` polls `GET /payment-orders/:id`; never treat the SDK callback alone as proof of payment.
+- [x] **Step 5: Run to verify they pass**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A apps/resident-app && git commit -m "feat(app): razorpay checkout helper and events API client"
@@ -563,7 +570,7 @@ git add -A apps/resident-app && git commit -m "feat(app): razorpay checkout help
 - Produces: `useEventsStore` with `{ events, featured, stalls, funds, filter, loading, error, fetch(), setFilter(f), fetchStalls(eventId), book(eventId, stallId), donate(fundId, paise) }`
 - Types: `EventItem { id, title, startsAt, location, hasStalls, hasDonations, isFeatured, coverPath }`, `Stall { id, code, stallType, pricePaise, status, rowIndex, colIndex }`, `Fund { id, name, targetPaise, raisedPaise }`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('FR-EVT-03: exposes the featured event separately from the list', async () => {
@@ -582,10 +589,10 @@ it('FR-STL-06: surfaces a lost race as taken rather than a generic failure', asy
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
-- [ ] **Step 3: Implement** following `communityStore.ts` conventions.
-- [ ] **Step 4: Run to verify they pass**
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run to verify they fail**
+- [x] **Step 3: Implement** following `communityStore.ts` conventions.
+- [x] **Step 4: Run to verify they pass**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A apps/resident-app && git commit -m "feat(app): events store for stalls and donations"
@@ -600,7 +607,7 @@ git add -A apps/resident-app && git commit -m "feat(app): events store for stall
 - Modify: `apps/resident-app/src/components/EventCard.tsx`
 - Test: `apps/resident-app/src/screens/EventsScreen.test.tsx`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```tsx
 it('FR-EVT-02: offers all five filter chips', () => {
@@ -620,10 +627,10 @@ it('FR-EVT-04: tags an event that has stalls and donations', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
-- [ ] **Step 3: Implement** using theme tokens only; horizontally scrollable chips, active chip underlined in Amber.
-- [ ] **Step 4: Run to verify they pass**
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run to verify they fail**
+- [x] **Step 3: Implement** using theme tokens only; horizontally scrollable chips, active chip underlined in Amber.
+- [x] **Step 4: Run to verify they pass**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A apps/resident-app && git commit -m "feat(app): rebuild Events tab with filters, hero and tags"
@@ -637,7 +644,7 @@ git add -A apps/resident-app && git commit -m "feat(app): rebuild Events tab wit
 - Create: `apps/resident-app/src/screens/StallBookingScreen.tsx`
 - Test: `apps/resident-app/src/screens/StallBookingScreen.test.tsx`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```tsx
 it('FR-STL-02: marks the tapped stall selected', () => {
@@ -666,10 +673,10 @@ it('FR-STL-01: a booked stall cannot be selected', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
-- [ ] **Step 3: Implement.** Grid from `rowIndex`/`colIndex`; available/selected/taken colour states; type chips fade non-matching stalls to 30% opacity; a 409 renders "That stall was just taken" and refetches the map.
-- [ ] **Step 4: Run to verify they pass**
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run to verify they fail**
+- [x] **Step 3: Implement.** Grid from `rowIndex`/`colIndex`; available/selected/taken colour states; type chips fade non-matching stalls to 30% opacity; a 409 renders "That stall was just taken" and refetches the map.
+- [x] **Step 4: Run to verify they pass**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A apps/resident-app && git commit -m "feat(app): stall booking screen with map and fee breakdown"
@@ -683,7 +690,7 @@ git add -A apps/resident-app && git commit -m "feat(app): stall booking screen w
 - Create: `apps/resident-app/src/screens/DonateSheet.tsx`, `src/screens/BookingConfirmationScreen.tsx`
 - Test: `apps/resident-app/src/screens/DonateSheet.test.tsx`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```tsx
 it('FR-DON-03: offers the four quick amounts and a custom field', () => {
@@ -702,10 +709,10 @@ it('FR-DON-02: renders progress toward the target', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
-- [ ] **Step 3: Implement.** Confirmation screen shows stall code, event, date and amount, and is reached only after `confirmPayment()` returns `paid`; a `pending` result shows "Payment is confirming" rather than a success screen.
-- [ ] **Step 4: Run to verify they pass**
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run to verify they fail**
+- [x] **Step 3: Implement.** Confirmation screen shows stall code, event, date and amount, and is reached only after `confirmPayment()` returns `paid`; a `pending` result shows "Payment is confirming" rather than a success screen.
+- [x] **Step 4: Run to verify they pass**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A apps/resident-app && git commit -m "feat(app): donation sheet and booking confirmation"
@@ -722,7 +729,7 @@ git add -A apps/resident-app && git commit -m "feat(app): donation sheet and boo
 **Interfaces:**
 - Produces: `hasUnseenEvents(newestCreatedAt, lastSeenIso): boolean`, pure and exported so the rule is testable without rendering the tab bar.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 it('FR-EVT-05: dots the tab when an event is newer than the last visit', () => {
@@ -738,10 +745,10 @@ it('FR-EVT-05: dots on first ever visit', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
-- [ ] **Step 3: Implement.** Last-seen ISO string in AsyncStorage, written when the Events tab opens. The existing `dot` style in the tab bar is the active-tab indicator — use a distinct badge so the two are not confused.
-- [ ] **Step 4: Run to verify they pass**
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run to verify they fail**
+- [x] **Step 3: Implement.** Last-seen ISO string in AsyncStorage, written when the Events tab opens. The existing `dot` style in the tab bar is the active-tab indicator — use a distinct badge so the two are not confused.
+- [x] **Step 4: Run to verify they pass**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A apps/resident-app && git commit -m "feat(app): unseen-events indicator on the Events tab"
@@ -753,7 +760,7 @@ git add -A apps/resident-app && git commit -m "feat(app): unseen-events indicato
 
 **Files:** none — verification and release.
 
-- [ ] **Step 1: Full suites and typecheck**
+- [x] **Step 1: Full suites and typecheck**
 
 ```bash
 pnpm --filter api-gateway test
@@ -762,18 +769,18 @@ pnpm --filter resident-app typecheck
 ```
 Expected: api-gateway ≥ 557 + new tests, resident-app green, **no new** tsc errors (two pre-existing ones are documented and expected).
 
-- [ ] **Step 2: Migration idempotency**
+- [x] **Step 2: Migration idempotency**
 
 ```bash
 pnpm --filter api-gateway migrate && pnpm --filter api-gateway migrate
 ```
 Expected: second run reports up to date.
 
-- [ ] **Step 3: Deploy the api-gateway to EC2 and apply migration 042**
+- [x] **Step 3: Deploy the api-gateway to EC2 and apply migration 042**
 
 Back up the DB first. Restart `communitygate-api` and verify the new endpoints return 200.
 
-- [ ] **Step 4: Build the APK**
+- [x] **Step 4: Build the APK**
 
 ```bash
 cd apps/resident-app && eas build -p android --profile preview
