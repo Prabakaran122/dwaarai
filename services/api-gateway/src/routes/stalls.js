@@ -4,7 +4,7 @@ import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
 import { platformFeePaise, stallTotalPaise } from '../lib/money.js';
-import { createOrder, getKeyId, isLiveMode } from '../lib/razorpay.js';
+import { createOrder, getKeyId, isLiveMode, isPlaceholderMode } from '../lib/razorpay.js';
 import { donationSettlementRows } from './donations.js';
 import pool from '../db/pool.js';
 
@@ -250,6 +250,8 @@ router.post('/events/:id/stalls/:stallId/book', authenticateJWT(['resident']), a
       keyId: getKeyId(),
       amountPaise: totalPaise,
       testMode: !isLiveMode(),
+      // No money moved. The client must say so rather than showing a receipt.
+      paymentPlaceholder: isPlaceholderMode(),
     }, 201);
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});

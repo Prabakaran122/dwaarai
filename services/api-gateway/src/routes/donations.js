@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { query, queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
-import { createOrder, getKeyId, isLiveMode } from '../lib/razorpay.js';
+import { createOrder, getKeyId, isLiveMode, isPlaceholderMode } from '../lib/razorpay.js';
 import pool from '../db/pool.js';
 
 // Donations are the one payment purpose in this module the BRD is explicit
@@ -165,6 +165,8 @@ router.post('/donation-funds/:id/donate', authenticateJWT(['resident']), async (
       keyId: getKeyId(),
       amountPaise,
       testMode: !isLiveMode(),
+      // No money moved. The client must say so rather than showing a receipt.
+      paymentPlaceholder: isPlaceholderMode(),
     }, 201);
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});

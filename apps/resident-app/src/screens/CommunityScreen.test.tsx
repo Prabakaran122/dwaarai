@@ -65,3 +65,74 @@ describe('CommunityScreen', () => {
     expect(queryByText('Report issue')).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Trending topics (F-06) and the compose FAB (F-07)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('trending topics (F-06)', () => {
+  const withTrending = () => {
+    useCommunityStore.setState({
+      posts: [
+        { type: 'issue', id: 'i1', title: 'Water supply disrupted', body: '', category: 'water', status: 'open', authorName: 'A', authorUnit: 'A-1', upvoteCount: 0, myUpvoted: false, createdAt: new Date().toISOString() },
+        { type: 'issue', id: 'i2', title: 'Lift maintenance', body: '', category: 'lift', status: 'open', authorName: 'B', authorUnit: 'B-2', upvoteCount: 0, myUpvoted: false, createdAt: new Date().toISOString() },
+      ] as any,
+      trending: [{ term: 'water', count: 3 }, { term: 'lift', count: 2 }],
+      topic: null,
+      me: { isCommittee: false, committeeRole: null },
+    });
+  };
+
+  it('renders a chip per trending term', () => {
+    withTrending();
+    const { getByTestId } = render(<CommunityScreen />);
+
+    expect(getByTestId('trending-water')).toBeTruthy();
+    expect(getByTestId('trending-lift')).toBeTruthy();
+  });
+
+  it('narrows the feed to posts mentioning the tapped term', () => {
+    withTrending();
+    const { getByTestId, queryByText, getByText } = render(<CommunityScreen />);
+
+    fireEvent.press(getByTestId('trending-water'));
+
+    expect(getByText(/water supply/i)).toBeTruthy();
+    expect(queryByText(/lift maintenance/i)).toBeNull();
+  });
+
+  it('offers a way back out of a topic', () => {
+    withTrending();
+    const { getByTestId, getByText } = render(<CommunityScreen />);
+
+    fireEvent.press(getByTestId('trending-water'));
+    fireEvent.press(getByTestId('clear-topic'));
+
+    expect(getByText(/lift maintenance/i)).toBeTruthy();
+  });
+
+  it('shows no chip row when the community has no trending terms', () => {
+    useCommunityStore.setState({ posts: [], trending: [], topic: null, me: { isCommittee: false, committeeRole: null } });
+    const { queryByTestId } = render(<CommunityScreen />);
+
+    expect(queryByTestId('clear-topic')).toBeNull();
+  });
+});
+
+describe('compose FAB (F-07)', () => {
+  it('offers a floating action button', () => {
+    useCommunityStore.setState({ posts: [], trending: [], topic: null, me: { isCommittee: false, committeeRole: null } });
+    const { getByTestId } = render(<CommunityScreen />);
+
+    expect(getByTestId('compose-fab')).toBeTruthy();
+  });
+
+  it('opens the post type selector from the FAB', () => {
+    useCommunityStore.setState({ posts: [], trending: [], topic: null, me: { isCommittee: false, committeeRole: null } });
+    const { getByTestId, getByText } = render(<CommunityScreen />);
+
+    fireEvent.press(getByTestId('compose-fab'));
+
+    expect(getByText(/report an issue|report issue/i)).toBeTruthy();
+  });
+});

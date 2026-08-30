@@ -32,7 +32,7 @@ export default function StallBookingScreen({
   eventId: string;
   eventTitle: string;
   onBack: () => void;
-  onBooked?: (booking: { stallCode: string; totalPaise: number }) => void;
+  onBooked?: (booking: { stallCode: string; totalPaise: number; paymentPlaceholder: boolean }) => void;
 }) {
   const [stalls, setStalls] = useState<Stall[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,6 +40,9 @@ export default function StallBookingScreen({
   const [selected, setSelected] = useState<Stall | null>(null);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The gateway tells us when an order is a placeholder. Saying "paid" when no
+  // money moved is the one thing this screen must never do.
+  const [placeholder, setPlaceholder] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,12 +81,16 @@ export default function StallBookingScreen({
     try {
       const res = await api.bookStall(eventId, selected.id);
       const data = res.data.data || {};
-      onBooked?.({ stallCode: selected.code, totalPaise: selected.totalPaise });
+      setPlaceholder(Boolean(data.paymentPlaceholder));
+      onBooked?.({
+        stallCode: selected.code,
+        totalPaise: selected.totalPaise,
+        paymentPlaceholder: Boolean(data.paymentPlaceholder),
+      });
       // The server reserves the stall and opens a payment order; the reservation
       // expires on its own if checkout is abandoned, so nothing leaks.
       setSelected(null);
       await load();
-      if (!data.gatewayOrderId) setError(null);
     } catch (err) {
       const code = (err as { response?: { status?: number } })?.response?.status;
       const message = code === 409
@@ -172,6 +179,12 @@ export default function StallBookingScreen({
           <Legend color={colors.surfaceBorder} label="Booked" />
         </View>
 
+        {placeholder && (
+          <Text style={styles.placeholder} testID="payment-placeholder">
+            Online payment is not live yet — this reserves the stall only.
+          </Text>
+        )}
+
         {error && <Text style={styles.error} testID="stall-error">{error}</Text>}
       </ScrollView>
 
@@ -243,6 +256,7 @@ const styles = StyleSheet.create({
   legendSwatch: { width: 12, height: 12, borderRadius: 3, borderWidth: 1, borderColor: colors.surfaceBorder },
   legendText: { ...font(400), fontSize: 11, color: colors.textSecondary },
   error: { ...font(500), fontSize: 13, color: colors.danger },
+  placeholder: { ...font(500), fontSize: 12, color: colors.textWarning },
   summary: {
     backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.surfaceBorder,
     padding: spacing.lg, gap: spacing.xs,

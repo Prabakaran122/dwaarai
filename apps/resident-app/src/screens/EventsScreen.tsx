@@ -55,7 +55,7 @@ export default function EventsScreen() {
   const { filter, loading, error, fetch, setFilter, visibleEvents, featured, fundForEvent } = useEventsStore();
   const [refreshing, setRefreshing] = useState(false);
   const [booking, setBooking] = useState<EventItem | null>(null);
-  const [confirmed, setConfirmed] = useState<{ stallCode: string; totalPaise: number } | null>(null);
+  const [confirmed, setConfirmed] = useState<{ stallCode: string; totalPaise: number; paymentPlaceholder: boolean } | null>(null);
 
   const load = useCallback(async () => { await fetch(); }, [fetch]);
   useEffect(() => { load(); }, [load]);
@@ -108,10 +108,14 @@ export default function EventsScreen() {
           <Card testID="booking-confirmation">
             <View style={styles.confirmRow}>
               <MaterialCommunityIcons name="check-circle" size={22} color={colors.success} />
-              <Text style={type.h3}>Stall {confirmed.stallCode} booked</Text>
+              <Text style={type.h3}>Stall {confirmed.stallCode} {confirmed.paymentPlaceholder ? 'reserved' : 'booked'}</Text>
             </View>
             <Text style={type.bodySecondary}>
-              ₹{(confirmed.totalPaise / 100).toLocaleString('en-IN')} paid. A confirmation has been sent to you.
+              {confirmed.paymentPlaceholder
+                // Never claim money changed hands when the gateway is a
+                // placeholder — the stall is held, nothing was collected.
+                ? `Held for you at ₹${(confirmed.totalPaise / 100).toLocaleString('en-IN')}. Online payment is not live yet — settle with the RWA directly.`
+                : `₹${(confirmed.totalPaise / 100).toLocaleString('en-IN')} paid. A confirmation has been sent to you.`}
             </Text>
             <Pressable testID="dismiss-confirmation" onPress={() => setConfirmed(null)}>
               <Text style={styles.dismiss}>Dismiss</Text>

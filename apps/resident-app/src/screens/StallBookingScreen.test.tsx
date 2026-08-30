@@ -211,6 +211,32 @@ describe('confirming the booking', () => {
     fireEvent.press(getByTestId('stall-A1'));
     fireEvent.press(getByTestId('confirm-booking'));
 
-    await waitFor(() => expect(onBooked).toHaveBeenCalledWith({ stallCode: 'A1', totalPaise: 206000 }));
+    await waitFor(() => expect(onBooked).toHaveBeenCalledWith({ stallCode: 'A1', totalPaise: 206000, paymentPlaceholder: false }));
+  });
+
+  it('warns that no money moved when the gateway is a placeholder', async () => {
+    (api.bookStall as jest.Mock).mockResolvedValue({
+      data: { data: { gatewayOrderId: 'order_placeholder_abc', paymentPlaceholder: true } },
+    });
+    const { getByTestId } = renderScreen();
+    await waitFor(() => expect(getByTestId('stall-A1')).toBeTruthy());
+
+    fireEvent.press(getByTestId('stall-A1'));
+    fireEvent.press(getByTestId('confirm-booking'));
+
+    // Telling a resident a stall is paid for when nothing was collected is the
+    // one thing this screen must never do.
+    await waitFor(() => expect(getByTestId('payment-placeholder')).toBeTruthy());
+  });
+
+  it('stays silent about placeholders when the gateway is live', async () => {
+    const { getByTestId, queryByTestId } = renderScreen();
+    await waitFor(() => expect(getByTestId('stall-A1')).toBeTruthy());
+
+    fireEvent.press(getByTestId('stall-A1'));
+    fireEvent.press(getByTestId('confirm-booking'));
+
+    await waitFor(() => expect(api.bookStall).toHaveBeenCalled());
+    expect(queryByTestId('payment-placeholder')).toBeNull();
   });
 });

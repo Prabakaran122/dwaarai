@@ -6,7 +6,7 @@ import { success, error } from '../middleware/response.js';
 import { authenticateJWT, isAdminUser } from '../middleware/auth.js';
 import { deviceLimiter } from '../middleware/rateLimit.js';
 import { platformFeePaise, stallTotalPaise } from '../lib/money.js';
-import { createOrder, getKeyId, isLiveMode } from '../lib/razorpay.js';
+import { createOrder, getKeyId, isLiveMode, isPlaceholderMode } from '../lib/razorpay.js';
 import pool from '../db/pool.js';
 
 const router = Router();
@@ -286,6 +286,8 @@ router.post('/public/stalls/:token/book', deviceLimiter, async (req, res) => {
       keyId: getKeyId(),
       amountPaise: totalPaise,
       testMode: !isLiveMode(),
+      // No money moved. The client must say so rather than showing a receipt.
+      paymentPlaceholder: isPlaceholderMode(),
     }, 201);
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});

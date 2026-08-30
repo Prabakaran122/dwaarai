@@ -35,6 +35,7 @@ export default function DonationCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [placeholder, setPlaceholder] = useState(false);
 
   const chosenRupees = amount ?? (custom.trim() ? Number(custom.trim()) : 0);
   const valid = Number.isFinite(chosenRupees) && chosenRupees > 0;
@@ -44,7 +45,8 @@ export default function DonationCard({
     setBusy(true);
     setError(null);
     try {
-      await api.donate(fund.id, Math.round(chosenRupees * 100));
+      const res = await api.donate(fund.id, Math.round(chosenRupees * 100));
+      setPlaceholder(Boolean(res?.data?.data?.paymentPlaceholder));
       setDone(true);
       setAmount(null);
       setCustom('');
@@ -75,7 +77,9 @@ export default function DonationCard({
 
       {done ? (
         <Text style={styles.thanks} testID="donation-thanks">
-          Thank you — your contribution has been recorded.
+          {placeholder
+            ? 'Recorded. Online payment is not live yet — please settle with the RWA directly.'
+            : 'Thank you — your contribution has been recorded.'}
         </Text>
       ) : (
         <>

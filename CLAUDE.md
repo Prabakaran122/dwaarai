@@ -173,3 +173,28 @@ deploy/publish-valet-apk.sh <downloaded.apk>         # upload + add the /install
 download card can never appear on the page ahead of the file it links to, and it
 refuses anything that is not a real APK or is under 10MB — a truncated download
 or an HTML error page would otherwise be published as a working link.
+
+### Payments (Events module)
+`services/api-gateway/src/lib/razorpay.js` runs in one of two modes, and which
+one is never left to chance:
+
+- **live** — `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET` set. Real orders, webhook
+  signatures verified.
+- **placeholder** — no keys. Orders are minted locally (`order_placeholder_*`)
+  so the booking and donation flows work end to end, but no money moves.
+
+Placeholder mode is scaffolding while BRD open question **OQ-01** (Razorpay
+Route split payment vs manual payout) is undecided. In production, missing keys
+throw at startup unless `PAYMENTS_PLACEHOLDER=true` is set explicitly — the
+failure that guards against is a deploy that looks healthy while collecting
+nothing, with stalls reading as booked and donations as received.
+
+Routes return `paymentPlaceholder` on every order they open, and both the
+Basera stall-booking screen and the donation card change their wording on it:
+a stall is "reserved", not "booked", and a donation is "recorded", not thanked
+for. Never tell a resident money moved when it did not.
+
+`lib/money.js` fixes the platform fee at 3% of the stall fee, rounded to whole
+rupees, and never charges it on a donation. The apps never recompute it — they
+render `pricePaise` / `platformFeePaise` / `totalPaise` exactly as the server
+sends them, and a test feeds a deliberately inconsistent payload to prove it.
