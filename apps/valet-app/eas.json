@@ -1,0 +1,29 @@
+{
+  "cli": {
+    "version": ">= 5.0.0"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://dwaarai.com/api/v1",
+        "EXPO_PUBLIC_VALET_API_URL": "https://dwaarai.com/valet-api"
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://dwaarai.com/api/v1",
+        "EXPO_PUBLIC_VALET_API_URL": "https://dwaarai.com/valet-api"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

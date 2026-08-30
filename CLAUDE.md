@@ -156,3 +156,20 @@ Two things about valet-app worth knowing before changing it:
   that they render. They were once written, unit-tested and left wired to
   nothing: every screen test passed while the flow could not be opened at all.
   Keep a reachability assertion whenever a screen gains a new entry point.
+
+### Shipping the Sarthi APK
+`apps/valet-app/eas.json` mirrors guard-app's profiles. Both build URLs are
+pinned explicitly in **both** profiles, because `EXPO_PUBLIC_*` values are baked
+in at build time — the same trap that shipped a guard APK pointing at the dead
+`dwaarai.in` host, where every install failed login with no server-side trace.
+
+```
+npx eas-cli login                                    # interactive; account skprabakaran122
+npx eas-cli build -p android --profile preview       # from apps/valet-app
+deploy/publish-valet-apk.sh <downloaded.apk>         # upload + add the /install card
+```
+
+`publish-valet-apk.sh` uploads the APK *before* touching `install.html`, so the
+download card can never appear on the page ahead of the file it links to, and it
+refuses anything that is not a real APK or is under 10MB — a truncated download
+or an HTML error page would otherwise be published as a working link.
