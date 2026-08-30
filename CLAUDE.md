@@ -125,3 +125,19 @@ protects the media.
 The retention/expiry sweep runs as a scheduled job
 (`pnpm --filter valet-service sweep`), not on a `setInterval` inside the web
 process — set `VALET_RUN_SWEEP_IN_PROCESS=true` only on a single-instance dev box.
+
+`services/valet-service/scripts/e2e-smoke.mjs` drives the whole flow against a
+running service and a real database over HTTP — ticket creation, the rotating
+QR being superseded and replayed, both server-side pickup guards, and the audit
+trail. It seeds a throwaway community and deletes it again, so it is the thing
+to run against a freshly deployed box:
+
+```
+VALET_BASE_URL=https://dwaarai.com/valet-api \
+VALET_E2E_DATABASE_URL=$DATABASE_URL JWT_SECRET=$JWT_SECRET \
+  pnpm --filter valet-service e2e
+```
+
+`deploy/deploy-valet.sh` is the deployment: idempotent, additive, and it health-checks
+the existing api-gateway and landing site afterwards so a valet deploy that broke
+something else fails loudly rather than silently.
