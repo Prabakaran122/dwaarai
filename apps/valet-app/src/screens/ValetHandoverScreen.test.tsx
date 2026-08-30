@@ -1,4 +1,4 @@
-jest.mock('../../api/valet');
+jest.mock('../api/valet');
 jest.mock('expo-image-picker', () => ({
   requestCameraPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
   launchCameraAsync: jest.fn().mockResolvedValue({
@@ -18,7 +18,7 @@ jest.mock('expo-camera', () => {
 
 import React from 'react';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
-import * as api from '../../api/valet';
+import * as api from '../api/valet';
 import { useCameraPermissions } from 'expo-camera';
 import ValetHandoverScreen from './ValetHandoverScreen';
 

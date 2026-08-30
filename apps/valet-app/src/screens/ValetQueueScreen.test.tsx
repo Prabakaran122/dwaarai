@@ -1,11 +1,11 @@
-jest.mock('../../api/valet');
+jest.mock('../api/valet');
 
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
-import * as api from '../../api/valet';
+import * as api from '../api/valet';
 import ValetQueueScreen from './ValetQueueScreen';
-import { useValetStore } from '../../store/valetStore';
-import type { ValetTicket } from '../../api/valet';
+import { useValetStore } from '../store/valetStore';
+import type { ValetTicket } from '../api/valet';
 
 function ticket(overrides: Partial<ValetTicket> = {}): ValetTicket {
   return {

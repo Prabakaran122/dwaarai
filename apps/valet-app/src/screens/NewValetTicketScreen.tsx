@@ -3,11 +3,11 @@ import { View, Text, TextInput, ScrollView, StyleSheet, Pressable, Image, Activi
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { colors } from '../../theme/colors';
-import { spacing, radius } from '../../theme/spacing';
-import { type } from '../../theme/typography';
-import * as api from '../../api/valet';
-import { useT } from '../../store/langStore';
+import { colors } from '../theme/colors';
+import { spacing, radius } from '../theme/spacing';
+import { type } from '../theme/typography';
+import * as api from '../api/valet';
+import { useT } from '../store/langStore';
 
 /**
  * Taking a car in: plate and make, then the guest comparison photo, then the

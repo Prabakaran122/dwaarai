@@ -2,12 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { colors } from '../../theme/colors';
-import { spacing, radius } from '../../theme/spacing';
-import { type } from '../../theme/typography';
-import { useValetStore, NEEDS_ACTION } from '../../store/valetStore';
-import type { ValetTicket, ValetStatus } from '../../api/valet';
-import { useT } from '../../store/langStore';
+import { colors } from '../theme/colors';
+import { spacing, radius } from '../theme/spacing';
+import { type } from '../theme/typography';
+import { useValetStore, NEEDS_ACTION } from '../store/valetStore';
+import type { ValetTicket, ValetStatus } from '../api/valet';
+import { useT } from '../store/langStore';
 
 /**
  * The valet stand's working queue.

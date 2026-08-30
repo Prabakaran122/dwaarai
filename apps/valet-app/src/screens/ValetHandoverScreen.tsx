@@ -4,11 +4,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { colors } from '../../theme/colors';
-import { spacing, radius } from '../../theme/spacing';
-import { type } from '../../theme/typography';
-import * as api from '../../api/valet';
-import { useT } from '../../store/langStore';
+import { colors } from '../theme/colors';
+import { spacing, radius } from '../theme/spacing';
+import { type } from '../theme/typography';
+import * as api from '../api/valet';
+import { useT } from '../store/langStore';
 
 /**
  * Handing a car back: scan the guest's rotating QR, compare their face against

@@ -47,6 +47,9 @@ pnpm --filter resident-app test       # jest
 pnpm --filter resident-app exec jest src/screens/DuesScreen.test.tsx   # single test file
 pnpm --filter resident-app typecheck  # tsc --noEmit
 pnpm --filter guard-app test          # jest (jest.config.js, jest-expo preset)
+pnpm --filter valet-app start         # Expo (Sarthi valet app, iOS + Android)
+pnpm --filter valet-app test          # jest
+pnpm --filter valet-app typecheck     # tsc --noEmit
 pnpm --filter valet-guest dev         # Next.js 14 guest valet page, port 3110
 pnpm --filter valet-guest test        # vitest + @testing-library/react (jsdom)
 pnpm --filter admin-portal test       # vitest (lib/ only; the pages are not unit-tested)
@@ -89,6 +92,7 @@ There is no shared Node package for cross-service code — each service duplicat
 ### Frontend apps (`apps/*`)
 - **admin-portal** — Next.js 14 App Router (`app/<section>/page.tsx` per feature: gates, communities, units, vehicles, guards, incidents, sos, reports, etc.), talks to api-gateway via `lib/api.ts` and live updates via `lib/socket.ts`. The `app/valet/*` pages are the exception: they talk to valet-service via `lib/valet.ts`, a second client on a different base URL that reuses the same api-gateway JWT from localStorage.
 - **guard-app** — Expo/React Native, Android tablet at the gate. Zustand stores per domain in `src/store/` (queue, approvals, SOS, handover, staff, deliveries), i18n via `src/i18n/translations.ts` (guards may not read English).
+- **valet-app** — Expo/React Native, the Sarthi valet product. A **separate app from guard-app on purpose**: a hotel valet is not a society gate guard, and folding valet in would have meant them signing into "Nazar — Guard Station" and seeing a tab bar of Gate / Visitors / Parcels / Incidents they will never use. It has no tab bar at all — the whole app is the three-screen valet flow (queue → new ticket → handover) behind its own Sarthi sign-in. Auth is *not* separate: it posts to the same `/auth/guard-login` and `residents.type='guard'` records, because valet-service verifies those tokens and a property's staff exist once.
 - **valet-guest** — Next.js 14, `basePath: /valet`, the one public surface: a guest opens `/valet/v/<session token>` by scanning a physical valet card. No login, no account, and deliberately nothing in localStorage — the token in the URL is the only credential, so reopening the link reconstructs the state exactly.
 - **resident-app** — Expo/React Native, iOS + Android. Same store-per-domain + screen-per-feature pattern as guard-app, but with much heavier Jest test coverage (most screens/components have a co-located `.test.tsx`).
 
@@ -141,3 +145,14 @@ VALET_E2E_DATABASE_URL=$DATABASE_URL JWT_SECRET=$JWT_SECRET \
 `deploy/deploy-valet.sh` is the deployment: idempotent, additive, and it health-checks
 the existing api-gateway and landing site afterwards so a valet deploy that broke
 something else fails loudly rather than silently.
+
+Two things about valet-app worth knowing before changing it:
+
+- It duplicates `src/theme`, the Expo/Jest plumbing, and part of `src/i18n` from
+  guard-app rather than importing them. That matches the repo's existing
+  convention — there is no shared package, and every service already duplicates
+  its own `db.js` and route scaffolding.
+- `src/screens/ValetFlow.test.tsx` asserts the screens are *reachable*, not just
+  that they render. They were once written, unit-tested and left wired to
+  nothing: every screen test passed while the flow could not be opened at all.
+  Keep a reachability assertion whenever a screen gains a new entry point.
