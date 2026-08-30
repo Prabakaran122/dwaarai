@@ -33,7 +33,7 @@ interface Props {
 
 export default function HomeScreen({ onNavigate, onBookFacility }: Props) {
   const user = useAuthStore((s) => s.user);
-  const { summary, error, fetch } = useHomeStore();
+  const { summary, error, updatedAt, fetch } = useHomeStore();
   const [refreshing, setRefreshing] = useState(false);
   const [overlay, setOverlay] = useState<Overlay>(null);
 
@@ -80,7 +80,7 @@ export default function HomeScreen({ onNavigate, onBookFacility }: Props) {
           <Text style={[type.bodySecondary, styles.unit]}>Unit {user.unitNumber}{user.communityName ? ` · ${user.communityName}` : ''}</Text>
         ) : null}
 
-        <GateGlanceCard glance={glance} latest={activity[0] ?? null} onParcels={() => setOverlay('parcels')} />
+        <GateGlanceCard glance={glance} latest={activity[0] ?? null} updatedAt={updatedAt} onParcels={() => setOverlay('parcels')} />
 
         <View style={styles.block}>
           <QuickActionGrid actions={quickActions} />
