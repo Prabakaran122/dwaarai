@@ -13,7 +13,9 @@
       "package": "com.dwaarai.sarthi",
       "versionCode": 1,
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "ios": {
@@ -32,6 +34,14 @@
       ]
     ],
     "scheme": "sarthi",
-    "owner": "skprabakaran122"
+    "owner": "skprabakaran122",
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "d36538ac-8432-4457-99bf-1616fa63a831"
+      }
+    }
   }
 }
