@@ -20,9 +20,14 @@ APP_DIR="${APP_DIR:-/opt/communitygate}"
 RUN_USER="${RUN_USER:-ec2-user}"
 PUBLIC_HOST="${PUBLIC_HOST:-dwaarai.com}"
 
-# Must match the running api-gateway, or guard tokens will not verify here.
-JWT_SECRET="${JWT_SECRET:-communitygate-test-secret-key-2026}"
-DATABASE_URL="${DATABASE_URL:-postgresql://cguser:devpass@localhost:5432/communitygate}"
+# Read from the running api-gateway rather than guessed: valet-service verifies
+# the tokens api-gateway issues, so a mismatched secret would reject every guard
+# with a 401 that looks like a login bug.
+API_UNIT=/etc/systemd/system/communitygate-api.service
+JWT_SECRET="${JWT_SECRET:-$(sudo sed -n 's/^Environment=JWT_SECRET=//p' "$API_UNIT" 2>/dev/null)}"
+DATABASE_URL="${DATABASE_URL:-$(sudo sed -n 's/^Environment=DATABASE_URL=//p' "$API_UNIT" 2>/dev/null)}"
+[ -n "$JWT_SECRET" ]   || { echo "could not read JWT_SECRET from $API_UNIT"; exit 1; }
+[ -n "$DATABASE_URL" ] || { echo "could not read DATABASE_URL from $API_UNIT"; exit 1; }
 
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$1"; }
 die() { printf '\n\033[1;31mFAILED: %s\033[0m\n' "$1" >&2; exit 1; }
@@ -54,7 +59,7 @@ fi
 # --------------------------------------------------------------------------
 say "Applying database migrations"
 # --------------------------------------------------------------------------
-# The runner records what it has applied, so this only runs 042_valet.sql on a
+# The runner records what it has applied, so this only runs 043_valet.sql on a
 # box already carrying 001-041, and a second run prints "up to date".
 pnpm install --filter api-gateway
 DATABASE_URL="$DATABASE_URL" pnpm --filter api-gateway migrate
@@ -190,65 +195,69 @@ say "Wiring nginx"
 # conf.d/ (which nginx includes at the http level). Find a directory that the
 # live server block actually includes — on Amazon Linux that is default.d — and
 # never guess: if there is no such include, write nothing and say so.
-if command -v nginx >/dev/null 2>&1; then
-  NGINX_SNIPPET_DIR=""
-  for candidate in /etc/nginx/default.d /etc/nginx/server.d /etc/nginx/snippets; do
-    if [ -d "$candidate" ] && nginx -T 2>/dev/null | grep -q "include $candidate/\*"; then
-      NGINX_SNIPPET_DIR="$candidate"
-      break
-    fi
-  done
+NGINX_CONF=/etc/nginx/conf.d/communitygate.conf
 
-  if [ -n "$NGINX_SNIPPET_DIR" ]; then
-    sudo tee "$NGINX_SNIPPET_DIR/valet.conf" > /dev/null <<'NGINXCONF'
-# Valet surfaces. Two locations only — the landing site, /admin and the
-# existing TLS configuration are untouched.
-location /valet-api/ {
-    proxy_pass http://127.0.0.1:3060/;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    # Condition media: a short video needs more than the 1m default.
-    client_max_body_size 20m;
-}
+if [ -f "$NGINX_CONF" ] && ! grep -q 'location \^~ /valet' "$NGINX_CONF"; then
+  # Timestamped backup, matching the convention already used beside this file.
+  sudo cp "$NGINX_CONF" "$NGINX_CONF.bak.$(date +%Y%m%d-%H%M%S)"
 
-location /valet/socket.io/ {
-    proxy_pass http://127.0.0.1:3060/valet/socket.io/;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_set_header Host $host;
-}
+  # NOTE the `^~`. This block already carries a regex location matching
+  # \.(css|js|mjs|woff2?|...)$, and in nginx a regex location beats a plain
+  # prefix one — so `location /valet` would lose every asset request under
+  # /valet/_next/ to the landing site's static root and the guest page would
+  # load with no CSS or JS. `^~` stops regex evaluation for this prefix, which
+  # is exactly why the existing /admin block uses it too.
+  sudo python3 - "$NGINX_CONF" <<'PYEOF'
+import io, re, sys
+path = sys.argv[1]
+s = io.open(path, encoding='utf-8').read()
 
-location /valet {
-    proxy_pass http://127.0.0.1:3110;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
-NGINXCONF
-    echo "wrote $NGINX_SNIPPET_DIR/valet.conf"
-    # Never reload a broken config onto a live site.
-    if sudo nginx -t; then
-      sudo systemctl reload nginx
-      echo "nginx reloaded"
-    else
-      sudo rm -f "$NGINX_SNIPPET_DIR/valet.conf"
-      die "nginx config test failed — snippet removed, nginx left running as it was"
-    fi
+block = """
+    # ---- Valet (Sarthi) ----
+    # `^~` so the css/js regex location above cannot steal /valet/_next/ assets.
+    location ^~ /valet-api/ {
+        proxy_pass http://127.0.0.1:3060/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 20m;
+    }
+
+    location ^~ /valet {
+        proxy_pass http://127.0.0.1:3110;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+"""
+
+# Anchor on the canonical HTTPS block's /admin location, which is unique to it,
+# so the block lands in the dwaarai.com server and not a redirect stanza.
+anchor = s.index('server_name dwaarai.com;')
+admin = s.index('location ^~ /admin', anchor)
+s = s[:admin] + block.lstrip('\n') + '\n    ' + s[admin:]
+io.open(path, 'w', encoding='utf-8').write(s)
+print('nginx block inserted')
+PYEOF
+
+  if sudo nginx -t; then
+    sudo systemctl reload nginx
+    echo "nginx reloaded"
   else
-    echo "Could not find a snippet directory included inside the server block."
-    echo "Add these to the dwaarai.com server block by hand, then: nginx -t && systemctl reload nginx"
-    echo "    location /valet      { proxy_pass http://127.0.0.1:3110; }"
-    echo "    location /valet-api/ { proxy_pass http://127.0.0.1:3060/; client_max_body_size 20m; }"
-    NGINX_MANUAL=1
+    NEWEST_BAK=$(sudo ls -t "$NGINX_CONF".bak.* | head -1)
+    sudo cp "$NEWEST_BAK" "$NGINX_CONF"
+    die "nginx config test failed — restored $NEWEST_BAK, nginx left as it was"
   fi
+elif [ -f "$NGINX_CONF" ]; then
+  echo "valet locations already present — leaving nginx alone"
 else
-  echo "nginx not installed — route /valet -> :3110 and /valet-api/ -> :3060 in whatever fronts 443."
+  echo "$NGINX_CONF not found; route /valet -> :3110 and /valet-api/ -> :3060 by hand"
   NGINX_MANUAL=1
 fi
 
