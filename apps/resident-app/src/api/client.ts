@@ -361,3 +361,24 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+// Events commerce — stalls, donations, bookings (BRD: Events Module v1.0).
+// The gateway owns every money figure: it computes the 3% platform fee and the
+// total in paise (services/api-gateway/src/lib/money.js), so the app only ever
+// displays what it is given and never recalculates a price itself.
+export const getCommunityEvent = (id: string) => api.get(`/community-events/${id}`);
+
+export const getEventStalls = (eventId: string) =>
+  api.get(`/events/${eventId}/stalls`);
+
+// Reserves the stall and opens a payment order. The reservation has a
+// server-side TTL, so an abandoned checkout frees the stall again.
+export const bookStall = (eventId: string, stallId: string) =>
+  api.post(`/events/${eventId}/stalls/${stallId}/book`, {});
+
+export const getDonationFunds = () => api.get('/donation-funds');
+
+export const getDonationFund = (id: string) => api.get(`/donation-funds/${id}`);
+
+export const donate = (fundId: string, amountPaise: number, isAnonymous = false) =>
+  api.post(`/donation-funds/${fundId}/donate`, { amountPaise, isAnonymous });

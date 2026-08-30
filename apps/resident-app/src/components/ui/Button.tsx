@@ -15,15 +15,20 @@ interface ButtonProps {
   loading?: boolean;
   disabled?: boolean;
   style?: ViewStyle;
+  /** Buttons are the main thing screen tests press; without this they have to
+   *  match on visible label text, which breaks the moment a string changes. */
+  testID?: string;
 }
 
 export default function Button({
+  testID,
   title, onPress, variant = 'primary', icon, loading = false, disabled = false, style,
 }: ButtonProps) {
   const isDisabled = disabled || loading;
   const fg = variant === 'ghost' ? colors.teal : colors.textInverse;
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       disabled={isDisabled}
       accessibilityRole="button"

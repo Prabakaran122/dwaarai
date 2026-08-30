@@ -1,112 +1,225 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
 import { font, type } from '../theme/typography';
-import { AppBar, Card, Input, Button } from '../components/ui';
-import EventCard, { EventItem } from '../components/EventCard';
-import * as api from '../api/client';
+import { AppBar, Card } from '../components/ui';
+import DonationCard from '../components/DonationCard';
+import StallBookingScreen from './StallBookingScreen';
+import { useEventsStore, type EventFilter, type EventItem } from '../store/eventsStore';
 
-const CATS = ['general', 'sports', 'festival', 'meeting', 'kids'];
+/**
+ * Events tab (BRD: Events Module v1.0).
+ *
+ * This replaces the earlier RSVP/create-event screen. RSVP and headcount are
+ * explicitly out of scope for v1.0, and event creation belongs to the RWA in
+ * the admin portal — the BRD assigns "create event, set stall layout, set stall
+ * pricing" to the Admin Portal, not the resident app.
+ */
+
+const FILTERS: { key: EventFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'upcoming', label: 'Upcoming' },
+  { key: 'stalls', label: 'Stall Booking' },
+  { key: 'donations', label: 'Donations' },
+  { key: 'past', label: 'Past' },
+];
+
+function when(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+    + ' · ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** FR-EVT-04: name, date, venue, and the tags that say what a resident can do. */
+function EventTags({ event }: { event: EventItem }) {
+  const tags: string[] = [];
+  if (event.hasStalls && !event.isPast) {
+    tags.push(event.stallsAvailable > 0 ? `${event.stallsAvailable} stalls available` : 'Stalls full');
+  }
+  if (event.hasDonations && !event.isPast) tags.push('Donations open');
+  if (event.category) tags.push(event.category);
+  if (!tags.length) return null;
+
+  return (
+    <View style={styles.tags}>
+      {tags.map((t) => (
+        <View key={t} style={styles.tag}><Text style={styles.tagText}>{t}</Text></View>
+      ))}
+    </View>
+  );
+}
 
 export default function EventsScreen() {
-  const [scope, setScope] = useState<'upcoming' | 'past'>('upcoming');
-  const [items, setItems] = useState<EventItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { filter, loading, error, fetch, setFilter, visibleEvents, featured, fundForEvent } = useEventsStore();
   const [refreshing, setRefreshing] = useState(false);
-  const [composeOpen, setComposeOpen] = useState(false);
-  // create form
-  const [title, setTitle] = useState('');
-  const [desc, setDesc] = useState('');
-  const [loc, setLoc] = useState('');
-  const [cat, setCat] = useState('general');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [booking, setBooking] = useState<EventItem | null>(null);
+  const [confirmed, setConfirmed] = useState<{ stallCode: string; totalPaise: number } | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { const r = await api.getEvents(scope); setItems(r.data.data || []); } catch { /* keep */ } finally { setLoading(false); }
-  }, [scope]);
+  const load = useCallback(async () => { await fetch(); }, [fetch]);
   useEffect(() => { load(); }, [load]);
+
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
-  const onRsvp = async (id: string, status: 'going' | 'maybe' | 'no') => {
-    setItems((prev) => prev.map((e) => e.id === id ? { ...e, myRsvp: status } : e));
-    try { await api.rsvpEvent(id, status); await load(); } catch { /* ignore */ }
-  };
+  // No navigation stack in this app — detail views replace the tab content in
+  // place, the same pattern CommunityScreen uses for the issue thread.
+  if (booking) {
+    return (
+      <StallBookingScreen
+        eventId={booking.id}
+        eventTitle={booking.title}
+        onBack={() => setBooking(null)}
+        onBooked={(b) => { setBooking(null); setConfirmed(b); load(); }}
+      />
+    );
+  }
 
-  const submit = async () => {
-    setMsg(null);
-    if (!title.trim() || !date.trim() || !time.trim()) { setMsg('Title, date and time are required.'); return; }
-    const startsAt = `${date.trim()}T${time.trim()}:00+05:30`;
-    if (isNaN(new Date(startsAt).getTime())) { setMsg('Use date YYYY-MM-DD and time HH:MM.'); return; }
-    setSaving(true);
-    try {
-      await api.createEvent({ title: title.trim(), description: desc.trim() || undefined, location: loc.trim() || undefined, category: cat, startsAt });
-      setTitle(''); setDesc(''); setLoc(''); setCat('general'); setDate(''); setTime(''); setComposeOpen(false);
-      setScope('upcoming'); await load();
-    } catch { setMsg('Could not create the event.'); } finally { setSaving(false); }
-  };
+  const hero = featured();
+  const events = visibleEvents();
+  // The hero is already shown above; don't repeat it in the list below.
+  const listed = hero ? events.filter((e) => e.id !== hero.id) : events;
 
   return (
     <View style={styles.container}>
       <AppBar title="Events" />
-      <View style={styles.scopeRow}>
-        {(['upcoming', 'past'] as const).map((s) => (
-          <Text key={s} onPress={() => setScope(s)} style={[styles.scope, scope === s && styles.scopeOn]}>{s === 'upcoming' ? 'Upcoming' : 'Past'}</Text>
-        ))}
+
+      <View style={styles.chips}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+          {FILTERS.map((f) => (
+            <Pressable
+              key={f.key}
+              testID={`event-filter-${f.key}`}
+              onPress={() => setFilter(f.key)}
+              style={[styles.chip, filter === f.key && styles.chipOn]}
+            >
+              <Text style={[styles.chipText, filter === f.key && styles.chipTextOn]}>{f.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
       </View>
-      <ScrollView contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.teal} />}>
-        {loading ? null : items.length === 0 ? (
-          <Card><Text style={type.bodySecondary}>{scope === 'upcoming' ? 'No upcoming events' : 'No past events'}</Text></Card>
-        ) : items.map((e) => <View key={e.id} style={styles.item}><EventCard event={e} onRsvp={onRsvp} /></View>)}
-      </ScrollView>
 
-      <Pressable style={styles.fab} onPress={() => setComposeOpen(true)}>
-        <MaterialCommunityIcons name="calendar-plus" size={24} color={colors.textInverse} />
-      </Pressable>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.teal} />}
+      >
+        {/* FR-STL-07: the confirmation the resident sees after paying. */}
+        {confirmed && (
+          <Card testID="booking-confirmation">
+            <View style={styles.confirmRow}>
+              <MaterialCommunityIcons name="check-circle" size={22} color={colors.success} />
+              <Text style={type.h3}>Stall {confirmed.stallCode} booked</Text>
+            </View>
+            <Text style={type.bodySecondary}>
+              ₹{(confirmed.totalPaise / 100).toLocaleString('en-IN')} paid. A confirmation has been sent to you.
+            </Text>
+            <Pressable testID="dismiss-confirmation" onPress={() => setConfirmed(null)}>
+              <Text style={styles.dismiss}>Dismiss</Text>
+            </Pressable>
+          </Card>
+        )}
 
-      <Modal visible={composeOpen} animationType="slide" transparent onRequestClose={() => setComposeOpen(false)}>
-        <View style={styles.backdrop}>
-          <View style={styles.sheet}>
-            <ScrollView contentContainerStyle={styles.form}>
-              <Text style={type.h2}>New event</Text>
-              <Input label="Title" placeholder="e.g. Holi Bash" value={title} onChangeText={setTitle} />
-              <Input label="Date (YYYY-MM-DD)" placeholder="2026-06-20" value={date} onChangeText={setDate} />
-              <Input label="Time (HH:MM)" placeholder="17:00" value={time} onChangeText={setTime} />
-              <Input label="Location (optional)" placeholder="Clubhouse" value={loc} onChangeText={setLoc} />
-              <Input testID="event-desc" label="Details (optional)" placeholder="What's happening" value={desc} onChangeText={setDesc} multiline style={{ minHeight: 80, textAlignVertical: 'top' }} />
-              <View style={styles.cats}>
-                {CATS.map((c) => <Text key={c} onPress={() => setCat(c)} style={[styles.cat, cat === c && styles.catOn]}>{c}</Text>)}
+        {/* FR-EVT-03: featured event as a hero card at the top. */}
+        {hero && filter !== 'past' && (
+          <Pressable
+            testID="featured-event"
+            onPress={() => hero.hasStalls && setBooking(hero)}
+            style={styles.hero}
+          >
+            <Text style={styles.heroLabel}>FEATURED</Text>
+            <Text style={styles.heroTitle}>{hero.title}</Text>
+            <Text style={styles.heroMeta}>
+              {when(hero.startsAt)}{hero.location ? ` · ${hero.location}` : ''}
+            </Text>
+            <EventTags event={hero} />
+            {hero.hasStalls && hero.stallsAvailable > 0 && (
+              <View style={styles.heroCta}><Text style={styles.heroCtaText}>Book a stall</Text></View>
+            )}
+          </Pressable>
+        )}
+
+        {listed.length === 0 && !loading ? (
+          <Card>
+            <Text style={type.bodySecondary}>
+              {error ? 'Could not load events. Pull to refresh.' : 'No events to show.'}
+            </Text>
+          </Card>
+        ) : (
+          listed.map((e) => {
+            const fund = e.hasDonations ? fundForEvent(e.id) : null;
+            return (
+              <View key={e.id} style={styles.item}>
+                <Card testID={`event-${e.id}`}>
+                  <Text style={type.h3}>{e.title}</Text>
+                  <Text style={type.bodySecondary}>
+                    {when(e.startsAt)}{e.location ? ` · ${e.location}` : ''}
+                  </Text>
+                  {e.description ? <Text style={type.bodySecondary}>{e.description}</Text> : null}
+                  <EventTags event={e} />
+
+                  {/* FR-EVT-06: past events stay visible but are never bookable. */}
+                  {e.hasStalls && !e.isPast && (
+                    <Pressable testID={`book-stall-${e.id}`} onPress={() => setBooking(e)} style={styles.bookBtn}>
+                      <Text style={styles.bookBtnText}>
+                        {e.stallsAvailable > 0 ? 'Book a stall' : 'View stall map'}
+                      </Text>
+                    </Pressable>
+                  )}
+                </Card>
+
+                {fund && !e.isPast && (
+                  <View style={styles.fund}>
+                    <DonationCard fund={fund} onDonated={load} />
+                  </View>
+                )}
               </View>
-              {msg ? <Text style={styles.msg}>{msg}</Text> : null}
-              <Button title="Create event" onPress={submit} loading={saving} style={styles.create} />
-              <Text onPress={() => setComposeOpen(false)} style={styles.cancel}>Cancel</Text>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+            );
+          })
+        )}
+      </ScrollView>
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.mist },
-  scopeRow: { flexDirection: 'row', gap: spacing.xs, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  scope: { ...font(500), fontSize: 13, color: colors.textSecondary, backgroundColor: colors.surface, borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, overflow: 'hidden' },
-  scopeOn: { backgroundColor: colors.brandPrimary, color: colors.textInverse },
+  chips: { backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.surfaceBorder },
+  chipRow: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, gap: spacing.sm },
+  chip: {
+    paddingHorizontal: spacing.md, paddingVertical: spacing.xs,
+    borderRadius: radius.pill, borderWidth: 1, borderColor: colors.surfaceBorder,
+  },
+  chipOn: { backgroundColor: colors.actionPrimary, borderColor: colors.actionPrimary },
+  chipText: { ...font(500), fontSize: 12, color: colors.textSecondary },
+  chipTextOn: { color: colors.textInverse },
   scroll: { padding: spacing.lg, paddingBottom: spacing['5xl'] },
   item: { marginTop: spacing.sm },
-  fab: { position: 'absolute', right: spacing.lg, bottom: spacing.xl, width: 56, height: 56, borderRadius: 28, backgroundColor: colors.actionPrimary, alignItems: 'center', justifyContent: 'center' },
-  backdrop: { flex: 1, backgroundColor: 'rgba(13,37,53,0.45)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: colors.mist, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, maxHeight: '90%' },
-  form: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing['3xl'] },
-  cats: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  cat: { ...font(500), fontSize: 12, color: colors.textSecondary, backgroundColor: colors.surface, borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, overflow: 'hidden', textTransform: 'capitalize' },
-  catOn: { backgroundColor: colors.teal, color: colors.textInverse },
-  msg: { ...font(400), fontSize: 12, color: colors.textError },
-  create: { marginTop: spacing.sm, alignSelf: 'flex-start' },
-  cancel: { ...font(500), fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm },
+  fund: { marginTop: spacing.sm },
+  hero: {
+    backgroundColor: colors.oceanDark, borderRadius: radius.md,
+    padding: spacing.lg, gap: spacing.xs, marginBottom: spacing.sm,
+  },
+  heroLabel: { ...font(700), fontSize: 10, letterSpacing: 1.5, color: colors.actionPrimary },
+  heroTitle: { ...font(700), fontSize: 20, color: colors.textInverse },
+  heroMeta: { ...font(400), fontSize: 13, color: colors.textInverse, opacity: 0.75 },
+  heroCta: {
+    marginTop: spacing.sm, alignSelf: 'flex-start',
+    backgroundColor: colors.actionPrimary, borderRadius: radius.sm,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+  },
+  heroCtaText: { ...font(700), fontSize: 13, color: colors.textInverse },
+  tags: { flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', marginTop: spacing.xs },
+  tag: {
+    backgroundColor: colors.surfaceHover, borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm, paddingVertical: 2,
+  },
+  tagText: { ...font(500), fontSize: 11, color: colors.textSecondary, textTransform: 'capitalize' },
+  bookBtn: {
+    marginTop: spacing.sm, alignSelf: 'flex-start',
+    backgroundColor: colors.teal, borderRadius: radius.sm,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+  },
+  bookBtnText: { ...font(700), fontSize: 13, color: colors.textInverse },
+  confirmRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  dismiss: { ...font(500), fontSize: 13, color: colors.teal, marginTop: spacing.sm },
 });
