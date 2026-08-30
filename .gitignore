@@ -57,3 +57,6 @@ c3_test_report*.json
 c3_push_capture*.log
 panel_backup_*.json
 edge/tools/PANEL_ORIGINAL_CONFIG.txt
+
+# Valet media, when the local storage driver is in use (VALET_STORAGE=local).
+uploads/

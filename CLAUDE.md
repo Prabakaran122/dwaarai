@@ -46,8 +46,12 @@ pnpm --filter resident-app start      # Expo (React Native, iOS + Android)
 pnpm --filter resident-app test       # jest
 pnpm --filter resident-app exec jest src/screens/DuesScreen.test.tsx   # single test file
 pnpm --filter resident-app typecheck  # tsc --noEmit
+pnpm --filter guard-app test          # jest (jest.config.js, jest-expo preset)
+pnpm --filter valet-guest dev         # Next.js 14 guest valet page, port 3110
+pnpm --filter valet-guest test        # vitest + @testing-library/react (jsdom)
+pnpm --filter admin-portal test       # vitest (lib/ only; the pages are not unit-tested)
 ```
-`guard-app` has no test script/config despite `.test.tsx`-style components existing elsewhere in the repo — don't assume it runs the same way as `resident-app`.
+`guard-app` and `resident-app` both run jest; `admin-portal` and `valet-guest` run vitest. The two vitest configs set `globals: false` to match the services, so `valet-guest` registers Testing Library's `cleanup` explicitly in `vitest.setup.ts` — without it renders stack up across tests.
 
 ### Infra (AWS CDK)
 ```
@@ -63,8 +67,9 @@ Four jobs: `test-python` (pytest against real postgres/redis/mosquitto container
 ## Architecture
 
 ### Services (`services/*`, each an independent Express app + own Postgres migrations/tables)
-- **api-gateway** (port 3000, `PORT_API_GATEWAY`) — the primary backend. Owns almost all domain routes (auth, vehicles, passes, dues, notices, facilities, community feed, guard/resident/admin views, face recognition, SOS, incidents, deliveries, handovers, etc.), the Postgres migration runner (`src/db/migrate.js`, 32+ sequential `migrations/*.sql` files), Socket.IO (`websocket.js`) for live dashboard/guard updates, and MQTT publish for gate commands (`mqtt.js`).
+- **api-gateway** (port 3000, `PORT_API_GATEWAY`) — the primary backend. Owns almost all domain routes (auth, vehicles, passes, dues, notices, facilities, community feed, guard/resident/admin views, face recognition, SOS, incidents, deliveries, handovers, etc.), the Postgres migration runner (`src/db/migrate.js`, 42+ sequential `migrations/*.sql` files), Socket.IO (`websocket.js`) for live dashboard/guard updates, and MQTT publish for gate commands (`mqtt.js`).
 - **vehicle-service** (3020), **visitor-service** (3030, OTP-based pre-approvals), **gate-command-service** (3050, mirrors the event-sync schema and publishes MQTT commands), **notification-service** (3004, FCM + SMS via `msg91`), **audit-service** (3005, PDF report generation) — smaller domain services split out of api-gateway, each with its own `src/routes.js` + `src/db.js`.
+- **valet-service** (3060, `PORT_VALET_SERVICE`) — the Sarthi valet flow: guard ticket handling, the public guest-page API, and operator plate-history reporting. Its tables ship in `042_valet.sql` like every other service's (api-gateway owns all migrations). Media goes through `src/lib/storage.js`, which selects S3 or a local directory from `VALET_STORAGE`. Routes mount on an `asyncRouter()` (`src/lib/async-router.js`) rather than a bare `express.Router()`: Express 4 does not forward an async handler's rejection to the error middleware, so without it a database blip hangs the request with no response instead of returning 500.
 - **anpr-service** (Python, FastAPI-style, port 8001) — plate detection/OCR (`detector.py`, `ocr_engine.py`, `normalizer.py`), called by both the edge node and the cloud.
 
 There is no shared Node package for cross-service code — each service duplicates its own `db/pool.js`-equivalent and route conventions rather than importing from a common library.
@@ -82,12 +87,41 @@ There is no shared Node package for cross-service code — each service duplicat
 `POST /events/sync` is the single channel edge nodes use to report gate activity to the cloud, and it's intentionally pinned in three places that must be changed together: the zod schema in `services/api-gateway/src/schemas/event-sync.js`, the mirrored schema in `services/gate-command-service/src/routes.js`, and the `gate_events` table (currently through migration 031). `tests/fixtures/edge-event-sync.json` is the golden payload both `tests/unit/test_event_sync_contract.py` (Python/edge side) and `services/api-gateway/src/__tests__/event-sync-contract.test.js` (Node/cloud side) validate against — when the edge starts emitting a new field, widen all three plus the fixture.
 
 ### Frontend apps (`apps/*`)
-- **admin-portal** — Next.js 14 App Router (`app/<section>/page.tsx` per feature: gates, communities, units, vehicles, guards, incidents, sos, reports, etc.), talks to api-gateway via `lib/api.ts` and live updates via `lib/socket.ts`.
+- **admin-portal** — Next.js 14 App Router (`app/<section>/page.tsx` per feature: gates, communities, units, vehicles, guards, incidents, sos, reports, etc.), talks to api-gateway via `lib/api.ts` and live updates via `lib/socket.ts`. The `app/valet/*` pages are the exception: they talk to valet-service via `lib/valet.ts`, a second client on a different base URL that reuses the same api-gateway JWT from localStorage.
 - **guard-app** — Expo/React Native, Android tablet at the gate. Zustand stores per domain in `src/store/` (queue, approvals, SOS, handover, staff, deliveries), i18n via `src/i18n/translations.ts` (guards may not read English).
+- **valet-guest** — Next.js 14, `basePath: /valet`, the one public surface: a guest opens `/valet/v/<session token>` by scanning a physical valet card. No login, no account, and deliberately nothing in localStorage — the token in the URL is the only credential, so reopening the link reconstructs the state exactly.
 - **resident-app** — Expo/React Native, iOS + Android. Same store-per-domain + screen-per-feature pattern as guard-app, but with much heavier Jest test coverage (most screens/components have a co-located `.test.tsx`).
 
 ### Infra (`infra/cdk`)
 Six CDK stacks wired together in `bin/app.ts`: `NetworkStack` (VPC/cluster) → `DataStack` (RDS + Redis + S3, depends on VPC) → `AuthStack` (Cognito) → `IotStack` (AWS IoT Core, replaces Mosquitto in prod) → `ServicesStack` (ECS services, depends on all of the above) → `FrontendStack`. Region is hardcoded to `ap-south-1`.
 
 ### Database migrations
-Sequential, numbered SQL files in `services/api-gateway/migrations/` (`001_core.sql` ... `032_gate_telemetry.sql`), applied in order by `src/db/migrate.js` and tracked so re-application is a no-op (CI enforces this in the `migrations` job). This is the only migration path in the repo — other Node services read/write the same Postgres database but don't own migrations themselves.
+Sequential, numbered SQL files in `services/api-gateway/migrations/` (`001_core.sql` ... `042_valet.sql`), applied in order by `src/db/migrate.js` and tracked so re-application is a no-op (CI enforces this in the `migrations` job). This is the only migration path in the repo — other Node services read/write the same Postgres database but don't own migrations themselves.
+
+### Valet (Sarthi)
+Ported from a standalone Express + SQLite prototype into this monorepo. Three
+things changed structurally in the port, and each is load-bearing:
+
+- **Timestamps are `TIMESTAMPTZ`, never ISO strings in TEXT.** The prototype
+  compared `toISOString()` output against SQLite's `datetime('now')`, which
+  formats differently (`2026-08-10 14:11:15` vs `2026-08-10T14:11:15.294Z`);
+  since SQLite compares TEXT lexicographically and `' '` sorts before `'T'`,
+  the retention sweep silently matched nothing and never deleted a photo.
+- **Guards are `residents` rows with `type = 'guard'`,** not a name-keyed side
+  table. Staff-badge fields (`employee_code`, `badge_photo_key`,
+  `badge_consent_at`) hang off that row, and every guard reference in the valet
+  tables is a real FK.
+- **Three DPDP consent timestamps stay separate** — photo capture, discount
+  opt-in, and the guard's own badge are distinct collection purposes and must
+  never be merged into one blanket consent.
+
+Two invariants are enforced server-side, not just in the UI, and have tests
+saying so: a pickup cannot be confirmed without a successful QR scan *since the
+current arrival*, and not without return-stage condition media captured since
+that same arrival. A ticket flagged `disputed` is exempt from the media
+retention sweep, checked at deletion time so flagging after the fact still
+protects the media.
+
+The retention/expiry sweep runs as a scheduled job
+(`pnpm --filter valet-service sweep`), not on a `setInterval` inside the web
+process — set `VALET_RUN_SWEEP_IN_PROCESS=true` only on a single-instance dev box.

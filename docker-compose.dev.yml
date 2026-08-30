@@ -52,6 +52,25 @@ services:
       redis:
         condition: service_started
 
+  valet-service:
+    build:
+      context: ./services/valet-service
+    ports:
+      - "3060:3060"
+    env_file: [.env]
+    environment:
+      # The local storage driver keeps uploads on a volume rather than needing
+      # S3 credentials for a dev run.
+      VALET_STORAGE: "local"
+      VALET_UPLOAD_DIR: "/app/uploads/valet"
+    volumes:
+      - "valet-uploads:/app/uploads/valet"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api-gateway:
+        condition: service_started
+
   vehicle-service:
     build:
       context: ./services/vehicle-service
@@ -91,4 +110,5 @@ services:
     depends_on: [mosquitto, api-gateway, anpr-service]
 
 volumes:
-  pgdata: {}
+  pgdata:
+  valet-uploads: {}

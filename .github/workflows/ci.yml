@@ -90,6 +90,14 @@ jobs:
           out=$(pnpm --filter api-gateway migrate)
           echo "$out"
           echo "$out" | grep -q "up to date" || { echo "::error::second run was not a no-op"; exit 1; }
+      # The valet suites are mocked by default so `pnpm -r run test` runs
+      # offline. This job already has a migrated database, so point them at it
+      # and exercise the real SQL — constraints, the rotating-token consume,
+      # and the disputed-media retention exemption.
+      - name: Valet integration tests against the migrated database
+        env:
+          VALET_TEST_DATABASE_URL: postgresql://cguser:testpass@localhost:5432/cg_migrate
+        run: pnpm --filter valet-service test
 
   arm-build:
     runs-on: ubuntu-latest
