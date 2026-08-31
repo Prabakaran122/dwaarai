@@ -7,7 +7,7 @@ vi.mock('../db.js', () => ({
   queryRows: vi.fn(),
 }));
 
-import { queryRows } from '../db.js';
+import { queryOne, queryRows } from '../db.js';
 import adminRoutes from '../routes/admin.js';
 import { createApp, request, guardToken, adminToken, COMMUNITY_ID } from './helpers.js';
 
@@ -110,5 +110,169 @@ describe('GET /admin/summary', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.open).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /admin/visits — "what came in over the last 30 days"
+//
+// plate-history answers "tell me about THIS car". A manager's actual question
+// is the other way round: "what came through at all?" — which needs no plate.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function visitRow(overrides = {}) {
+  return {
+    id: 't1', display_id: 'SRT-0001', plate: 'KA 03 NJ 0435',
+    plate_normalized: 'KA03NJ0435', vehicle_make: 'Swift', status: 'final_closed',
+    created_at: '2026-08-20T10:00:00Z', closed_at: '2026-08-20T18:00:00Z',
+    disputed: false, created_guard_name: 'Ramesh', stay_seconds: 28800,
+    ...overrides,
+  };
+}
+
+function totalsRow(overrides = {}) {
+  return {
+    total_visits: 12, unique_vehicles: 9, disputed_count: 1,
+    open_count: 2, avg_stay_seconds: 14400, ...overrides,
+  };
+}
+
+describe('GET /admin/visits', () => {
+  it('needs an admin token — a guard cannot read venue-wide history', async () => {
+    const res = await request(app, 'GET', '/admin/visits', { token: guardToken() });
+
+    expect(res.status).toBe(403);
+    expect(queryRows).not.toHaveBeenCalled();
+  });
+
+  it('defaults to a 30 day window', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(app, 'GET', '/admin/visits', { token: adminToken() });
+
+    expect(res.body.days).toBe(30);
+    expect(queryRows.mock.calls[0][1][1]).toBe('30');
+  });
+
+  it('honours an explicit window', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(app, 'GET', '/admin/visits?days=7', { token: adminToken() });
+
+    expect(res.body.days).toBe(7);
+  });
+
+  it('clamps an absurd window rather than trying to serve it', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(app, 'GET', '/admin/visits?days=99999', { token: adminToken() });
+
+    expect(res.body.days).toBe(365);
+  });
+
+  it('rejects a nonsense window by falling back to the default', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(app, 'GET', '/admin/visits?days=abc', { token: adminToken() });
+
+    expect(res.body.days).toBe(30);
+  });
+
+  it('returns each visit with plate, times and who took it in', async () => {
+    queryRows.mockResolvedValueOnce([visitRow()]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(app, 'GET', '/admin/visits', { token: adminToken() });
+
+    expect(res.body.visits[0]).toMatchObject({
+      displayId: 'SRT-0001',
+      plate: 'KA 03 NJ 0435',
+      vehicleMake: 'Swift',
+      takenInBy: 'Ramesh',
+      staySeconds: 28800,
+      disputed: false,
+    });
+  });
+
+  it('computes totals over the whole window, not just the returned page', async () => {
+    // Showing "3 visits" beside a page of 3 rows out of 900 would be worse
+    // than showing no number at all.
+    queryRows.mockResolvedValueOnce([visitRow(), visitRow({ id: 't2' }), visitRow({ id: 't3' })]);
+    queryOne.mockResolvedValueOnce(totalsRow({ total_visits: 900, unique_vehicles: 640 }));
+
+    const res = await request(app, 'GET', '/admin/visits', { token: adminToken() });
+
+    expect(res.body.visits).toHaveLength(3);
+    expect(res.body.totals.visits).toBe(900);
+    expect(res.body.totals.uniqueVehicles).toBe(640);
+  });
+
+  it('reports returning vehicles as visits beyond the unique count', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow({ total_visits: 12, unique_vehicles: 9 }));
+
+    const res = await request(app, 'GET', '/admin/visits', { token: adminToken() });
+
+    expect(res.body.totals.returningVehicles).toBe(3);
+  });
+
+  it('never reports a negative returning count', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow({ total_visits: 0, unique_vehicles: 0 }));
+
+    const res = await request(app, 'GET', '/admin/visits', { token: adminToken() });
+
+    expect(res.body.totals.returningVehicles).toBe(0);
+  });
+
+  it('surfaces disputes and still-open stays', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow({ disputed_count: 4, open_count: 7 }));
+
+    const res = await request(app, 'GET', '/admin/visits', { token: adminToken() });
+
+    expect(res.body.totals.disputed).toBe(4);
+    expect(res.body.totals.stillOpen).toBe(7);
+  });
+
+  it('scopes everything to the caller\'s community', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    await request(app, 'GET', '/admin/visits', { token: adminToken() });
+
+    expect(queryRows.mock.calls[0][1][0]).toBe(COMMUNITY_ID);
+    expect(queryOne.mock.calls[0][1][0]).toBe(COMMUNITY_ID);
+  });
+
+  it('caps the page size so one request cannot pull a year of a busy venue', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(app, 'GET', '/admin/visits?limit=99999', { token: adminToken() });
+
+    expect(res.body.paging.limit).toBe(1000);
+  });
+
+  it('pages with an offset', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(app, 'GET', '/admin/visits?limit=50&offset=100', { token: adminToken() });
+
+    expect(res.body.paging).toMatchObject({ limit: 50, offset: 100 });
+  });
+
+  it('orders newest first — a manager reads the most recent arrivals', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    await request(app, 'GET', '/admin/visits', { token: adminToken() });
+
+    expect(queryRows.mock.calls[0][0]).toContain('ORDER BY t.created_at DESC');
   });
 });

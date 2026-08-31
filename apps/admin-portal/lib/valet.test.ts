@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { valetFetch, valetPost, ValetError, STATUS_LABEL, NEEDS_ACTION, ValetStatus } from './valet';
+import { valetFetch, valetPost, ValetError, STATUS_LABEL, NEEDS_ACTION, ValetStatus, formatStay } from './valet';
 
 const originalFetch = global.fetch;
 
@@ -138,5 +138,26 @@ describe('status vocabulary', () => {
 
   it('does not flag en_route as needing action: a valet already has the car', () => {
     expect(NEEDS_ACTION).not.toContain('en_route');
+  });
+});
+
+describe('formatStay', () => {
+  it('reads as a manager would say it', () => {
+    expect(formatStay(3600)).toBe('1h');
+    expect(formatStay(12000)).toBe('3h 20m');
+    expect(formatStay(1800)).toBe('30m');
+  });
+
+  it('shows a dash rather than "0m" for a stay that has not started', () => {
+    expect(formatStay(0)).toBe('—');
+    expect(formatStay(-5)).toBe('—');
+  });
+
+  it('survives a non-numeric value from the wire', () => {
+    expect(formatStay(NaN)).toBe('—');
+  });
+
+  it('drops the minutes when they round to zero', () => {
+    expect(formatStay(7200)).toBe('2h');
   });
 });

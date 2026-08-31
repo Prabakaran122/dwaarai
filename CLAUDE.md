@@ -198,3 +198,25 @@ for. Never tell a resident money moved when it did not.
 rupees, and never charges it on a donation. The apps never recompute it — they
 render `pricePaise` / `platformFeePaise` / `totalPaise` exactly as the server
 sends them, and a test feeds a deliberately inconsistent payload to prove it.
+
+### Before any Expo build
+Run a local bundle first — it catches in ~20s what EAS reports as a generic
+"Unknown error. See logs of the Bundle JavaScript build phase" ten minutes and
+one cloud build later:
+
+```
+pnpm --filter valet-app exec expo export --platform android --output-dir /tmp/x
+```
+
+Two things this has already caught:
+
+- **Never put a test file inside `app/`.** expo-router treats every file there
+  as a route and bundles it, so a `.test.tsx` calling `require('fs')` fails
+  Metro resolution. Tests live in `src/__tests__/`, importing `../../app/index`.
+- **Fonts are load-bearing, not cosmetic.** Every screen styles text through
+  `font()`, which returns a `DMSans_*` fontFamily. On Android, naming a family
+  that was never loaded is FATAL — the first Sarthi APK crashed on launch for
+  exactly this. `useAppFonts()` must gate rendering in the entry, and
+  `src/__tests__/app-entry.test.tsx` asserts both the gate and that every family
+  the theme names is one the loader loads. Expo web silently substitutes a
+  system font, so **web testing cannot validate an Android build**.

@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { colors } from '../src/theme/colors';
 import { useAuthStore } from '../src/store/authStore';
 import { useLangStore } from '../src/store/langStore';
+import { useAppFonts } from '../src/lib/fonts';
 import LoginScreen from '../src/screens/LoginScreen';
 import ValetFlow from '../src/screens/ValetFlow';
 
@@ -20,6 +21,13 @@ export default function App() {
   const { token, restoring, restore } = useAuthStore();
   const rehydrateLang = useLangStore((s) => s.rehydrate);
 
+  // Every screen styles text through font(), which returns a fontFamily of
+  // 'DMSans_*'. On Android, referencing a family that was never loaded is a
+  // FATAL error, not a fallback — the app dies on first render. Web silently
+  // substitutes a system font, which is why this was invisible until the APK
+  // was installed on a real device.
+  const fontsLoaded = useAppFonts();
+
   useEffect(() => {
     restore();
     rehydrateLang();
@@ -29,9 +37,10 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="light" />
       <View style={styles.root}>
-        {restoring ? (
-          // A stored shift token is read before deciding what to show, so a
-          // signed-in valet never sees the login screen flash on launch.
+        {(restoring || !fontsLoaded) ? (
+          // Nothing renders until the fonts are in and the stored shift token
+          // has been read — the first avoids the Android crash above, the
+          // second stops a signed-in valet seeing the login screen flash.
           <View style={styles.center}>
             <ActivityIndicator color={colors.actionPrimary} />
           </View>

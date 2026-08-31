@@ -144,3 +144,39 @@ export const STATUS_LABEL: Record<ValetStatus, string> = {
 
 /** Which states need a guard to do something next. */
 export const NEEDS_ACTION: ValetStatus[] = ['requested', 'arrived'];
+
+export interface VisitRow {
+  id: string;
+  displayId: string;
+  plate: string;
+  vehicleMake: string;
+  status: ValetStatus;
+  arrivedAt: string;
+  closedAt: string | null;
+  staySeconds: number;
+  disputed: boolean;
+  takenInBy: string;
+}
+
+export interface VisitsReport {
+  days: number;
+  totals: {
+    visits: number;
+    uniqueVehicles: number;
+    returningVehicles: number;
+    disputed: number;
+    stillOpen: number;
+    avgStaySeconds: number;
+  };
+  visits: VisitRow[];
+  paging: { limit: number; offset: number; returned: number };
+}
+
+/** Formats a stay as a manager would say it: "3h 20m", not 12000 seconds. */
+export function formatStay(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '—';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}

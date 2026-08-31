@@ -102,12 +102,20 @@ export default function ValetDashboard() {
               : 'Nobody is waiting'}
           </p>
         </div>
-        <Link
-          href="/valet/plate-history"
-          className="text-sm font-medium text-teal-700 hover:text-teal-800"
-        >
-          Plate history →
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/valet/visits"
+            className="text-sm font-medium text-teal-700 hover:text-teal-800"
+          >
+            Vehicles in →
+          </Link>
+          <Link
+            href="/valet/plate-history"
+            className="text-sm font-medium text-teal-700 hover:text-teal-800"
+          >
+            Plate history →
+          </Link>
+        </div>
       </header>
 
       {error && (
