@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sarthi",
     "slug": "sarthi-valet",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "orientation": "portrait",
     "platforms": [
       "android",
@@ -11,7 +11,7 @@
     ],
     "android": {
       "package": "com.dwaarai.sarthi",
-      "versionCode": 2,
+      "versionCode": 3,
       "permissions": [
         "CAMERA",
         "android.permission.CAMERA",

@@ -6,6 +6,7 @@ import { colors } from '../src/theme/colors';
 import { useAuthStore } from '../src/store/authStore';
 import { useLangStore } from '../src/store/langStore';
 import { useAppFonts } from '../src/lib/fonts';
+import ErrorBoundary from '../src/components/ErrorBoundary';
 import LoginScreen from '../src/screens/LoginScreen';
 import ValetFlow from '../src/screens/ValetFlow';
 
@@ -34,6 +35,7 @@ export default function App() {
   }, []);
 
   return (
+    <ErrorBoundary>
     <SafeAreaProvider>
       <StatusBar style="light" />
       <View style={styles.root}>
@@ -51,6 +53,7 @@ export default function App() {
         )}
       </View>
     </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
 
