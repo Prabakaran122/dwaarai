@@ -2,27 +2,15 @@
   "expo": {
     "name": "Sarthi",
     "slug": "sarthi-valet",
-    "version": "0.1.2",
+    "version": "0.1.3",
     "orientation": "portrait",
     "platforms": [
       "android",
-      "ios",
       "web"
     ],
     "android": {
       "package": "com.dwaarai.sarthi",
-      "versionCode": 3,
-      "permissions": [
-        "CAMERA",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
-      ]
-    },
-    "ios": {
-      "bundleIdentifier": "com.dwaarai.sarthi",
-      "infoPlist": {
-        "NSCameraUsageDescription": "Sarthi uses the camera to photograph vehicle condition and to scan a guest's pickup QR code."
-      }
+      "versionCode": 4
     },
     "plugins": [
       "expo-router",
@@ -49,7 +37,6 @@
       "eas": {
         "projectId": "d36538ac-8432-4457-99bf-1616fa63a831"
       }
-    },
-    "userInterfaceStyle": "dark"
+    }
   }
 }
