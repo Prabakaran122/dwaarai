@@ -79,6 +79,9 @@ export const translations: Dict = {
   valetConfirmVehicleHint: { en: 'Ask the guest to tell you the vehicle and its number before releasing the car.', hi: 'गाड़ी देने से पहले मेहमान से वाहन और उसका नंबर पूछें।', kn: 'ವಾಹನ ಬಿಡುಗಡೆ ಮಾಡುವ ಮೊದಲು ಅತಿಥಿಯಿಂದ ವಾಹನ ಮತ್ತು ಅದರ ಸಂಖ್ಯೆ ಕೇಳಿ.' },
   valetGuestConfirmed: { en: 'Guest confirmed — release car', hi: 'मेहमान ने बताया — गाड़ी दें', kn: 'ಅತಿಥಿ ಖಚಿತಪಡಿಸಿದರು — ವಾಹನ ನೀಡಿ' },
   valetCannotConfirm: { en: 'Cannot confirm — hold the car', hi: 'पुष्टि नहीं — गाड़ी रोकें', kn: 'ಖಚಿತಪಡಿಸಲಾಗಿಲ್ಲ — ವಾಹನ ತಡೆಹಿಡಿಯಿರಿ' },
+  valetCameraBlocked: { en: 'Camera is blocked for Sarthi. Turn it on in Settings.', hi: 'सारथी के लिए कैमरा बंद है। सेटिंग्स में चालू करें।', kn: 'ಸಾರಥಿಗೆ ಕ್ಯಾಮೆರಾ ನಿರ್ಬಂಧಿಸಲಾಗಿದೆ. ಸೆಟ್ಟಿಂಗ್‌ಗಳಲ್ಲಿ ಆನ್ ಮಾಡಿ.' },
+  valetOpenSettings: { en: 'Open settings', hi: 'सेटिंग्स खोलें', kn: 'ಸೆಟ್ಟಿಂಗ್‌ಗಳನ್ನು ತೆರೆಯಿರಿ' },
+  valetCameraFailed: { en: 'The camera did not open', hi: 'कैमरा नहीं खुला', kn: 'ಕ್ಯಾಮೆರಾ ತೆರೆಯಲಿಲ್ಲ' },
 };
 
 export function translate(key: string, lang: Lang): string {

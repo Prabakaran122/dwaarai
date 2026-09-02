@@ -217,6 +217,15 @@ Two things about valet-app worth knowing before changing it:
   nothing: every screen test passed while the flow could not be opened at all.
   Keep a reachability assertion whenever a screen gains a new entry point.
 
+**Never call the image picker outside a try/catch.** `src/lib/camera.ts` wraps
+it and returns a result rather than throwing, because the screens used to await
+`ImagePicker.launchCameraAsync` outside theirs: anything it threw became an
+unhandled rejection, so tapping capture did nothing at all — no camera, no
+error, nothing for a valet at a stand to report. It also separates a permanent
+refusal (`canAskAgain === false`, Android stops prompting after two denials)
+from a one-off one, since only the first needs the OS settings screen, and
+carries the underlying reason into the on-screen message.
+
 ### Shipping the Sarthi APK
 `apps/valet-app/eas.json` mirrors guard-app's profiles. Both build URLs are
 pinned explicitly in **both** profiles, because `EXPO_PUBLIC_*` values are baked

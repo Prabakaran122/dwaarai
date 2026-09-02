@@ -20,6 +20,7 @@ import React from 'react';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as api from '../api/valet';
+import { useCameraPermissions } from 'expo-camera';
 import NewValetTicketScreen from './NewValetTicketScreen';
 
 const createdTicket = {
@@ -33,6 +34,7 @@ const createdTicket = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  (useCameraPermissions as jest.Mock).mockReturnValue([{ granted: true, canAskAgain: true }, jest.fn()]);
   (api.lookupPlate as jest.Mock).mockResolvedValue({ data: { isReturning: false } });
   (api.createTicket as jest.Mock).mockResolvedValue({ data: createdTicket });
   (api.uploadGuestPhoto as jest.Mock).mockResolvedValue({});
@@ -386,5 +388,133 @@ describe('what the guest is handed', () => {
 
     expect(screen.getByTestId('valet-qr-card')).toBeTruthy();
     expect(screen.queryByTestId('valet-card-handout')).toBeNull();
+  });
+});
+
+describe('when the camera will not open', () => {
+  beforeEach(() => {
+    // Implementations survive clearAllMocks(), so restore the happy path
+    // before each case rather than inheriting the previous one's failure.
+    (ImagePicker.requestCameraPermissionsAsync as jest.Mock)
+      .mockResolvedValue({ granted: true, canAskAgain: true });
+    (ImagePicker.launchCameraAsync as jest.Mock)
+      .mockResolvedValue({ canceled: false, assets: [{ uri: 'file://shot.jpg' }] });
+  });
+
+  // Reported from a Pixel: tapping capture did nothing at all. The picker was
+  // awaited outside the caller's try/catch, so anything it threw became an
+  // unhandled rejection — no camera, no error, nothing to report.
+  async function reachPhotoStep() {
+    const screen = render(<NewValetTicketScreen />);
+    await fillDetails(screen);
+    return screen;
+  }
+
+  it('shows an error instead of doing nothing when the picker throws', async () => {
+    (ImagePicker.launchCameraAsync as jest.Mock).mockRejectedValue(new Error('camera busy'));
+    const screen = await reachPhotoStep();
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-capture-photo')); });
+
+    expect(screen.getByTestId('valet-error')).toBeTruthy();
+  });
+
+  it('names the reason, so a valet at a stand has something to report', async () => {
+    (ImagePicker.launchCameraAsync as jest.Mock).mockRejectedValue(new Error('camera busy'));
+    const screen = await reachPhotoStep();
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-capture-photo')); });
+
+    expect(screen.getByText(/camera busy/)).toBeTruthy();
+  });
+
+  it('survives the permission request itself throwing', async () => {
+    (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockRejectedValue(new Error('no activity'));
+    const screen = await reachPhotoStep();
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-capture-photo')); });
+
+    expect(screen.getByTestId('valet-error')).toBeTruthy();
+  });
+
+  it('offers the settings screen when the OS will not prompt again', async () => {
+    // Two refusals and Android stops asking; "allow the camera" is then advice
+    // the valet cannot act on.
+    (ImagePicker.requestCameraPermissionsAsync as jest.Mock)
+      .mockResolvedValue({ granted: false, canAskAgain: false });
+    const screen = await reachPhotoStep();
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-capture-photo')); });
+
+    expect(screen.getByTestId('valet-open-settings')).toBeTruthy();
+  });
+
+  it('does not offer settings for a refusal that can be re-asked', async () => {
+    (ImagePicker.requestCameraPermissionsAsync as jest.Mock)
+      .mockResolvedValue({ granted: false, canAskAgain: true });
+    const screen = await reachPhotoStep();
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-capture-photo')); });
+
+    expect(screen.getByTestId('valet-error')).toBeTruthy();
+    expect(screen.queryByTestId('valet-open-settings')).toBeNull();
+  });
+
+  it('stays silent when the valet simply backs out of the camera', async () => {
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValue({ canceled: true });
+    const screen = await reachPhotoStep();
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-capture-photo')); });
+
+    expect(screen.queryByTestId('valet-error')).toBeNull();
+  });
+
+  it('does not advance the flow when the camera failed', async () => {
+    (ImagePicker.launchCameraAsync as jest.Mock).mockRejectedValue(new Error('camera busy'));
+    const screen = await reachPhotoStep();
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-capture-photo')); });
+
+    expect(screen.getByTestId('valet-capture-photo')).toBeTruthy();
+    expect(api.uploadGuestPhoto).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed condition capture too', async () => {
+    const screen = await reachPhotoStep();
+    fireEvent.press(screen.getByTestId('valet-skip-photo'));
+    (ImagePicker.launchCameraAsync as jest.Mock).mockRejectedValue(new Error('lens jammed'));
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-angle-front')); });
+
+    expect(screen.getByText(/lens jammed/)).toBeTruthy();
+    expect(api.uploadCondition).not.toHaveBeenCalled();
+  });
+});
+
+describe('opening the card scanner', () => {
+  it('asks for the camera on the way in, not after the screen is open', () => {
+    // A scanner that opens onto a permission notice reads as the camera simply
+    // not working.
+    const request = jest.fn();
+    (useCameraPermissions as jest.Mock).mockReturnValue([
+      { granted: false, canAskAgain: true }, request,
+    ]);
+
+    const screen = render(<NewValetTicketScreen />);
+    fireEvent.press(screen.getByTestId('valet-scan-card'));
+
+    expect(request).toHaveBeenCalled();
+  });
+
+  it('does not re-ask once the OS has stopped prompting', () => {
+    const request = jest.fn();
+    (useCameraPermissions as jest.Mock).mockReturnValue([
+      { granted: false, canAskAgain: false }, request,
+    ]);
+
+    const screen = render(<NewValetTicketScreen />);
+    fireEvent.press(screen.getByTestId('valet-scan-card'));
+
+    expect(request).not.toHaveBeenCalled();
   });
 });

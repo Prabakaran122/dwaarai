@@ -19,6 +19,7 @@ jest.mock('expo-camera', () => {
 import React from 'react';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import * as api from '../api/valet';
+import * as ImagePicker from 'expo-image-picker';
 import { useCameraPermissions } from 'expo-camera';
 import ValetHandoverScreen, { maskPlate } from './ValetHandoverScreen';
 
@@ -311,5 +312,54 @@ describe('maskPlate', () => {
 
   it('survives a missing plate', () => {
     expect(maskPlate('')).toBe('');
+  });
+});
+
+describe('when the return-condition camera will not open', () => {
+  beforeEach(() => {
+    // clearAllMocks() clears calls but not implementations, so a denied
+    // permission set by one test leaks into the next.
+    (ImagePicker.requestCameraPermissionsAsync as jest.Mock)
+      .mockResolvedValue({ granted: true, canAskAgain: true });
+    (ImagePicker.launchCameraAsync as jest.Mock)
+      .mockResolvedValue({ canceled: false, assets: [{ uri: 'file://shot.jpg' }] });
+  });
+
+  async function reachCondition() {
+    const screen = render(<ValetHandoverScreen sessionToken={TOKEN} />);
+    await act(async () => {
+      screen.getByTestId('handover-camera').props.onBarcodeScanned({ data: 'live-token' });
+    });
+    await act(async () => { fireEvent.press(screen.getByTestId('handover-match')); });
+    return screen;
+  }
+
+  it('shows an error rather than doing nothing', async () => {
+    const screen = await reachCondition();
+    (ImagePicker.launchCameraAsync as jest.Mock).mockRejectedValue(new Error('camera busy'));
+
+    await act(async () => { fireEvent.press(screen.getByTestId('handover-angle-front')); });
+
+    expect(screen.getByText(/camera busy/)).toBeTruthy();
+    expect(api.uploadCondition).not.toHaveBeenCalled();
+  });
+
+  it('offers settings when the OS will not prompt again', async () => {
+    const screen = await reachCondition();
+    (ImagePicker.requestCameraPermissionsAsync as jest.Mock)
+      .mockResolvedValue({ granted: false, canAskAgain: false });
+
+    await act(async () => { fireEvent.press(screen.getByTestId('handover-angle-front')); });
+
+    expect(screen.getByTestId('handover-open-settings')).toBeTruthy();
+  });
+
+  it('stays silent on a plain cancel', async () => {
+    const screen = await reachCondition();
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValue({ canceled: true });
+
+    await act(async () => { fireEvent.press(screen.getByTestId('handover-angle-front')); });
+
+    expect(screen.queryByTestId('handover-error')).toBeNull();
   });
 });

@@ -3,13 +3,14 @@ import { View, Text, TextInput, ScrollView, StyleSheet, Pressable, Image, Activi
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as ImagePicker from 'expo-image-picker';
+
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
 import { type } from '../theme/typography';
 import * as api from '../api/valet';
 import { useT } from '../store/langStore';
 import { parseCardCode } from '../lib/cardCode';
+import { takePhoto, openAppSettings } from '../lib/camera';
 
 /**
  * Taking a car in: plate and make, optionally a printed card, then the guest
@@ -85,6 +86,9 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
   const [created, setCreated] = useState<api.CreatedTicket | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set only when the OS will no longer prompt, so the error can offer the one
+  // action that actually helps.
+  const [cameraBlocked, setCameraBlocked] = useState(false);
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [captured, setCaptured] = useState<string[]>([]);
@@ -109,21 +113,39 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
     return () => { if (lookupTimer.current) clearTimeout(lookupTimer.current); };
   }, [plate]);
 
+  /**
+   * Returns a captured image, or null having already explained why not.
+   *
+   * Never throws: it used to be awaited outside its callers' try/catch, so
+   * anything the picker threw became an unhandled rejection and the button did
+   * nothing at all — no camera, no message, nothing to report.
+   */
   async function shoot(): Promise<string | null> {
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) {
-      setError(t('valetCameraDenied'));
-      return null;
+    const res = await takePhoto();
+    if (res.ok) {
+      setError(null);
+      setCameraBlocked(false);
+      return res.uri;
     }
-    const shot = await ImagePicker.launchCameraAsync({ quality: 0.6, allowsEditing: false });
-    if (shot.canceled || !shot.assets?.[0]?.uri) return null;
-    return shot.assets[0].uri;
+    setCameraBlocked(res.reason === 'blocked');
+    if (res.reason === 'cancelled') setError(null);
+    else if (res.reason === 'blocked') setError(t('valetCameraBlocked'));
+    else if (res.reason === 'denied') setError(t('valetCameraDenied'));
+    // The detail rides along: a valet reporting "the camera did not open" from
+    // a stand is unactionable, and the same sentence with the reason on it is
+    // the difference between a fix and a shrug.
+    else setError(`${t('valetCameraFailed')} — ${res.detail}`);
+    return null;
   }
 
   function openScanner() {
     scanning.current = true;
     setTypedCard('');
     setError(null);
+    // Ask on the way in. Otherwise the scanner opens onto a permission notice
+    // that the valet has to notice and act on, which reads as the camera
+    // simply not working.
+    if (permission && !permission.granted && permission.canAskAgain) requestPermission();
     setStep('card');
   }
 
@@ -226,6 +248,11 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
 
       <ScrollView contentContainerStyle={styles.content}>
         {error && <Text style={styles.error} testID="valet-error">{error}</Text>}
+        {cameraBlocked && (
+          <Pressable testID="valet-open-settings" style={styles.ghost} onPress={openAppSettings}>
+            <Text style={styles.ghostText}>{t('valetOpenSettings')}</Text>
+          </Pressable>
+        )}
 
         {step === 'details' && (
           <>

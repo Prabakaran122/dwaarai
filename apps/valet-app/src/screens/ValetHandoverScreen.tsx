@@ -3,12 +3,12 @@ import { View, Text, StyleSheet, Pressable, Image, ActivityIndicator, ScrollView
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
 import { type } from '../theme/typography';
 import * as api from '../api/valet';
 import { useT } from '../store/langStore';
+import { takePhoto, openAppSettings } from '../lib/camera';
 
 /**
  * Handing a car back: scan the guest's rotating QR, compare their face against
@@ -56,6 +56,7 @@ export default function ValetHandoverScreen({
   // outcome this screen must never produce.
   const [ticket, setTicket] = useState<api.TicketDetail | null>(null);
   const [verification, setVerification] = useState<api.Verification>('photo');
+  const [cameraBlocked, setCameraBlocked] = useState(false);
   // Latched in a ref, not state: a real camera fires onBarcodeScanned many
   // times per second, far faster than React re-renders, so a state flag would
   // still be `true` for every call in the same frame and the same code would
@@ -95,17 +96,22 @@ export default function ValetHandoverScreen({
   }
 
   async function captureReturn(angle: (typeof ANGLES)[number]) {
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) {
-      setError(t('valetCameraDenied'));
+    // Never throws — see lib/camera. The same await used to sit outside this
+    // try/catch, so a picker error silently did nothing.
+    const res = await takePhoto();
+    if (!res.ok) {
+      setCameraBlocked(res.reason === 'blocked');
+      if (res.reason === 'cancelled') setError(null);
+      else if (res.reason === 'blocked') setError(t('valetCameraBlocked'));
+      else if (res.reason === 'denied') setError(t('valetCameraDenied'));
+      else setError(`${t('valetCameraFailed')} — ${res.detail}`);
       return;
     }
-    const shot = await ImagePicker.launchCameraAsync({ quality: 0.6 });
-    if (shot.canceled || !shot.assets?.[0]?.uri) return;
+    setCameraBlocked(false);
 
     setBusy(true);
     try {
-      await api.uploadCondition(sessionToken, shot.assets[0].uri, 'return', 'photo', angle);
+      await api.uploadCondition(sessionToken, res.uri, 'return', 'photo', angle);
       setCaptured((prev) => [...prev, angle]);
       setError(null);
     } catch {
@@ -144,6 +150,11 @@ export default function ValetHandoverScreen({
 
       <ScrollView contentContainerStyle={styles.content}>
         {error && <Text style={styles.error} testID="handover-error">{error}</Text>}
+        {cameraBlocked && (
+          <Pressable testID="handover-open-settings" style={styles.ghost} onPress={openAppSettings}>
+            <Text style={styles.ghostText}>{t('valetOpenSettings')}</Text>
+          </Pressable>
+        )}
 
         {stage === 'scan' && (
           <View testID="handover-scanner" style={styles.scannerWrap}>
