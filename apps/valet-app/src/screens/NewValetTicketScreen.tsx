@@ -2,34 +2,84 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, ScrollView, StyleSheet, Pressable, Image, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
 import { type } from '../theme/typography';
 import * as api from '../api/valet';
 import { useT } from '../store/langStore';
+import { parseCardCode } from '../lib/cardCode';
 
 /**
- * Taking a car in: plate and make, then the guest comparison photo, then the
- * intake condition capture, then the QR card to hand over.
+ * Taking a car in: plate and make, optionally a printed card, then the guest
+ * comparison photo, the intake condition capture, and finally what the guest
+ * leaves with.
  *
  * Each capture uploads on its own the moment it is taken, so a dropped
  * connection at the valet stand costs one shot rather than the whole set.
+ *
+ * The card is optional on purpose. A venue with no printed stock still works
+ * exactly as it did — the screen QR is then the ticket — so the card step must
+ * never become something a valet has to dismiss before taking a car in.
  */
 
 const ANGLES = ['front', 'back', 'left', 'right'] as const;
 const PLATE_LOOKUP_DEBOUNCE_MS = 400;
 
-type Step = 'details' | 'photo' | 'condition' | 'done';
+type Step = 'details' | 'card' | 'photo' | 'condition' | 'done';
+
+/**
+ * What the guest leaves with.
+ *
+ * With a card bound, the plastic IS the ticket — telling a valet to show a
+ * screen QR would have them hand over nothing, and the guest would be left
+ * with a card they were never told to keep. The screen QR is still rendered
+ * underneath so a guest who would rather use their own phone can, but the
+ * instruction leads with the card.
+ */
+function TicketHandout({
+  created, t,
+}: {
+  created: api.CreatedTicket;
+  t: (k: string) => string;
+}) {
+  if (created.cardCode) {
+    return (
+      <View style={styles.qrCard} testID="valet-card-handout">
+        <Text style={styles.qrTitle}>{t('valetCardHandOver')}</Text>
+        <Text style={styles.bigCard} testID="valet-handout-code">
+          {created.cardCode}
+        </Text>
+        <Image source={{ uri: created.qrDataUrl }} style={styles.qrSmall} />
+        <Text style={styles.qrCode}>{created.displayId}</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={styles.qrCard} testID="valet-qr-card">
+      <Text style={styles.qrTitle}>{t('valetShowQr')}</Text>
+      <Image source={{ uri: created.qrDataUrl }} style={styles.qr} />
+      <Text style={styles.qrCode}>{created.displayId}</Text>
+    </View>
+  );
+}
 
 export default function NewValetTicketScreen({ onClose }: { onClose?: () => void }) {
   const insets = useSafeAreaInsets();
   const t = useT();
 
+  const [permission, requestPermission] = useCameraPermissions();
   const [step, setStep] = useState<Step>('details');
   const [plate, setPlate] = useState('');
   const [vehicleMake, setVehicleMake] = useState('');
   const [days, setDays] = useState(1);
+  const [cardCode, setCardCode] = useState<string | null>(null);
+  const [typedCard, setTypedCard] = useState('');
+  // Latched in a ref for the same reason as the handover scanner: a real
+  // camera fires onBarcodeScanned many times a second, far faster than React
+  // re-renders, so a state flag would still read stale within a frame.
+  const scanning = useRef(true);
 
   const [returning, setReturning] = useState<api.PlateLookup | null>(null);
   const [created, setCreated] = useState<api.CreatedTicket | null>(null);
@@ -70,6 +120,43 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
     return shot.assets[0].uri;
   }
 
+  function openScanner() {
+    scanning.current = true;
+    setTypedCard('');
+    setError(null);
+    setStep('card');
+  }
+
+  function acceptCard(code: string) {
+    setCardCode(code);
+    setError(null);
+    setStep('details');
+  }
+
+  function onCardScanned({ data }: { data: string }) {
+    if (!scanning.current) return;
+    const code = parseCardCode(data);
+    if (!code) {
+      // Stay on the scanner: the valet is holding a card and pointing it at
+      // something, and dropping them back to the form loses that.
+      scanning.current = false;
+      setError(t('valetCardNotACard'));
+      setTimeout(() => { scanning.current = true; }, 1200);
+      return;
+    }
+    scanning.current = false;
+    acceptCard(code);
+  }
+
+  function useTypedCard() {
+    const code = parseCardCode(typedCard);
+    if (!code) {
+      setError(t('valetCardNotACard'));
+      return;
+    }
+    acceptCard(code);
+  }
+
   async function submitDetails() {
     if (!plate.trim() || !vehicleMake.trim()) return;
     setBusy(true);
@@ -77,11 +164,19 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
     try {
       const stayEnd = new Date();
       stayEnd.setDate(stayEnd.getDate() + days);
-      const res = await api.createTicket(plate.trim(), vehicleMake.trim(), stayEnd.toISOString());
+      const res = await api.createTicket(
+        plate.trim(), vehicleMake.trim(), stayEnd.toISOString(), cardCode ?? undefined
+      );
       setCreated(res.data);
       setStep('photo');
     } catch (err) {
-      setError(t('valetFailed'));
+      // A card clash is the valet's own mistake to fix — they are holding the
+      // wrong card — so say which, rather than a generic failure they cannot
+      // act on. The car is not taken in either way.
+      const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      if (code === 'card_in_use') setError(t('valetCardInUse'));
+      else if (code === 'unknown_card') setError(t('valetCardUnknown'));
+      else setError(t('valetFailed'));
     } finally {
       setBusy(false);
     }
@@ -182,6 +277,29 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
               ))}
             </View>
 
+            <Text style={styles.label}>{t('valetScanCard')}</Text>
+            {cardCode ? (
+              <View style={styles.cardChip} testID="valet-card-chip">
+                <MaterialCommunityIcons name="card-account-details-outline" size={20} color={colors.teal} />
+                <Text style={styles.cardChipText}>
+                  {t('valetCardBound').replace('{c}', cardCode)}
+                </Text>
+                <Pressable testID="valet-card-clear" onPress={() => setCardCode(null)} hitSlop={12}>
+                  <MaterialCommunityIcons name="close" size={18} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable testID="valet-scan-card" style={styles.cardScanBtn} onPress={openScanner}>
+                <MaterialCommunityIcons name="qrcode-scan" size={20} color={colors.textSecondary} />
+                <Text style={styles.cardScanText}>{t('valetScanCard')}</Text>
+              </Pressable>
+            )}
+            {/* Said plainly rather than left blank: a venue with no printed
+                stock is a supported setup, not an unfinished ticket. */}
+            {!cardCode && (
+              <Text style={styles.hint} testID="valet-no-card-hint">{t('valetNoCard')}</Text>
+            )}
+
             <Pressable
               testID="valet-create"
               disabled={busy || !plate.trim() || !vehicleMake.trim()}
@@ -193,13 +311,53 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
           </>
         )}
 
+        {step === 'card' && (
+          <>
+            {permission?.granted ? (
+              <CameraView
+                testID="card-camera"
+                style={styles.scanner}
+                barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                onBarcodeScanned={onCardScanned}
+              />
+            ) : (
+              <View style={styles.permissionBox}>
+                <Text style={styles.hint}>{t('valetCameraDenied')}</Text>
+                <Pressable testID="card-grant" style={styles.cta} onPress={requestPermission}>
+                  <Text style={styles.ctaText}>{t('valetGrantCamera')}</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {/* Always offered, not just when permission is denied: card QRs get
+                scuffed in a pocket and the code is printed on the card anyway. */}
+            <Text style={styles.label}>{t('valetCardTypeIt')}</Text>
+            <TextInput
+              testID="valet-card-input"
+              value={typedCard}
+              onChangeText={setTypedCard}
+              autoCapitalize="characters"
+              placeholder="A047"
+              placeholderTextColor={colors.textTertiary}
+              style={styles.input}
+            />
+            <Pressable
+              testID="valet-card-use"
+              disabled={!typedCard.trim()}
+              onPress={useTypedCard}
+              style={[styles.cta, !typedCard.trim() && styles.ctaDisabled]}
+            >
+              <Text style={styles.ctaText}>{t('valetCardUse')}</Text>
+            </Pressable>
+            <Pressable testID="valet-card-cancel" style={styles.ghost} onPress={() => setStep('details')}>
+              <Text style={styles.ghostText}>{t('cancel')}</Text>
+            </Pressable>
+          </>
+        )}
+
         {step === 'photo' && created && (
           <>
-            <View style={styles.qrCard} testID="valet-qr-card">
-              <Text style={styles.qrTitle}>{t('valetShowQr')}</Text>
-              <Image source={{ uri: created.qrDataUrl }} style={styles.qr} />
-              <Text style={styles.qrCode}>{created.displayId}</Text>
-            </View>
+            <TicketHandout created={created} t={t} />
 
             <Pressable testID="valet-capture-photo" style={styles.cta} onPress={captureGuestPhoto}>
               <Text style={styles.ctaText}>{t('valetCapturePhoto')}</Text>
@@ -254,10 +412,8 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
         )}
 
         {step === 'done' && created && (
-          <View style={styles.qrCard} testID="valet-done-card">
-            <Text style={styles.qrTitle}>{t('valetShowQr')}</Text>
-            <Image source={{ uri: created.qrDataUrl }} style={styles.qr} />
-            <Text style={styles.qrCode}>{created.displayId}</Text>
+          <View testID="valet-done-card">
+            <TicketHandout created={created} t={t} />
             <Pressable testID="valet-done" style={styles.cta} onPress={onClose}>
               <Text style={styles.ctaText}>{t('done')}</Text>
             </Pressable>
@@ -320,5 +476,22 @@ const styles = StyleSheet.create({
   angleTileDone: { borderColor: colors.teal, backgroundColor: colors.successBg },
   angleText: { color: colors.textSecondary, fontSize: 12, textTransform: 'capitalize' },
   hint: { color: colors.textTertiary, fontSize: 12, textAlign: 'center' },
+  cardScanBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    borderStyle: 'dashed', paddingVertical: spacing.lg, backgroundColor: colors.card,
+  },
+  cardScanText: { color: colors.textSecondary, fontWeight: '600', fontSize: 15 },
+  cardChip: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.successBg, borderRadius: radius.md, padding: spacing.md,
+  },
+  cardChipText: { color: colors.teal, fontWeight: '700', fontSize: 15, flex: 1 },
+  scanner: { width: '100%', aspectRatio: 1, borderRadius: radius.lg, overflow: 'hidden' },
+  permissionBox: { padding: spacing.xl, gap: spacing.md, alignItems: 'center' },
+  bigCard: {
+    color: colors.bgPrimary, fontWeight: '700', fontSize: 44, letterSpacing: 2,
+  },
+  qrSmall: { width: 140, height: 140 },
   error: { color: colors.danger, fontSize: 13, textAlign: 'center' },
 });

@@ -1,4 +1,14 @@
 jest.mock('../api/valet');
+jest.mock('expo-camera', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    useCameraPermissions: jest.fn(() => [{ granted: true }, jest.fn()]),
+    // Exposes onBarcodeScanned as a prop the test can fire directly, since a
+    // real camera never runs under Jest.
+    CameraView: (props: Record<string, unknown>) => React.createElement(View, props),
+  };
+});
 jest.mock('expo-image-picker', () => ({
   requestCameraPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
   launchCameraAsync: jest.fn().mockResolvedValue({
@@ -18,6 +28,7 @@ const createdTicket = {
   sessionToken: 'tok-9',
   guestUrl: 'https://dwaarai.com/valet/v/tok-9',
   qrDataUrl: 'data:image/png;base64,QR',
+  cardCode: null as string | null,
 };
 
 beforeEach(() => {
@@ -201,5 +212,179 @@ describe('intake condition capture', () => {
     for (const angle of ['front', 'back', 'left', 'right']) {
       expect(screen.getByTestId(`valet-angle-${angle}`)).toBeTruthy();
     }
+  });
+});
+
+
+describe('binding a printed card at intake', () => {
+  it('does not force a card: a venue with no stock takes cars in as before', async () => {
+    const screen = render(<NewValetTicketScreen />);
+
+    // The create button must be reachable without ever touching the scanner.
+    await fillDetails(screen);
+
+    expect(api.createTicket).toHaveBeenCalledWith(
+      'KA03NJ0435', 'Maruti Swift', expect.any(String), undefined
+    );
+  });
+
+  it('says so rather than leaving the card row blank', () => {
+    const screen = render(<NewValetTicketScreen />);
+
+    expect(screen.getByTestId('valet-no-card-hint')).toBeTruthy();
+  });
+
+  it('reads a card code out of its scanned QR', async () => {
+    const screen = render(<NewValetTicketScreen />);
+    fireEvent.press(screen.getByTestId('valet-scan-card'));
+
+    await act(async () => {
+      screen.getByTestId('card-camera').props.onBarcodeScanned({
+        data: 'https://dwaarai.com/valet/c/A047',
+      });
+    });
+
+    expect(screen.getByTestId('valet-card-chip')).toBeTruthy();
+    expect(screen.getByText(/A047/)).toBeTruthy();
+  });
+
+  it('sends the scanned card with the ticket', async () => {
+    const screen = render(<NewValetTicketScreen />);
+    fireEvent.press(screen.getByTestId('valet-scan-card'));
+    await act(async () => {
+      screen.getByTestId('card-camera').props.onBarcodeScanned({
+        data: 'https://dwaarai.com/valet/c/A047',
+      });
+    });
+
+    await fillDetails(screen);
+
+    expect(api.createTicket).toHaveBeenCalledWith(
+      'KA03NJ0435', 'Maruti Swift', expect.any(String), 'A047'
+    );
+  });
+
+  it('stays on the scanner when the QR is not a valet card', async () => {
+    // The valet is holding a card and pointing it at something; dropping them
+    // back to the form loses that.
+    const screen = render(<NewValetTicketScreen />);
+    fireEvent.press(screen.getByTestId('valet-scan-card'));
+
+    await act(async () => {
+      screen.getByTestId('card-camera').props.onBarcodeScanned({ data: 'https://example.com/menu' });
+    });
+
+    expect(screen.getByTestId('card-camera')).toBeTruthy();
+    expect(screen.queryByTestId('valet-card-chip')).toBeNull();
+    expect(screen.getByTestId('valet-error')).toBeTruthy();
+  });
+
+  it('accepts a code typed off the card when the camera will not focus', async () => {
+    const screen = render(<NewValetTicketScreen />);
+    fireEvent.press(screen.getByTestId('valet-scan-card'));
+
+    fireEvent.changeText(screen.getByTestId('valet-card-input'), 'a047');
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-card-use')); });
+
+    expect(screen.getByText(/A047/)).toBeTruthy();
+  });
+
+  it('lets a valet take the wrong card back off', async () => {
+    const screen = render(<NewValetTicketScreen />);
+    fireEvent.press(screen.getByTestId('valet-scan-card'));
+    await act(async () => {
+      screen.getByTestId('card-camera').props.onBarcodeScanned({
+        data: 'https://dwaarai.com/valet/c/A047',
+      });
+    });
+
+    fireEvent.press(screen.getByTestId('valet-card-clear'));
+
+    expect(screen.queryByTestId('valet-card-chip')).toBeNull();
+    expect(screen.getByTestId('valet-scan-card')).toBeTruthy();
+  });
+
+  it('can back out of the scanner without binding anything', async () => {
+    const screen = render(<NewValetTicketScreen />);
+    fireEvent.press(screen.getByTestId('valet-scan-card'));
+
+    fireEvent.press(screen.getByTestId('valet-card-cancel'));
+
+    expect(screen.getByTestId('valet-plate-input')).toBeTruthy();
+    expect(screen.queryByTestId('valet-card-chip')).toBeNull();
+  });
+
+  it('names the clash when the card is already on another vehicle', async () => {
+    // The valet is holding the wrong card — a generic failure gives them
+    // nothing to act on.
+    (api.createTicket as jest.Mock).mockRejectedValue({
+      response: { data: { error: 'card_in_use' } },
+    });
+    const screen = render(<NewValetTicketScreen />);
+
+    await fillDetails(screen);
+
+    expect(screen.getByText(/already on another vehicle/i)).toBeTruthy();
+  });
+
+  it('says when the card is not registered at this property', async () => {
+    (api.createTicket as jest.Mock).mockRejectedValue({
+      response: { data: { error: 'unknown_card' } },
+    });
+    const screen = render(<NewValetTicketScreen />);
+
+    await fillDetails(screen);
+
+    expect(screen.getByText(/not registered here/i)).toBeTruthy();
+  });
+
+  it('does not advance past the form when creation fails', async () => {
+    (api.createTicket as jest.Mock).mockRejectedValue({
+      response: { data: { error: 'card_in_use' } },
+    });
+    const screen = render(<NewValetTicketScreen />);
+
+    await fillDetails(screen);
+
+    // The car is not taken in, so the valet must still be on the form.
+    expect(screen.getByTestId('valet-plate-input')).toBeTruthy();
+  });
+});
+
+describe('what the guest is handed', () => {
+  it('tells the valet to hand over the card when one is bound', async () => {
+    (api.createTicket as jest.Mock).mockResolvedValue({
+      data: { ...createdTicket, cardCode: 'A047' },
+    });
+    const screen = render(<NewValetTicketScreen />);
+
+    await fillDetails(screen);
+
+    // With plastic in hand, "show the QR on screen" would have the valet hand
+    // over nothing and the guest keep a card nobody told them to keep.
+    expect(screen.getByTestId('valet-card-handout')).toBeTruthy();
+    expect(screen.getByTestId('valet-handout-code').props.children).toBe('A047');
+    expect(screen.queryByTestId('valet-qr-card')).toBeNull();
+  });
+
+  it('still offers the screen QR alongside the card', async () => {
+    // A guest who would rather use their own phone can.
+    (api.createTicket as jest.Mock).mockResolvedValue({
+      data: { ...createdTicket, cardCode: 'A047' },
+    });
+    const screen = render(<NewValetTicketScreen />);
+
+    await fillDetails(screen);
+
+    expect(screen.UNSAFE_getAllByType(require('react-native').Image).length).toBeGreaterThan(0);
+  });
+
+  it('falls back to the screen QR when there is no card', async () => {
+    const screen = render(<NewValetTicketScreen />);
+
+    await fillDetails(screen);
+
+    expect(screen.getByTestId('valet-qr-card')).toBeTruthy();
+    expect(screen.queryByTestId('valet-card-handout')).toBeNull();
   });
 });

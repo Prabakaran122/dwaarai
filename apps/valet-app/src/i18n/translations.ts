@@ -70,6 +70,11 @@ export const translations: Dict = {
   valetNoCard: { en: 'No card — show the QR on screen', hi: 'कार्ड नहीं — स्क्रीन पर QR दिखाएं', kn: 'ಕಾರ್ಡ್ ಇಲ್ಲ — ಪರದೆಯಲ್ಲಿ QR ತೋರಿಸಿ' },
   valetCardInUse: { en: 'That card is already on another vehicle', hi: 'वह कार्ड पहले से दूसरे वाहन पर है', kn: 'ಆ ಕಾರ್ಡ್ ಈಗಾಗಲೇ ಬೇರೆ ವಾಹನದಲ್ಲಿದೆ' },
   valetCardUnknown: { en: 'That card is not registered here', hi: 'वह कार्ड यहां पंजीकृत नहीं', kn: 'ಆ ಕಾರ್ಡ್ ಇಲ್ಲಿ ನೋಂದಾಯಿಸಿಲ್ಲ' },
+  valetCardTypeIt: { en: 'Or type the code on the card', hi: 'या कार्ड पर लिखा कोड टाइप करें', kn: 'ಅಥವಾ ಕಾರ್ಡ್‌ನಲ್ಲಿರುವ ಕೋಡ್ ಟೈಪ್ ಮಾಡಿ' },
+  valetCardUse: { en: 'Use this card', hi: 'यह कार्ड उपयोग करें', kn: 'ಈ ಕಾರ್ಡ್ ಬಳಸಿ' },
+  valetCardNotACard: { en: "That QR is not a valet card", hi: 'वह QR वैले कार्ड नहीं है', kn: 'ಆ QR ವ್ಯಾಲೆ ಕಾರ್ಡ್ ಅಲ್ಲ' },
+  valetCardRemove: { en: 'Remove card', hi: 'कार्ड हटाएं', kn: 'ಕಾರ್ಡ್ ತೆಗೆಯಿರಿ' },
+  valetCardHandOver: { en: 'Hand the card to the guest', hi: 'कार्ड मेहमान को दें', kn: 'ಕಾರ್ಡ್ ಅತಿಥಿಗೆ ನೀಡಿ' },
 };
 
 export function translate(key: string, lang: Lang): string {
