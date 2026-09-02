@@ -12,6 +12,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@babel/runtime": "^7.29.2",
     "@expo-google-fonts/dm-sans": "^0.4.2",
     "@expo-google-fonts/noto-sans-devanagari": "^0.4.1",
     "@expo-google-fonts/noto-sans-kannada": "^0.4.3",
@@ -24,11 +25,13 @@
     "expo-constants": "~17.0.8",
     "expo-font": "~13.0.4",
     "expo-image-picker": "~16.0.6",
+    "expo-linking": "~7.0.5",
     "expo-router": "~4.0.21",
     "expo-status-bar": "~2.0.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-native": "0.76.9",
+    "react-native-reanimated": "~3.16.7",
     "react-native-safe-area-context": "4.12.0",
     "react-native-screens": "~4.4.0",
     "react-native-web": "~0.19.13",
