@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
@@ -42,8 +42,9 @@ export default function ValetQueueScreen({
 }) {
   const insets = useSafeAreaInsets();
   const t = useT();
-  const { tickets, loading, fetch, accept, arrived, waitingCount } = useValetStore();
+  const { loading, search, fetch, setSearch, visibleTickets, accept, arrived, waitingCount } = useValetStore();
   const [etaFor, setEtaFor] = useState<string | null>(null);
+  const tickets = visibleTickets();
 
   useEffect(() => {
     fetch();
@@ -135,6 +136,24 @@ export default function ValetQueueScreen({
         </View>
       </View>
 
+      <View style={styles.searchWrap}>
+        <MaterialCommunityIcons name="magnify" size={18} color={colors.textTertiary} />
+        <TextInput
+          testID="plate-search"
+          value={search}
+          onChangeText={setSearch}
+          placeholder={t('valetSearchPlate')}
+          placeholderTextColor={colors.textTertiary}
+          autoCapitalize="characters"
+          style={styles.searchInput}
+        />
+        {search.length > 0 && (
+          <Pressable testID="clear-search" onPress={() => setSearch('')} hitSlop={10}>
+            <MaterialCommunityIcons name="close-circle" size={18} color={colors.textTertiary} />
+          </Pressable>
+        )}
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={fetch} tintColor={colors.teal} />}
@@ -142,7 +161,9 @@ export default function ValetQueueScreen({
         {tickets.length === 0 && !loading && (
           <View style={styles.empty} testID="valet-empty">
             <MaterialCommunityIcons name="car-outline" size={40} color={colors.textTertiary} />
-            <Text style={styles.emptyText}>{t('valetEmpty')}</Text>
+            <Text style={styles.emptyText}>
+              {search ? t('valetNoMatch') : t('valetEmpty')}
+            </Text>
           </View>
         )}
 
@@ -163,7 +184,7 @@ export default function ValetQueueScreen({
                   </Text>
                 </View>
                 <Text style={styles.meta}>
-                  {item.vehicleMake} · {item.displayId} · {minutesSince(item.createdAt)}m
+                  {item.vehicleMake} · {item.cardCode ? `Card ${item.cardCode}` : item.displayId} · {minutesSince(item.createdAt)}m
                   {item.currentGuardName ? ` · ${item.currentGuardName}` : ''}
                 </Text>
                 {item.disputed && (
@@ -201,6 +222,14 @@ const styles = StyleSheet.create({
   },
   newBtnText: { color: colors.bgPrimary, fontWeight: '700', fontSize: 13 },
   content: { padding: spacing.lg, gap: spacing.md },
+  searchWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    marginHorizontal: spacing.lg, marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.card, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  searchInput: { flex: 1, paddingVertical: spacing.md, color: colors.textPrimary, fontSize: 15 },
   empty: { alignItems: 'center', paddingVertical: spacing['5xl'], gap: spacing.md },
   emptyText: { color: colors.textTertiary, fontSize: 14 },
   card: {

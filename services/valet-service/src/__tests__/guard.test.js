@@ -541,3 +541,134 @@ describe('GET /guard/tickets', () => {
     expect(queryRows.mock.calls[0][0]).not.toContain('NOT IN');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Physical valet cards, and plate search
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('binding a printed card at intake', () => {
+  function mockCreateWithCard({ cardFound = true, cardInUse = false } = {}) {
+    mockClient.query
+      .mockResolvedValueOnce({})                                                   // BEGIN
+      .mockResolvedValueOnce({ rows: cardFound ? [{ id: 'card-1', code: 'A047' }] : [] })
+      .mockResolvedValueOnce({ rows: cardInUse ? [{ display_id: 'SRT-0009' }] : [] })
+      .mockResolvedValueOnce({ rows: [] })                                          // display id
+      .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })                          // insert
+      .mockResolvedValueOnce({})                                                     // logEvent
+      .mockResolvedValueOnce({});                                                    // COMMIT
+  }
+
+  const body = (extra = {}) => ({
+    plate: 'KA01AA1111',
+    vehicleMake: 'Swift',
+    stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+    ...extra,
+  });
+
+  it('binds the card and returns its code', async () => {
+    mockCreateWithCard();
+
+    const res = await request(app, 'POST', '/guard/tickets', { token, body: body({ cardCode: 'A047' }) });
+
+    expect(res.status).toBe(201);
+    expect(res.body.cardCode).toBe('A047');
+  });
+
+  it('stores the card on the ticket row', async () => {
+    mockCreateWithCard();
+
+    await request(app, 'POST', '/guard/tickets', { token, body: body({ cardCode: 'A047' }) });
+
+    const insertParams = mockClient.query.mock.calls[4][1];
+    expect(insertParams[8]).toBe('card-1');   // card_id
+    expect(insertParams[9]).toBe('A047');     // card_code
+  });
+
+  it('refuses a card already on an open ticket, naming which one', async () => {
+    // Reuse is the entire risk of physical cards: without this, two guests
+    // would hold the same card pointing at different vehicles.
+    mockCreateWithCard({ cardInUse: true });
+
+    const res = await request(app, 'POST', '/guard/tickets', { token, body: body({ cardCode: 'A047' }) });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('card_in_use');
+    expect(res.body.message).toContain('SRT-0009');
+    expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('refuses a card that belongs to no venue', async () => {
+    mockCreateWithCard({ cardFound: false });
+
+    const res = await request(app, 'POST', '/guard/tickets', { token, body: body({ cardCode: 'ZZZZ' }) });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('unknown_card');
+  });
+
+  it('still creates a ticket with no card at all — screen QR keeps working', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({});
+
+    const res = await request(app, 'POST', '/guard/tickets', { token, body: body() });
+
+    expect(res.status).toBe(201);
+    expect(res.body.cardCode).toBeNull();
+    expect(res.body.qrDataUrl).toBe('data:image/png;base64,QR');
+  });
+
+  it('scopes the card lookup to the caller\'s community', async () => {
+    mockCreateWithCard();
+
+    await request(app, 'POST', '/guard/tickets', { token, body: body({ cardCode: 'A047' }) });
+
+    expect(mockClient.query.mock.calls[1][1][0]).toBe(COMMUNITY_ID);
+  });
+});
+
+describe('GET /guard/tickets/search', () => {
+  it('finds tickets by plate prefix', async () => {
+    queryRows.mockResolvedValueOnce([ticketRow()]);
+
+    const res = await request(app, 'GET', '/guard/tickets/search?plate=KA03', { token });
+
+    expect(res.status).toBe(200);
+    expect(res.body.tickets).toHaveLength(1);
+    expect(queryRows.mock.calls[0][1]).toEqual([COMMUNITY_ID, 'KA03']);
+  });
+
+  it('ignores spacing and case, like every other plate path', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    await request(app, 'GET', '/guard/tickets/search?plate=ka%2003%20nj', { token });
+
+    expect(queryRows.mock.calls[0][1][1]).toBe('KA03NJ');
+  });
+
+  it('refuses a query too short to narrow anything, without hitting the database', async () => {
+    const res = await request(app, 'GET', '/guard/tickets/search?plate=KA', { token });
+
+    expect(res.body.tickets).toEqual([]);
+    expect(queryRows).not.toHaveBeenCalled();
+  });
+
+  it('puts open tickets above closed ones — the valet is looking for a car that is here', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    await request(app, 'GET', '/guard/tickets/search?plate=KA03', { token });
+
+    expect(queryRows.mock.calls[0][0]).toContain("status NOT IN ('final_closed','expired')) DESC");
+  });
+
+  it('is scoped to the caller\'s community', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    await request(app, 'GET', '/guard/tickets/search?plate=KA03', { token });
+
+    expect(queryRows.mock.calls[0][1][0]).toBe(COMMUNITY_ID);
+  });
+});

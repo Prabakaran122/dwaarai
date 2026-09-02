@@ -23,6 +23,7 @@ function ticket(overrides: Partial<ValetTicket> = {}): ValetTicket {
     etaMinutes: null,
     enRouteStartedAt: null,
     disputed: false,
+    cardCode: null,
     ...overrides,
   };
 }
@@ -173,5 +174,65 @@ describe('ValetQueueScreen', () => {
     render(<ValetQueueScreen />);
 
     await waitFor(() => expect(api.listTickets).toHaveBeenCalled());
+  });
+});
+
+describe('plate search on the queue screen', () => {
+  it('offers a search box', () => {
+    useValetStore.setState({ tickets: [ticket()] });
+    const { getByTestId } = render(<ValetQueueScreen />);
+
+    expect(getByTestId('plate-search')).toBeTruthy();
+  });
+
+  it('narrows the visible list as the valet types', () => {
+    useValetStore.setState({
+      tickets: [ticket({ id: 'a', plate: 'KA03NJ0435' }), ticket({ id: 'b', plate: 'KA05MH2847' })],
+      search: '',
+    });
+    const { getByTestId, queryByTestId } = render(<ValetQueueScreen />);
+
+    fireEvent.changeText(getByTestId('plate-search'), 'KA05');
+
+    expect(getByTestId('valet-ticket-b')).toBeTruthy();
+    expect(queryByTestId('valet-ticket-a')).toBeNull();
+  });
+
+  it('explains an empty result differently from an empty queue', async () => {
+    useValetStore.setState({ tickets: [ticket({ plate: 'KA03NJ0435' })], search: '', loading: false });
+    const { getByTestId, getByText } = render(<ValetQueueScreen />);
+
+    fireEvent.changeText(getByTestId('plate-search'), 'ZZ99');
+
+    // "No vehicle matches" is a different situation from "nothing is parked".
+    // Waits for the mount fetch to settle — the empty state deliberately does
+    // not flash before the first load completes.
+    await waitFor(() => expect(getByText(/no vehicle matches/i)).toBeTruthy());
+  });
+
+  it('clears the search', () => {
+    useValetStore.setState({ tickets: [ticket({ id: 'a', plate: 'KA03NJ0435' })], search: '' });
+    const { getByTestId } = render(<ValetQueueScreen />);
+
+    fireEvent.changeText(getByTestId('plate-search'), 'ZZ99');
+    fireEvent.press(getByTestId('clear-search'));
+
+    expect(getByTestId('valet-ticket-a')).toBeTruthy();
+  });
+});
+
+describe('printed card on the queue row', () => {
+  it('shows the card code when one is bound, so plastic matches car', () => {
+    useValetStore.setState({ tickets: [ticket({ id: 'a', cardCode: 'A047' })], search: '' });
+    const { getByText } = render(<ValetQueueScreen />);
+
+    expect(getByText(/Card A047/)).toBeTruthy();
+  });
+
+  it('falls back to the ticket id when there is no card', () => {
+    useValetStore.setState({ tickets: [ticket({ id: 'a', cardCode: null, displayId: 'SRT-0001' })], search: '' });
+    const { getByText } = render(<ValetQueueScreen />);
+
+    expect(getByText(/SRT-0001/)).toBeTruthy();
   });
 });

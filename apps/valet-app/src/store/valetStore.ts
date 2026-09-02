@@ -31,8 +31,13 @@ interface ValetState {
   tickets: ValetTicket[];
   loading: boolean;
   error: string | null;
+  /** What the valet has typed into the queue's plate search. */
+  search: string;
 
   fetch: () => Promise<void>;
+  setSearch: (q: string) => void;
+  /** The queue after the plate filter — what the screen actually renders. */
+  visibleTickets: () => ValetTicket[];
   accept: (token: string, etaMinutes: number | null) => Promise<void>;
   arrived: (token: string) => Promise<void>;
   waitingCount: () => number;
@@ -48,6 +53,7 @@ export const useValetStore = create<ValetState>((set, get) => ({
   tickets: [],
   loading: false,
   error: null,
+  search: '',
 
   fetch: async () => {
     set({ loading: true });
@@ -83,6 +89,20 @@ export const useValetStore = create<ValetState>((set, get) => ({
     } catch (err) {
       set({ error: codeOf(err) });
     }
+  },
+
+  setSearch: (search) => set({ search }),
+
+  // Filters what is already held rather than asking the server: a valet
+  // hunting for one of forty parked cars needs the list to narrow as they
+  // type, and the open queue is small enough that this is instant. Matching
+  // is on the normalized plate so spacing and case never matter — the same
+  // rule the server uses, so what they see here agrees with a wider search.
+  visibleTickets: () => {
+    const { tickets, search } = get();
+    const q = search.replace(/\s+/g, '').toUpperCase();
+    if (!q) return tickets;
+    return tickets.filter((t) => t.plate.replace(/\s+/g, '').toUpperCase().includes(q));
   },
 
   waitingCount: () => get().tickets.filter((t) => NEEDS_ACTION.includes(t.status)).length,

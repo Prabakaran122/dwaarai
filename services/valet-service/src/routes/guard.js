@@ -64,6 +64,7 @@ function ticketView(t) {
     etaMinutes: t.eta_minutes,
     enRouteStartedAt: t.en_route_started_at,
     disputed: t.disputed,
+    cardCode: t.card_code ?? null,
   };
 }
 
@@ -119,7 +120,38 @@ const createTicketSchema = z.object({
   plate: z.string().trim().min(1).max(20),
   vehicleMake: z.string().trim().min(1).max(100),
   stayEndAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  // Optional: a venue with no printed card stock still works exactly as
+  // before, showing the QR on the guard's screen.
+  cardCode: z.string().trim().max(20).optional(),
 });
+
+/**
+ * Resolves a printed card code to its row, refusing one that is already on an
+ * open ticket.
+ *
+ * The reuse check is the whole point of physical cards: handing out a card
+ * whose previous stay was never closed would silently point two guests at
+ * different tickets, and the second scan would surface the first guest's car.
+ * A partial unique index enforces this at the database too — this lookup only
+ * exists to turn that into a readable error instead of a constraint violation.
+ */
+async function resolveCard(client, communityId, code) {
+  const card = await client.query(
+    'SELECT id, code FROM valet_cards WHERE community_id = $1 AND UPPER(code) = UPPER($2) AND is_active = true',
+    [communityId, code]
+  );
+  if (!card.rows.length) return { error: 'unknown_card' };
+
+  const inUse = await client.query(
+    `SELECT display_id FROM valet_tickets
+      WHERE card_id = $1 AND status NOT IN ('final_closed', 'expired') LIMIT 1`,
+    [card.rows[0].id]
+  );
+  if (inUse.rows.length) {
+    return { error: 'card_in_use', displayId: inUse.rows[0].display_id };
+  }
+  return { card: card.rows[0] };
+}
 
 router.post('/tickets', guard, async (req, res) => {
   const parsed = createTicketSchema.safeParse(req.body);
@@ -139,6 +171,21 @@ router.post('/tickets', guard, async (req, res) => {
   try {
     await client.query('BEGIN');
 
+    let card = null;
+    if (parsed.data.cardCode) {
+      const resolved = await resolveCard(client, communityId, parsed.data.cardCode);
+      if (resolved.error) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: resolved.error,
+          message: resolved.error === 'card_in_use'
+            ? `Card is already on ticket ${resolved.displayId}`
+            : 'That card is not registered to this property',
+        });
+      }
+      card = resolved.card;
+    }
+
     // Picking the next display id and inserting it happen on the same
     // connection inside one transaction, so two guards creating tickets at
     // the same moment cannot read the same sequence. The
@@ -156,10 +203,11 @@ router.post('/tickets', guard, async (req, res) => {
     const inserted = await client.query(
       `INSERT INTO valet_tickets
          (community_id, display_id, session_token, plate, plate_normalized,
-          vehicle_make, stay_end_at, status, created_by_guard_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'parked', $8)
+          vehicle_make, stay_end_at, status, created_by_guard_id, card_id, card_code)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'parked', $8, $9, $10)
        RETURNING id`,
-      [communityId, displayId, sessionToken, plate, normalizePlate(plate), vehicleMake, stayEnd.toISOString(), req.user.sub]
+      [communityId, displayId, sessionToken, plate, normalizePlate(plate), vehicleMake, stayEnd.toISOString(), req.user.sub,
+       card ? card.id : null, card ? card.code : null]
     );
     const ticketId = inserted.rows[0].id;
 
@@ -179,6 +227,7 @@ router.post('/tickets', guard, async (req, res) => {
       displayId,
       sessionToken,
       guestUrl,
+      cardCode: card ? card.code : null,
       qrDataUrl: await toDataUrl(guestUrl),
     });
   } catch (err) {
@@ -209,6 +258,76 @@ router.get('/plate-lookup', guard, async (req, res) => {
 
   if (!row || !row.visit_count) return res.json({ isReturning: false });
   res.json({ isReturning: true, visitCount: row.visit_count, lastVisitAt: row.last_visit_at });
+});
+
+/**
+ * Plate search across this community's tickets.
+ *
+ * The queue screen filters what it already holds, which covers "find one of
+ * the forty cars parked right now". This endpoint exists for the case that
+ * cannot: a car whose ticket has closed, or a queue too large to hold. Prefix
+ * match on the normalized plate, so spacing and case never matter and the
+ * index can actually be used.
+ */
+router.get('/tickets/search', guard, async (req, res) => {
+  const q = normalizePlate(req.query.plate);
+  // Two characters matches most of a venue; make the caller be specific.
+  if (q.length < 3) return res.json({ tickets: [], query: q });
+
+  const rows = await queryRows(
+    `SELECT t.*, cg.name AS created_guard_name, ug.name AS current_guard_name
+       FROM valet_tickets t
+       JOIN residents cg ON cg.id = t.created_by_guard_id
+       LEFT JOIN residents ug ON ug.id = t.current_guard_id
+      WHERE t.community_id = $1
+        AND t.plate_normalized LIKE $2 || '%'
+      ORDER BY (t.status NOT IN ('final_closed','expired')) DESC, t.created_at DESC
+      LIMIT 50`,
+    [req.user.community_id, q]
+  );
+
+  res.json({ query: q, tickets: rows.map(ticketView) });
+});
+
+/**
+ * Binds a printed card to an existing ticket, for the case where the guard
+ * created the ticket first and reached for a card afterwards.
+ */
+router.post('/tickets/:token/card', guard, async (req, res) => {
+  const code = String(req.body.cardCode || '').trim();
+  if (!code) return res.status(400).json({ error: 'card_code_required' });
+
+  const ticket = await findTicket(req.params.token, req.user.community_id);
+  if (!ticket) return notFound(res);
+  if (['final_closed', 'expired'].includes(ticket.status)) {
+    return res.status(409).json({ error: 'ticket_closed' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const resolved = await resolveCard(client, req.user.community_id, code);
+    if (resolved.error) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: resolved.error,
+        message: resolved.error === 'card_in_use'
+          ? `Card is already on ticket ${resolved.displayId}`
+          : 'That card is not registered to this property',
+      });
+    }
+    await client.query(
+      'UPDATE valet_tickets SET card_id = $1, card_code = $2 WHERE id = $3',
+      [resolved.card.id, resolved.card.code, ticket.id]
+    );
+    await client.query('COMMIT');
+    res.json({ cardCode: resolved.card.code });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 });
 
 // --- guest comparison photo ------------------------------------------------

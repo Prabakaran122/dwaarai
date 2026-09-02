@@ -22,7 +22,7 @@ function ticket(overrides: Partial<ValetTicket> = {}): ValetTicket {
     plate: 'KA03NJ0435', vehicleMake: 'Swift', status: 'arrived',
     stayEndAt: '2026-09-01T00:00:00Z', createdAt: new Date().toISOString(),
     closedAt: null, createdGuardName: 'Ramesh', currentGuardName: null,
-    etaMinutes: null, enRouteStartedAt: null, disputed: false,
+    etaMinutes: null, enRouteStartedAt: null, disputed: false, cardCode: null,
     ...overrides,
   };
 }

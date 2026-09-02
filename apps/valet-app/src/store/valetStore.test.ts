@@ -20,6 +20,7 @@ function ticket(overrides: Partial<ValetTicket> = {}): ValetTicket {
     etaMinutes: null,
     enRouteStartedAt: null,
     disputed: false,
+    cardCode: null,
     ...overrides,
   };
 }
@@ -199,5 +200,63 @@ describe('waitingCount', () => {
 describe('NEEDS_ACTION', () => {
   it('is exactly the two states where a guest is standing and waiting', () => {
     expect(NEEDS_ACTION).toEqual(['requested', 'arrived']);
+  });
+});
+
+describe('plate search on the queue', () => {
+  beforeEach(() => {
+    useValetStore.setState({
+      tickets: [
+        ticket({ id: 'a', plate: 'KA 03 NJ 0435' }),
+        ticket({ id: 'b', plate: 'KA05MH2847' }),
+        ticket({ id: 'c', plate: 'TN09AB1234' }),
+      ],
+      search: '',
+    });
+  });
+
+  it('shows everything when the box is empty', () => {
+    expect(useValetStore.getState().visibleTickets()).toHaveLength(3);
+  });
+
+  it('narrows to a matching plate', () => {
+    useValetStore.getState().setSearch('KA05');
+    expect(useValetStore.getState().visibleTickets().map((t) => t.id)).toEqual(['b']);
+  });
+
+  it('ignores the spacing a plate happens to be stored with', () => {
+    // 'KA 03 NJ 0435' must be findable by typing it unspaced, which is what a
+    // valet in a hurry actually does.
+    useValetStore.getState().setSearch('KA03NJ');
+    expect(useValetStore.getState().visibleTickets().map((t) => t.id)).toEqual(['a']);
+  });
+
+  it('ignores case', () => {
+    useValetStore.getState().setSearch('ka05mh');
+    expect(useValetStore.getState().visibleTickets().map((t) => t.id)).toEqual(['b']);
+  });
+
+  it('matches anywhere in the plate, not just the start', () => {
+    // Guests read out the last four digits far more often than the state code.
+    useValetStore.getState().setSearch('2847');
+    expect(useValetStore.getState().visibleTickets().map((t) => t.id)).toEqual(['b']);
+  });
+
+  it('returns nothing for a plate that is not parked here', () => {
+    useValetStore.getState().setSearch('ZZ99');
+    expect(useValetStore.getState().visibleTickets()).toEqual([]);
+  });
+
+  it('restores the full queue when the search is cleared', () => {
+    useValetStore.getState().setSearch('KA05');
+    useValetStore.getState().setSearch('');
+    expect(useValetStore.getState().visibleTickets()).toHaveLength(3);
+  });
+
+  it('never fires a request — the queue is already in hand', async () => {
+    jest.clearAllMocks();
+    useValetStore.getState().setSearch('KA05');
+    useValetStore.getState().visibleTickets();
+    expect(api.listTickets).not.toHaveBeenCalled();
   });
 });

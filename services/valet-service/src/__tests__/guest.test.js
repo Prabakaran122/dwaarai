@@ -296,3 +296,59 @@ describe('POST /guest/tickets/:token/discount-optin', () => {
     expect(issueDiscountCode).not.toHaveBeenCalled();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Physical card resolution — what /valet/c/<code> hits
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('GET /guest/cards/:code', () => {
+  it('resolves a bound card to its ticket', async () => {
+    queryOne.mockResolvedValueOnce({ session_token: SESSION_TOKEN });
+
+    const res = await request(app, 'GET', '/guest/cards/A047');
+
+    expect(res.status).toBe(200);
+    expect(res.body.sessionToken).toBe(SESSION_TOKEN);
+  });
+
+  it('returns only the token, never the vehicle', async () => {
+    // A card code is short and guessable in a way the session token is not,
+    // so this endpoint must not become a way to read someone's car details.
+    queryOne.mockResolvedValueOnce({ session_token: SESSION_TOKEN });
+
+    const res = await request(app, 'GET', '/guest/cards/A047');
+
+    expect(Object.keys(res.body)).toEqual(['sessionToken']);
+    expect(res.body.plate).toBeUndefined();
+  });
+
+  it('matches a card code case-insensitively — guests read them off plastic', async () => {
+    queryOne.mockResolvedValueOnce({ session_token: SESSION_TOKEN });
+
+    await request(app, 'GET', '/guest/cards/a047');
+
+    expect(queryOne.mock.calls[0][1]).toEqual(['a047']);
+    expect(queryOne.mock.calls[0][0]).toContain('UPPER(c.code) = UPPER($1)');
+  });
+
+  it('only ever resolves a card on an OPEN ticket', async () => {
+    queryOne.mockResolvedValueOnce(null);
+
+    await request(app, 'GET', '/guest/cards/A047');
+
+    // A card handed to tomorrow's guest must never surface yesterday's car.
+    expect(queryOne.mock.calls[0][0]).toContain("status NOT IN ('final_closed', 'expired')");
+  });
+
+  it('gives an unknown code and a free card the identical 404', async () => {
+    queryOne.mockResolvedValueOnce(null);
+    const unknown = await request(app, 'GET', '/guest/cards/ZZZZ');
+
+    queryOne.mockResolvedValueOnce(null);
+    const free = await request(app, 'GET', '/guest/cards/A047');
+
+    // Probing codes must reveal neither which exist nor which are in use.
+    expect(unknown.status).toBe(404);
+    expect(unknown.body).toEqual(free.body);
+  });
+});

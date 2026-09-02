@@ -40,6 +40,8 @@ export interface ValetTicket {
   etaMinutes: number | null;
   enRouteStartedAt: string | null;
   disputed: boolean;
+  /** The printed card bound to this ticket, or null for a screen-QR ticket. */
+  cardCode: string | null;
 }
 
 export interface CreatedTicket {
@@ -47,6 +49,8 @@ export interface CreatedTicket {
   displayId: string;
   sessionToken: string;
   guestUrl: string;
+  /** Null when no printed card was scanned — the screen QR is then the ticket. */
+  cardCode: string | null;
   qrDataUrl: string;
 }
 
@@ -62,8 +66,20 @@ export const listTickets = (all = false) =>
 export const getTicket = (token: string) =>
   valet.get(`/guard/tickets/${token}`);
 
-export const createTicket = (plate: string, vehicleMake: string, stayEndAt: string) =>
-  valet.post<CreatedTicket>('/guard/tickets', { plate, vehicleMake, stayEndAt });
+export const createTicket = (
+  plate: string, vehicleMake: string, stayEndAt: string, cardCode?: string
+) =>
+  valet.post<CreatedTicket>('/guard/tickets', { plate, vehicleMake, stayEndAt, cardCode });
+
+/** Searches beyond the open queue — a closed ticket, or a queue too big to hold. */
+export const searchTickets = (plate: string) =>
+  valet.get<{ query: string; tickets: ValetTicket[] }>(
+    `/guard/tickets/search?plate=${encodeURIComponent(plate)}`
+  );
+
+/** Binds a printed card to a ticket that already exists. */
+export const bindCard = (token: string, cardCode: string) =>
+  valet.post(`/guard/tickets/${token}/card`, { cardCode });
 
 export const lookupPlate = (plate: string) =>
   valet.get<PlateLookup>(`/guard/plate-lookup?plate=${encodeURIComponent(plate)}`);

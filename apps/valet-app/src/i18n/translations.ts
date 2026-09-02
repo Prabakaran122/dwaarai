@@ -63,6 +63,13 @@ export const translations: Dict = {
   valetConfirmTitle: { en: 'Confirm handover', hi: 'सौंपने की पुष्टि करें', kn: 'ಹಸ್ತಾಂತರ ದೃಢೀಕರಿಸಿ' },
   valetParkAgain: { en: 'Handed over, staying longer', hi: 'सौंप दिया, अभी रुकेंगे', kn: 'ಹಸ್ತಾಂತರಿಸಲಾಗಿದೆ, ಇನ್ನೂ ಇರುತ್ತಾರೆ' },
   valetFinalCheckout: { en: 'Final checkout', hi: 'अंतिम चेकआउट', kn: 'ಅಂತಿಮ ಚೆಕ್‌ಔಟ್' },
+  valetSearchPlate: { en: 'Search by vehicle number', hi: 'वाहन नंबर से खोजें', kn: 'ವಾಹನ ಸಂಖ್ಯೆಯಿಂದ ಹುಡುಕಿ' },
+  valetNoMatch: { en: 'No vehicle matches that number', hi: 'उस नंबर का कोई वाहन नहीं', kn: 'ಆ ಸಂಖ್ಯೆಯ ವಾಹನ ಇಲ್ಲ' },
+  valetScanCard: { en: 'Scan valet card', hi: 'वैले कार्ड स्कैन करें', kn: 'ವ್ಯಾಲೆ ಕಾರ್ಡ್ ಸ್ಕ್ಯಾನ್ ಮಾಡಿ' },
+  valetCardBound: { en: 'Card {c}', hi: 'कार्ड {c}', kn: 'ಕಾರ್ಡ್ {c}' },
+  valetNoCard: { en: 'No card — show the QR on screen', hi: 'कार्ड नहीं — स्क्रीन पर QR दिखाएं', kn: 'ಕಾರ್ಡ್ ಇಲ್ಲ — ಪರದೆಯಲ್ಲಿ QR ತೋರಿಸಿ' },
+  valetCardInUse: { en: 'That card is already on another vehicle', hi: 'वह कार्ड पहले से दूसरे वाहन पर है', kn: 'ಆ ಕಾರ್ಡ್ ಈಗಾಗಲೇ ಬೇರೆ ವಾಹನದಲ್ಲಿದೆ' },
+  valetCardUnknown: { en: 'That card is not registered here', hi: 'वह कार्ड यहां पंजीकृत नहीं', kn: 'ಆ ಕಾರ್ಡ್ ಇಲ್ಲಿ ನೋಂದಾಯಿಸಿಲ್ಲ' },
 };
 
 export function translate(key: string, lang: Lang): string {

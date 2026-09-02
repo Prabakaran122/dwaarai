@@ -70,6 +70,37 @@ router.get('/tickets/:token', async (req, res) => {
   res.json(guestView(ticket));
 });
 
+/**
+ * Resolves a printed card to the ticket it is currently on.
+ *
+ * This is what the QR on a physical card encodes: /valet/c/<code>. Unlike the
+ * session token, a card code is short and guessable, so this deliberately
+ * returns ONLY a redirect target — the caller still needs the session token to
+ * read anything about the vehicle, and that token is never in the card's QR.
+ *
+ * A card between guests resolves to nothing, which is the same 404 shape as an
+ * unknown code: someone trying codes learns neither which exist nor which are
+ * in use.
+ */
+router.get('/cards/:code', async (req, res) => {
+  const code = String(req.params.code || '').trim();
+  if (!code) return notFound(res);
+
+  const row = await queryOne(
+    `SELECT t.session_token
+       FROM valet_cards c
+       JOIN valet_tickets t
+         ON t.card_id = c.id
+        AND t.status NOT IN ('final_closed', 'expired')
+      WHERE UPPER(c.code) = UPPER($1) AND c.is_active = true
+      LIMIT 1`,
+    [code]
+  );
+  if (!row) return notFound(res);
+
+  res.json({ sessionToken: row.session_token });
+});
+
 router.post('/tickets/:token/request', async (req, res) => {
   const ticket = await findTicket(req.params.token);
   if (!ticket) return notFound(res);
