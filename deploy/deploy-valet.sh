@@ -59,16 +59,29 @@ fi
 # --------------------------------------------------------------------------
 say "Applying database migrations"
 # --------------------------------------------------------------------------
-# The runner records what it has applied, so this only runs 043_valet.sql on a
-# box already carrying 001-041, and a second run prints "up to date".
+# The runner records what it has applied, so this only runs what the box is
+# missing, and a second run prints "up to date".
 pnpm install --filter api-gateway
 DATABASE_URL="$DATABASE_URL" pnpm --filter api-gateway migrate
 
+# 7 = the six from 043_valet.sql plus valet_cards from 044.
+EXPECTED_VALET_TABLES=7
 MIGRATION_CHECK=$(docker exec "$(docker ps -q -f name=postgres)" \
   psql -U cguser -d communitygate -tAc \
   "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'valet_%'")
-[ "$MIGRATION_CHECK" = "6" ] || die "expected 6 valet_* tables, found $MIGRATION_CHECK"
+[ "$MIGRATION_CHECK" = "$EXPECTED_VALET_TABLES" ] \
+  || die "expected $EXPECTED_VALET_TABLES valet_* tables, found $MIGRATION_CHECK"
 echo "valet tables present: $MIGRATION_CHECK"
+
+# The card flow is unusable without this index — it is what stops one card
+# being on two open tickets — and a partial index is easy to lose in a restore
+# from a plain dump, so assert it rather than assume the migration ran.
+for IDX in idx_valet_card_one_open_ticket idx_valet_tickets_plate_trgm; do
+  HAVE=$(docker exec "$(docker ps -q -f name=postgres)" \
+    psql -U cguser -d communitygate -tAc "SELECT to_regclass('$IDX') IS NOT NULL")
+  [ "$HAVE" = "t" ] || die "missing index $IDX"
+done
+echo "card and search indexes present"
 
 # --------------------------------------------------------------------------
 say "Installing and starting valet-service (:3060)"
