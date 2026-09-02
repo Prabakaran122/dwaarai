@@ -96,6 +96,8 @@ export interface ValetTicket {
   etaMinutes: number | null;
   enRouteStartedAt: string | null;
   disputed: boolean;
+  /** The printed card bound to this ticket, or null for a screen-QR ticket. */
+  cardCode: string | null;
 }
 
 export interface ValetTicketDetail extends ValetTicket {
@@ -179,4 +181,56 @@ export function formatStay(seconds: number): string {
   const m = Math.round((seconds % 3600) / 60);
   if (h === 0) return `${m}m`;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+
+// --- printed cards ----------------------------------------------------------
+
+export interface ValetCard {
+  id: string;
+  code: string;
+  isActive: boolean;
+  createdAt: string;
+  /** Null when the card is back in the stack, ready to hand out. */
+  inUseBy: { displayId: string; plate: string; status: ValetStatus } | null;
+}
+
+export interface SearchResult {
+  displayId: string;
+  sessionToken: string;
+  plate: string;
+  vehicleMake: string;
+  status: ValetStatus;
+  createdAt: string;
+  closedAt: string | null;
+  disputed: boolean;
+  cardCode: string | null;
+  createdGuardName: string;
+}
+
+export const listCards = () => valetFetch<{ cards: ValetCard[] }>('/admin/cards');
+
+export const registerCards = (body: { codes: string[] } | { prefix: string; from: number; to: number; width?: number }) =>
+  valetPost<{ added: string[]; skipped: string[]; total: number }>('/admin/cards', body);
+
+export const setCardActive = (id: string, active: boolean) =>
+  valetPost<{ id: string; isActive: boolean }>(`/admin/cards/${id}/${active ? 'activate' : 'deactivate'}`);
+
+export const searchPlates = (plate: string) =>
+  valetFetch<{ query: string; tickets: SearchResult[] }>(
+    `/admin/tickets/search?plate=${encodeURIComponent(plate)}`
+  );
+
+/**
+ * Previews the codes a range will create, so an operator sees A001…A050
+ * before committing rather than after. The service builds the real list; this
+ * only has to agree with it on the common case.
+ */
+export function previewRange(prefix: string, from: number, to: number, width = 3): string[] {
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from) return [];
+  const out: string[] = [];
+  for (let n = from; n <= Math.min(to, from + 499); n += 1) {
+    out.push(`${prefix.toUpperCase()}${String(n).padStart(width, '0')}`);
+  }
+  return out;
 }

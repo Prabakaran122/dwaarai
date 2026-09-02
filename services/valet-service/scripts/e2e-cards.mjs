@@ -59,12 +59,34 @@ const g = await pool.query(
 );
 const guardId = g.rows[0].id;
 const token = jwt.sign({ sub: guardId, role: 'guard', community_id: communityId, name: 'Ramesh' }, SECRET);
+const admin = jwt.sign({ sub: guardId, role: 'admin', community_id: communityId, name: 'Manager' }, SECRET);
 
-// A venue's printed card stock.
-await pool.query(
-  `INSERT INTO valet_cards (community_id, code) VALUES ($1,'A001'),($1,'A002'),($1,'A003')`,
+console.log('\n--- registering printed stock (operator) ---');
+const reg = await api('/admin/cards', {
+  method: 'POST', token: admin, body: { prefix: 'A', from: 1, to: 3 },
+});
+check('registers a printed range', reg.status === 201, JSON.stringify(reg.body));
+check('creates exactly the codes on the box',
+  JSON.stringify(reg.body?.added) === JSON.stringify(['A001', 'A002', 'A003']), JSON.stringify(reg.body));
+
+const again = await api('/admin/cards', {
+  method: 'POST', token: admin, body: { prefix: 'A', from: 2, to: 4 },
+});
+// Ordering an overlapping box is normal; it must not fail or duplicate.
+check('an overlapping re-order adds only what is new',
+  JSON.stringify(again.body?.added) === JSON.stringify(['A004']) &&
+  JSON.stringify(again.body?.skipped) === JSON.stringify(['A002', 'A003']), JSON.stringify(again.body));
+
+const dupes = await pool.query(
+  `SELECT code, COUNT(*)::int c FROM valet_cards WHERE community_id = $1 GROUP BY code HAVING COUNT(*) > 1`,
   [communityId]
 );
+check('no code was registered twice', dupes.rows.length === 0, JSON.stringify(dupes.rows));
+
+const guardTry = await api('/admin/cards', {
+  method: 'POST', token, body: { prefix: 'B', from: 1, to: 1 },
+});
+check('a guard cannot register stock', guardTry.status === 403);
 
 // A card belonging to a DIFFERENT venue, to prove scoping.
 const other = await pool.query(
@@ -264,6 +286,56 @@ check('returns nothing for a plate that was never here', s4.body?.tickets?.lengt
 const s5 = await api('/guard/tickets/search?plate=KA05', { token });
 check('still finds a CLOSED ticket — the queue cannot', s5.body?.tickets?.length === 1,
   JSON.stringify(s5.body?.tickets?.map((t) => t.status)));
+
+console.log('\n--- operator card stock view ---');
+const stock = await api('/admin/cards', { token: admin });
+const byCode = Object.fromEntries(stock.body.cards.map((c) => [c.code, c]));
+check('lists every registered card', stock.body.cards.length === 4, String(stock.body.cards.length));
+check('shows which vehicle a card is out with',
+  byCode.A001?.inUseBy?.plate === 'KA 22 ZZ 7777', JSON.stringify(byCode.A001));
+check('shows an unused card as free', byCode.A004?.inUseBy === null, JSON.stringify(byCode.A004));
+
+const retireBusy = await api(`/admin/cards/${byCode.A001.id}/deactivate`, { method: 'POST', token: admin });
+check('refuses to retire a card a guest is holding', retireBusy.status === 409, JSON.stringify(retireBusy.body));
+
+const retire = await api(`/admin/cards/${byCode.A004.id}/deactivate`, { method: 'POST', token: admin });
+check('retires a card that is back in the stack', retire.status === 200 && retire.body?.isActive === false);
+
+const stillThere = await pool.query('SELECT is_active FROM valet_cards WHERE id = $1', [byCode.A004.id]);
+check('retiring deactivates rather than deletes, keeping history',
+  stillThere.rows.length === 1 && stillThere.rows[0].is_active === false);
+
+const useRetired = await api('/guard/tickets', {
+  method: 'POST', token,
+  body: { plate: 'KA 66 RT 8888', vehicleMake: 'Retired', stayEndAt: stayEnd(), cardCode: 'A004' },
+});
+check('a retired card cannot be handed out', useRetired.status === 409 && useRetired.body?.error === 'unknown_card',
+  JSON.stringify(useRetired.body));
+
+await api(`/admin/cards/${byCode.A004.id}/activate`, { method: 'POST', token: admin });
+const useRestored = await api('/guard/tickets', {
+  method: 'POST', token,
+  body: { plate: 'KA 66 RT 8888', vehicleMake: 'Restored', stayEndAt: stayEnd(), cardCode: 'A004' },
+});
+check('a restored card works again', useRestored.status === 201, JSON.stringify(useRestored.body));
+
+console.log('\n--- operator plate search ---');
+const a1 = await api('/admin/tickets/search?plate=2847', { token: admin });
+check('finds a vehicle by the last four digits alone',
+  a1.body?.tickets?.some((t) => t.plate === 'KA 05 MH 2847') === true,
+  JSON.stringify(a1.body?.tickets?.map((t) => t.plate)));
+
+const g1 = await api('/guard/tickets/search?plate=2847', { token });
+check('the valet app search agrees with it',
+  g1.body?.tickets?.some((t) => t.plate === 'KA 05 MH 2847') === true,
+  JSON.stringify(g1.body?.tickets?.map((t) => t.plate)));
+
+const a2 = await api('/admin/tickets/search?plate=KA05', { token: admin });
+check('includes checked-out vehicles', a2.body?.tickets?.length === 1,
+  JSON.stringify(a2.body?.tickets?.map((t) => t.status)));
+
+const a3 = await api('/admin/tickets/search?plate=2847', { token });
+check('a guard cannot use the operator search', a3.status === 403);
 
 console.log('\n--- tenancy ---');
 const otherGuard = jwt.sign(

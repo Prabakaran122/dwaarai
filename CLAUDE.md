@@ -100,7 +100,7 @@ There is no shared Node package for cross-service code — each service duplicat
 Six CDK stacks wired together in `bin/app.ts`: `NetworkStack` (VPC/cluster) → `DataStack` (RDS + Redis + S3, depends on VPC) → `AuthStack` (Cognito) → `IotStack` (AWS IoT Core, replaces Mosquitto in prod) → `ServicesStack` (ECS services, depends on all of the above) → `FrontendStack`. Region is hardcoded to `ap-south-1`.
 
 ### Database migrations
-Sequential, numbered SQL files in `services/api-gateway/migrations/` (`001_core.sql` ... `043_valet.sql`), applied in order by `src/db/migrate.js` and tracked so re-application is a no-op (CI enforces this in the `migrations` job). This is the only migration path in the repo — other Node services read/write the same Postgres database but don't own migrations themselves.
+Sequential, numbered SQL files in `services/api-gateway/migrations/` (`001_core.sql` ... `045_valet_plate_search.sql`), applied in order by `src/db/migrate.js` and tracked so re-application is a no-op (CI enforces this in the `migrations` job). This is the only migration path in the repo — other Node services read/write the same Postgres database but don't own migrations themselves.
 
 ### Valet (Sarthi)
 Ported from a standalone Express + SQLite prototype into this monorepo. Three
@@ -125,6 +125,43 @@ current arrival*, and not without return-stage condition media captured since
 that same arrival. A ticket flagged `disputed` is exempt from the media
 retention sweep, checked at deletion time so flagging after the fact still
 protects the media.
+
+**Physical cards (044, 045).** A venue prints a box of cards once; each QR
+encodes `/valet/c/<code>`. A guard scans one at intake to bind it to a ticket,
+and it frees itself when the ticket closes — reusable per venue. The screen QR
+is not replaced: a venue with no card stock behaves exactly as before.
+
+- Stock is registered by an **operator** (`POST /admin/cards`, admin portal at
+  `/admin/valet/cards`), never invented by the intake path — otherwise a
+  mis-scan silently creates a card matching nothing that was printed. Until a
+  venue registers stock, every scan at the stand fails.
+- A card is on at most one open ticket, enforced by a partial unique index.
+  `resolveCard()` only exists to turn that into a readable error; two guards
+  scanning at once (or two service instances) reach the index, so a `23505` on
+  `idx_valet_card_one_open_ticket` is translated to the same 409. The match is
+  on the **constraint name**, because the same INSERT can violate
+  `UNIQUE (community_id, display_id)` — a genuine fault that must not be
+  reported as "card is taken".
+- The card carries only the short code. `GET /guest/cards/:code` exchanges it
+  for a session token and returns nothing else, and a free card returns a
+  byte-identical 404 to an unknown one, so probing cannot enumerate stock.
+- Retiring a card deactivates rather than deletes: every ticket it has been on
+  references it, and that history is the audit trail.
+
+**Plate search** matches anywhere in the plate, not just the start — guests
+quote the last four digits far more often than the state code. The trigram
+index in 045 replaces 044's prefix index, which a leading wildcard cannot use
+at all. Three places must agree: valet-app's client-side `visibleTickets()`,
+`GET /guard/tickets/search`, and `GET /admin/tickets/search`.
+
+**Display ids are allocated under an advisory lock**, not a row lock. The row
+lock it replaced never serialised anything: both transactions lock the same
+existing last row, and the loser resumes with a result set computed before the
+winner's row existed, picks the same number and 500s mid-intake — and with no
+tickets yet there was no row to lock at all.
+
+`services/valet-service/scripts/e2e-cards.mjs` covers all of this against a
+real service and database.
 
 The retention/expiry sweep runs as a scheduled job
 (`pnpm --filter valet-service sweep`), not on a `setInterval` inside the web

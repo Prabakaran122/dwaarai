@@ -105,6 +105,7 @@ describe('POST /guard/tickets', () => {
   function mockCreateFlow(lastDisplayId) {
     mockClient.query
       .mockResolvedValueOnce({})                                        // BEGIN
+      .mockResolvedValueOnce({})                                        // advisory lock
       .mockResolvedValueOnce({ rows: lastDisplayId ? [{ display_id: lastDisplayId }] : [] })
       .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })             // INSERT ticket
       .mockResolvedValueOnce({})                                        // logEvent
@@ -142,7 +143,7 @@ describe('POST /guard/tickets', () => {
       },
     });
 
-    const insertParams = mockClient.query.mock.calls[2][1];
+    const insertParams = mockClient.query.mock.calls[3][1];
     expect(insertParams[3]).toBe('KA 03 NJ 0435'); // plate, uppercased but spaced as typed
     expect(insertParams[4]).toBe('KA03NJ0435');    // plate_normalized, for matching
   });
@@ -160,7 +161,7 @@ describe('POST /guard/tickets', () => {
       },
     });
 
-    expect(mockClient.query.mock.calls[2][1][0]).toBe(COMMUNITY_ID);
+    expect(mockClient.query.mock.calls[3][1][0]).toBe(COMMUNITY_ID);
   });
 
   it('rejects a stay-end in the past', async () => {
@@ -192,8 +193,50 @@ describe('POST /guard/tickets', () => {
     expect(pool.connect).not.toHaveBeenCalled();
   });
 
+  it('serialises display-id allocation with an advisory lock, per venue', async () => {
+    // A row lock here does not serialise: two transactions lock the same
+    // existing last row, and the loser resumes with a result set computed
+    // before the winner's row existed, picks the same number and violates
+    // UNIQUE (community_id, display_id) — a 500 for a guard mid-intake. With
+    // no tickets yet there is no row to lock at all. The advisory lock exists
+    // regardless of rows and is held to commit.
+    mockCreateFlow('SRT-0004');
+
+    await request(app, 'POST', '/guard/tickets', {
+      token,
+      body: {
+        plate: 'KA01AA1111',
+        vehicleMake: 'Swift',
+        stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+      },
+    });
+
+    const [sql, params] = mockClient.query.mock.calls[1];
+    expect(sql).toContain('pg_advisory_xact_lock');
+    // Keyed per community, so two venues never wait on each other.
+    expect(params).toEqual([COMMUNITY_ID]);
+    // And taken before the number is read, not after.
+    expect(mockClient.query.mock.calls[2][0]).toContain('SELECT display_id');
+  });
+
+  it('no longer takes a row lock that never serialised anything', async () => {
+    mockCreateFlow('SRT-0004');
+
+    await request(app, 'POST', '/guard/tickets', {
+      token,
+      body: {
+        plate: 'KA01AA1111',
+        vehicleMake: 'Swift',
+        stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+      },
+    });
+
+    expect(mockClient.query.mock.calls[2][0]).not.toContain('FOR UPDATE');
+  });
+
   it('rolls back and releases the connection when the insert fails', async () => {
     mockClient.query
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [] })
       .mockRejectedValueOnce(new Error('duplicate key'));
@@ -552,6 +595,7 @@ describe('binding a printed card at intake', () => {
       .mockResolvedValueOnce({})                                                   // BEGIN
       .mockResolvedValueOnce({ rows: cardFound ? [{ id: 'card-1', code: 'A047' }] : [] })
       .mockResolvedValueOnce({ rows: cardInUse ? [{ display_id: 'SRT-0009' }] : [] })
+      .mockResolvedValueOnce({})                                                    // advisory lock
       .mockResolvedValueOnce({ rows: [] })                                          // display id
       .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })                          // insert
       .mockResolvedValueOnce({})                                                     // logEvent
@@ -579,7 +623,7 @@ describe('binding a printed card at intake', () => {
 
     await request(app, 'POST', '/guard/tickets', { token, body: body({ cardCode: 'A047' }) });
 
-    const insertParams = mockClient.query.mock.calls[4][1];
+    const insertParams = mockClient.query.mock.calls[5][1];
     expect(insertParams[8]).toBe('card-1');   // card_id
     expect(insertParams[9]).toBe('A047');     // card_code
   });
@@ -608,6 +652,7 @@ describe('binding a printed card at intake', () => {
 
   it('still creates a ticket with no card at all — screen QR keeps working', async () => {
     mockClient.query
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })
@@ -643,6 +688,7 @@ describe('binding a printed card at intake', () => {
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A047' }] })
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [] })
       .mockRejectedValueOnce(violation);
 
@@ -666,6 +712,7 @@ describe('binding a printed card at intake', () => {
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A047' }] })
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [] })
       .mockRejectedValueOnce(violation);
 

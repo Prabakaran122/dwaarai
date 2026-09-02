@@ -104,6 +104,18 @@ export default function ValetDashboard() {
         </div>
         <div className="flex items-center gap-4">
           <Link
+            href="/valet/search"
+            className="text-sm font-medium text-teal-700 hover:text-teal-800"
+          >
+            Find a vehicle →
+          </Link>
+          <Link
+            href="/valet/cards"
+            className="text-sm font-medium text-teal-700 hover:text-teal-800"
+          >
+            Cards →
+          </Link>
+          <Link
             href="/valet/visits"
             className="text-sm font-medium text-teal-700 hover:text-teal-800"
           >

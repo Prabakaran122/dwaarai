@@ -276,3 +276,261 @@ describe('GET /admin/visits', () => {
     expect(queryRows.mock.calls[0][0]).toContain('ORDER BY t.created_at DESC');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Printed card stock
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('GET /admin/cards', () => {
+  it('requires an admin token: registering stock is not a guard job', async () => {
+    const res = await request(app, 'GET', '/admin/cards', { token: guardToken() });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('reports a free card as in the stack, not as an absent ticket', async () => {
+    queryRows.mockResolvedValueOnce([
+      { id: 'c1', code: 'A001', is_active: true, created_at: 'now', display_id: null, plate: null, status: null },
+    ]);
+
+    const res = await request(app, 'GET', '/admin/cards', { token: adminToken() });
+
+    expect(res.body.cards[0].inUseBy).toBeNull();
+  });
+
+  it('names the vehicle a card is currently out with', async () => {
+    queryRows.mockResolvedValueOnce([
+      { id: 'c1', code: 'A001', is_active: true, created_at: 'now',
+        display_id: 'SRT-0009', plate: 'KA 03 NJ 0435', status: 'parked' },
+    ]);
+
+    const res = await request(app, 'GET', '/admin/cards', { token: adminToken() });
+
+    expect(res.body.cards[0].inUseBy).toEqual({
+      displayId: 'SRT-0009', plate: 'KA 03 NJ 0435', status: 'parked',
+    });
+  });
+
+  it('scopes the stock to the caller\'s venue', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    await request(app, 'GET', '/admin/cards', { token: adminToken() });
+
+    expect(queryRows.mock.calls[0][1]).toEqual([COMMUNITY_ID]);
+  });
+});
+
+describe('POST /admin/cards', () => {
+  it('expands a printed range into codes', async () => {
+    queryRows.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+    const res = await request(app, 'POST', '/admin/cards', {
+      token: adminToken(), body: { prefix: 'A', from: 1, to: 3 },
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.added).toEqual(['A001', 'A002', 'A003']);
+  });
+
+  it('skips codes that already exist instead of failing the whole box', async () => {
+    // Ordering another box that overlaps the last one is normal. Failing over
+    // codes that are already correct would leave the operator diffing by hand.
+    queryRows.mockResolvedValueOnce([{ code: 'A002' }]).mockResolvedValueOnce([]);
+
+    const res = await request(app, 'POST', '/admin/cards', {
+      token: adminToken(), body: { prefix: 'A', from: 1, to: 3 },
+    });
+
+    expect(res.body.added).toEqual(['A001', 'A003']);
+    expect(res.body.skipped).toEqual(['A002']);
+  });
+
+  it('does not insert at all when every code already exists', async () => {
+    queryRows.mockResolvedValueOnce([{ code: 'A001' }]);
+
+    const res = await request(app, 'POST', '/admin/cards', {
+      token: adminToken(), body: { prefix: 'A', from: 1, to: 1 },
+    });
+
+    expect(res.body.added).toEqual([]);
+    expect(queryRows).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts an explicit list as well as a range', async () => {
+    queryRows.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+    const res = await request(app, 'POST', '/admin/cards', {
+      token: adminToken(), body: { codes: ['v1', ' v2 '] },
+    });
+
+    expect(res.body.added).toEqual(['V1', 'V2']);
+  });
+
+  it('deduplicates a list rather than tripping its own unique constraint', async () => {
+    queryRows.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+    const res = await request(app, 'POST', '/admin/cards', {
+      token: adminToken(), body: { codes: ['A001', 'A001'] },
+    });
+
+    expect(res.body.added).toEqual(['A001']);
+  });
+
+  it('refuses a range large enough to be a typo', async () => {
+    // A slip in the range field should not mint ten thousand cards nobody
+    // printed; a venue's whole stock is tens.
+    const res = await request(app, 'POST', '/admin/cards', {
+      token: adminToken(), body: { prefix: 'A', from: 1, to: 9000 },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('range_too_large');
+    expect(queryRows).not.toHaveBeenCalled();
+  });
+
+  it('refuses a reversed range', async () => {
+    const res = await request(app, 'POST', '/admin/cards', {
+      token: adminToken(), body: { prefix: 'A', from: 50, to: 1 },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_range');
+  });
+
+  it('refuses a request naming neither codes nor a range', async () => {
+    const res = await request(app, 'POST', '/admin/cards', { token: adminToken(), body: {} });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('codes_required');
+  });
+
+  it('refuses a code longer than the column holds', async () => {
+    const res = await request(app, 'POST', '/admin/cards', {
+      token: adminToken(), body: { codes: ['X'.repeat(21)] },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('code_too_long');
+  });
+
+  it('requires an admin token', async () => {
+    const res = await request(app, 'POST', '/admin/cards', {
+      token: guardToken(), body: { codes: ['A001'] },
+    });
+
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('POST /admin/cards/:id/deactivate', () => {
+  it('refuses to retire a card a guest is still holding', async () => {
+    // Freeing it here would let the same code be handed to someone else while
+    // the first vehicle is still parked.
+    queryOne
+      .mockResolvedValueOnce({ id: 'c1' })
+      .mockResolvedValueOnce({ display_id: 'SRT-0009' });
+
+    const res = await request(app, 'POST', '/admin/cards/c1/deactivate', { token: adminToken() });
+
+    expect(res.status).toBe(409);
+    expect(res.body.message).toContain('SRT-0009');
+    expect(queryRows).not.toHaveBeenCalled();
+  });
+
+  it('retires a card that is back in the stack', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'c1' }).mockResolvedValueOnce(null);
+    queryRows.mockResolvedValueOnce([]);
+
+    const res = await request(app, 'POST', '/admin/cards/c1/deactivate', { token: adminToken() });
+
+    expect(res.status).toBe(200);
+    expect(res.body.isActive).toBe(false);
+  });
+
+  it('deactivates rather than deletes, keeping the ticket history intact', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'c1' }).mockResolvedValueOnce(null);
+    queryRows.mockResolvedValueOnce([]);
+
+    await request(app, 'POST', '/admin/cards/c1/deactivate', { token: adminToken() });
+
+    expect(queryRows.mock.calls[0][0]).toContain('UPDATE valet_cards');
+    expect(queryRows.mock.calls[0][0]).not.toContain('DELETE');
+  });
+
+  it('cannot retire another venue\'s card', async () => {
+    queryOne.mockResolvedValueOnce(null);
+
+    const res = await request(app, 'POST', '/admin/cards/c1/deactivate', { token: adminToken() });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('GET /admin/tickets/search', () => {
+  it('matches anywhere in the plate, not just the start', async () => {
+    // A guest says "the white Swift, 0435" far more often than they recite the
+    // state code, so a prefix match would miss the common case.
+    queryRows.mockResolvedValueOnce([]);
+
+    await request(app, 'GET', '/admin/tickets/search?plate=0435', { token: adminToken() });
+
+    expect(queryRows.mock.calls[0][0]).toContain("LIKE '%' || $2 || '%'");
+  });
+
+  it('normalizes the query so spacing and case never matter', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    await request(app, 'GET', '/admin/tickets/search?plate=ka%2003%20nj', { token: adminToken() });
+
+    expect(queryRows.mock.calls[0][1][1]).toBe('KA03NJ');
+  });
+
+  it('refuses a query too short to narrow anything, without hitting the database', async () => {
+    const res = await request(app, 'GET', '/admin/tickets/search?plate=KA', { token: adminToken() });
+
+    expect(res.body.tickets).toEqual([]);
+    expect(queryRows).not.toHaveBeenCalled();
+  });
+
+  it('includes closed tickets — half the reason to look a vehicle up', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    await request(app, 'GET', '/admin/tickets/search?plate=KA03', { token: adminToken() });
+
+    expect(queryRows.mock.calls[0][0]).not.toContain('AND t.status NOT IN');
+  });
+
+  it('sorts open tickets first: the vehicle being asked about is still here', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    await request(app, 'GET', '/admin/tickets/search?plate=KA03', { token: adminToken() });
+
+    expect(queryRows.mock.calls[0][0]).toContain("ORDER BY (t.status NOT IN ('final_closed','expired')) DESC");
+  });
+
+  it('returns the bound card code so a desk can match plastic to a car', async () => {
+    queryRows.mockResolvedValueOnce([{
+      display_id: 'SRT-0001', session_token: 'tok', plate: 'KA 03 NJ 0435',
+      vehicle_make: 'Swift', status: 'parked', created_at: 'now', closed_at: null,
+      disputed: false, card_code: 'A047', created_guard_name: 'Ramesh',
+    }]);
+
+    const res = await request(app, 'GET', '/admin/tickets/search?plate=0435', { token: adminToken() });
+
+    expect(res.body.tickets[0].cardCode).toBe('A047');
+  });
+
+  it('scopes results to the caller\'s venue', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    await request(app, 'GET', '/admin/tickets/search?plate=KA03', { token: adminToken() });
+
+    expect(queryRows.mock.calls[0][1][0]).toBe(COMMUNITY_ID);
+  });
+
+  it('requires an admin token', async () => {
+    const res = await request(app, 'GET', '/admin/tickets/search?plate=KA03', { token: guardToken() });
+
+    expect(res.status).toBe(403);
+  });
+});

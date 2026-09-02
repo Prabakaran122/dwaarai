@@ -205,15 +205,29 @@ router.post('/tickets', guard, async (req, res) => {
       card = resolved.card;
     }
 
-    // Picking the next display id and inserting it happen on the same
-    // connection inside one transaction, so two guards creating tickets at
-    // the same moment cannot read the same sequence. The
-    // UNIQUE (community_id, display_id) constraint is the backstop.
+    // Serialise display-id allocation per venue.
+    //
+    // The row lock this replaced did not actually serialise anything. Both
+    // transactions lock the SAME existing last row, so when the winner commits
+    // its new row the loser resumes holding a result set computed before that
+    // row existed, picks the same number, and violates
+    // UNIQUE (community_id, display_id) — a 500 for a guard mid-intake. With
+    // no tickets yet the lock had nothing to take at all and both picked
+    // SRT-0001. An end-to-end test creating three tickets at once reproduces
+    // it every run.
+    //
+    // An advisory lock has no such gap: it exists whether or not any row does,
+    // is held to commit, and is keyed per community so two venues never wait
+    // on each other. The first key namespaces it against any other advisory
+    // lock in the database.
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext('valet_display_id'), hashtext($1))`,
+      [communityId]
+    );
     const last = await client.query(
       `SELECT display_id FROM valet_tickets
         WHERE community_id = $1
-        ORDER BY created_at DESC LIMIT 1
-        FOR UPDATE`,
+        ORDER BY created_at DESC LIMIT 1`,
       [communityId]
     );
     const displayId = nextDisplayId(last.rows[0]?.display_id);
@@ -295,12 +309,16 @@ router.get('/tickets/search', guard, async (req, res) => {
   if (q.length < 3) return res.json({ tickets: [], query: q });
 
   const rows = await queryRows(
+    // Matches anywhere in the plate, not just the start: a guest at the desk
+    // says "the white Swift, 0435" far more often than they recite the state
+    // code. A trigram index (045) serves the leading wildcard; a prefix index
+    // could not.
     `SELECT t.*, cg.name AS created_guard_name, ug.name AS current_guard_name
        FROM valet_tickets t
        JOIN residents cg ON cg.id = t.created_by_guard_id
        LEFT JOIN residents ug ON ug.id = t.current_guard_id
       WHERE t.community_id = $1
-        AND t.plate_normalized LIKE $2 || '%'
+        AND t.plate_normalized LIKE '%' || $2 || '%'
       ORDER BY (t.status NOT IN ('final_closed','expired')) DESC, t.created_at DESC
       LIMIT 50`,
     [req.user.community_id, q]

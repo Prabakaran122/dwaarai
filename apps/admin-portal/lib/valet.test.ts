@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { valetFetch, valetPost, ValetError, STATUS_LABEL, NEEDS_ACTION, ValetStatus, formatStay } from './valet';
+import { valetFetch, valetPost, ValetError, STATUS_LABEL, NEEDS_ACTION, ValetStatus, formatStay,
+  previewRange, listCards, registerCards, setCardActive, searchPlates } from './valet';
 
 const originalFetch = global.fetch;
 
@@ -159,5 +160,87 @@ describe('formatStay', () => {
 
   it('drops the minutes when they round to zero', () => {
     expect(formatStay(7200)).toBe('2h');
+  });
+});
+
+
+describe('previewRange', () => {
+  it('pads to the width printed on the card', () => {
+    expect(previewRange('A', 1, 3)).toEqual(['A001', 'A002', 'A003']);
+  });
+
+  it('uppercases the prefix so a1 and A1 are the same box', () => {
+    expect(previewRange('a', 7, 7)).toEqual(['A007']);
+  });
+
+  it('honours a non-default width', () => {
+    expect(previewRange('V', 9, 10, 2)).toEqual(['V09', 'V10']);
+  });
+
+  it('refuses a reversed range rather than silently returning nothing useful', () => {
+    expect(previewRange('A', 50, 1)).toEqual([]);
+  });
+
+  it('refuses fractional and zero starts', () => {
+    expect(previewRange('A', 1.5, 3)).toEqual([]);
+    expect(previewRange('A', 0, 3)).toEqual([]);
+  });
+
+  it('caps the preview so a mistyped range cannot hang the page', () => {
+    // The service refuses more than 500 outright; the preview must not try to
+    // build a million strings before the operator sees the error.
+    expect(previewRange('A', 1, 100000)).toHaveLength(500);
+  });
+});
+
+describe('card stock client', () => {
+  it('lists cards from the admin scope', async () => {
+    vi.mocked(global.fetch).mockResolvedValue(mockResponse(200, { cards: [] }));
+
+    await listCards();
+
+    expect(vi.mocked(global.fetch).mock.calls[0][0]).toContain('/admin/cards');
+  });
+
+  it('posts a range as a range, not as an expanded list', async () => {
+    // The service builds the codes. Sending 500 strings the server would
+    // rebuild anyway is the kind of duplication that lets the two disagree.
+    vi.mocked(global.fetch).mockResolvedValue(mockResponse(201, { added: [], skipped: [], total: 0 }));
+
+    await registerCards({ prefix: 'A', from: 1, to: 50 });
+
+    const init = vi.mocked(global.fetch).mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({ prefix: 'A', from: 1, to: 50 });
+  });
+
+  it('retires and restores through distinct endpoints', async () => {
+    vi.mocked(global.fetch).mockResolvedValue(mockResponse(200, { id: 'c1', isActive: false }));
+
+    await setCardActive('c1', false);
+    expect(vi.mocked(global.fetch).mock.calls[0][0]).toContain('/admin/cards/c1/deactivate');
+
+    await setCardActive('c1', true);
+    expect(vi.mocked(global.fetch).mock.calls[1][0]).toContain('/admin/cards/c1/activate');
+  });
+
+  it('surfaces the service\'s reason a card cannot be retired', async () => {
+    vi.mocked(global.fetch).mockResolvedValue(
+      mockResponse(409, { error: 'card_in_use', message: 'Card is on ticket SRT-0009.' })
+    );
+
+    await expect(setCardActive('c1', false)).rejects.toMatchObject({
+      code: 'card_in_use',
+      message: 'Card is on ticket SRT-0009.',
+    });
+  });
+});
+
+describe('plate search client', () => {
+  it('encodes a plate with spaces rather than breaking the query string', async () => {
+    vi.mocked(global.fetch).mockResolvedValue(mockResponse(200, { query: '', tickets: [] }));
+
+    await searchPlates('KA 03 NJ');
+
+    expect(vi.mocked(global.fetch).mock.calls[0][0]).toContain('plate=KA%2003%20NJ');
   });
 });
