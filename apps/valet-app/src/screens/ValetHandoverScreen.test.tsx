@@ -20,7 +20,7 @@ import React from 'react';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import * as api from '../api/valet';
 import { useCameraPermissions } from 'expo-camera';
-import ValetHandoverScreen from './ValetHandoverScreen';
+import ValetHandoverScreen, { maskPlate } from './ValetHandoverScreen';
 
 const TOKEN = 'tok-9';
 
@@ -34,7 +34,12 @@ beforeEach(() => {
   (api.scanPickup as jest.Mock).mockResolvedValue({});
   (api.uploadCondition as jest.Mock).mockResolvedValue({});
   (api.confirmPickup as jest.Mock).mockResolvedValue({});
-  (api.guestPhotoUrl as jest.Mock).mockReturnValue('https://valet/photo.jpg');
+  (api.guestPhotoSource as jest.Mock).mockReturnValue({
+    uri: 'https://valet/photo.jpg', headers: { Authorization: 'Bearer t' },
+  });
+  (api.getTicket as jest.Mock).mockResolvedValue({
+    data: { hasPhoto: true, plate: 'KA03NJ0435', vehicleMake: 'Swift', events: [] },
+  });
 });
 
 async function scanSuccessfully(screen: ReturnType<typeof render>) {
@@ -160,7 +165,7 @@ describe('confirming the handover', () => {
 
     await act(async () => { fireEvent.press(screen.getByTestId('handover-park-again')); });
 
-    expect(api.confirmPickup).toHaveBeenCalledWith(TOKEN, false);
+    expect(api.confirmPickup).toHaveBeenCalledWith(TOKEN, false, 'photo');
   });
 
   it('closes the ticket on a final checkout', async () => {
@@ -168,7 +173,7 @@ describe('confirming the handover', () => {
 
     await act(async () => { fireEvent.press(screen.getByTestId('handover-final')); });
 
-    expect(api.confirmPickup).toHaveBeenCalledWith(TOKEN, true);
+    expect(api.confirmPickup).toHaveBeenCalledWith(TOKEN, true, 'photo');
   });
 
   it('calls back once the handover succeeds', async () => {
@@ -199,5 +204,112 @@ describe('confirming the handover', () => {
     await act(async () => { fireEvent.press(screen.getByTestId('handover-park-again')); });
 
     await waitFor(() => expect(screen.getByTestId('handover-error')).toBeTruthy());
+  });
+});
+
+describe('when no photo was captured at intake', () => {
+  function noPhotoTicket() {
+    (api.getTicket as jest.Mock).mockResolvedValue({
+      data: { hasPhoto: false, plate: 'KA 03 NJ 0435', vehicleMake: 'Maruti Swift', events: [] },
+    });
+  }
+
+  async function reachCompare(screen: ReturnType<typeof render>) {
+    await act(async () => {
+      screen.getByTestId('handover-camera').props.onBarcodeScanned({ data: 'live-token' });
+    });
+  }
+
+  it('says no photo was taken instead of showing an empty frame', async () => {
+    // The bug this replaces: <Image> sent no auth header, so the frame was
+    // blank for every ticket, and the guard was asked to compare a face
+    // against nothing and then told the server it matched.
+    noPhotoTicket();
+    const screen = render(<ValetHandoverScreen sessionToken={TOKEN} />);
+    await reachCompare(screen);
+
+    expect(screen.getByTestId('handover-no-photo')).toBeTruthy();
+    expect(screen.queryByTestId('handover-guest-photo')).toBeNull();
+    expect(screen.queryByTestId('handover-match')).toBeNull();
+  });
+
+  it('gives the guard something real to check', async () => {
+    noPhotoTicket();
+    const screen = render(<ValetHandoverScreen sessionToken={TOKEN} />);
+    await reachCompare(screen);
+
+    expect(screen.getByTestId('handover-vehicle').props.children).toBe('Maruti Swift');
+  });
+
+  it('masks the last four digits — the plate is the answer being asked for', async () => {
+    noPhotoTicket();
+    const screen = render(<ValetHandoverScreen sessionToken={TOKEN} />);
+    await reachCompare(screen);
+
+    const shown = screen.getByTestId('handover-plate').props.children;
+    expect(shown).toBe('KA 03 NJ ••••');
+    expect(shown).not.toContain('0435');
+  });
+
+  it('records a vehicle confirmation, never a photo match', async () => {
+    noPhotoTicket();
+    const screen = render(<ValetHandoverScreen sessionToken={TOKEN} />);
+    await reachCompare(screen);
+
+    await act(async () => { fireEvent.press(screen.getByTestId('handover-vehicle-confirmed')); });
+    await act(async () => { fireEvent.press(screen.getByTestId('handover-angle-front')); });
+    await act(async () => { fireEvent.press(screen.getByTestId('handover-to-confirm')); });
+    await act(async () => { fireEvent.press(screen.getByTestId('handover-park-again')); });
+
+    expect(api.confirmPickup).toHaveBeenCalledWith(TOKEN, false, 'vehicle_confirmed');
+  });
+
+  it('lets the guard hold the car when the guest cannot confirm', async () => {
+    noPhotoTicket();
+    const onDone = jest.fn();
+    const screen = render(<ValetHandoverScreen sessionToken={TOKEN} onDone={onDone} />);
+    await reachCompare(screen);
+
+    fireEvent.press(screen.getByTestId('handover-hold'));
+
+    expect(onDone).toHaveBeenCalled();
+    expect(api.confirmPickup).not.toHaveBeenCalled();
+  });
+
+  it('still shows the photo when one exists', async () => {
+    (api.getTicket as jest.Mock).mockResolvedValue({
+      data: { hasPhoto: true, plate: 'KA 03 NJ 0435', vehicleMake: 'Swift', events: [] },
+    });
+    const screen = render(<ValetHandoverScreen sessionToken={TOKEN} />);
+    await reachCompare(screen);
+
+    expect(screen.getByTestId('handover-guest-photo')).toBeTruthy();
+    expect(screen.queryByTestId('handover-no-photo')).toBeNull();
+  });
+
+  it('sends the photo request with the guard token', async () => {
+    // Without the header this endpoint answers 401 and the frame is blank.
+    (api.getTicket as jest.Mock).mockResolvedValue({
+      data: { hasPhoto: true, plate: 'KA03NJ0435', vehicleMake: 'Swift', events: [] },
+    });
+    const screen = render(<ValetHandoverScreen sessionToken={TOKEN} />);
+    await reachCompare(screen);
+
+    const src = screen.getByTestId('handover-guest-photo').props.source;
+    expect(src.headers.Authorization).toBeTruthy();
+  });
+});
+
+describe('maskPlate', () => {
+  it('hides the last four digits', () => {
+    expect(maskPlate('KA 03 NJ 0435')).toBe('KA 03 NJ ••••');
+  });
+
+  it('leaves a very short plate alone rather than blanking it entirely', () => {
+    expect(maskPlate('0435')).toBe('0435');
+  });
+
+  it('survives a missing plate', () => {
+    expect(maskPlate('')).toBe('');
   });
 });

@@ -63,8 +63,19 @@ export interface PlateLookup {
 export const listTickets = (all = false) =>
   valet.get<{ tickets: ValetTicket[] }>(`/guard/tickets${all ? '?all=true' : ''}`);
 
+export interface TicketDetail extends ValetTicket {
+  /** Whether a guest comparison photo was captured at intake. */
+  hasPhoto: boolean;
+  events: Array<{
+    event_type: string;
+    guard_name: string | null;
+    metadata: Record<string, unknown> | null;
+    created_at: string;
+  }>;
+}
+
 export const getTicket = (token: string) =>
-  valet.get(`/guard/tickets/${token}`);
+  valet.get<TicketDetail>(`/guard/tickets/${token}`);
 
 export const createTicket = (
   plate: string, vehicleMake: string, stayEndAt: string, cardCode?: string
@@ -93,8 +104,18 @@ export const markArrived = (token: string) =>
 export const scanPickup = (token: string, rotatingToken: string) =>
   valet.post(`/guard/tickets/${token}/scan`, { rotatingToken });
 
-export const confirmPickup = (token: string, final: boolean) =>
-  valet.post(`/guard/tickets/${token}/confirm-pickup`, { final });
+/**
+ * How the guard established the person is the right one.
+ *
+ * 'photo' means they compared the intake photo; 'vehicle_confirmed' means no
+ * photo existed and the guest identified the vehicle instead. The server
+ * refuses a 'photo' claim on a ticket carrying no photo, so this cannot be
+ * used to manufacture a check that never happened.
+ */
+export type Verification = 'photo' | 'vehicle_confirmed';
+
+export const confirmPickup = (token: string, final: boolean, verification: Verification) =>
+  valet.post(`/guard/tickets/${token}/confirm-pickup`, { final, verification });
 
 export const expireTicket = (token: string) =>
   valet.post(`/guard/tickets/${token}/expire`);
@@ -137,7 +158,25 @@ export function uploadCondition(
   });
 }
 
-export const guestPhotoUrl = (token: string) =>
-  `${VALET_BASE}/guard/tickets/${token}/photo`;
+/**
+ * The intake photo, as an image source the guard app can actually render.
+ *
+ * The plain URL was handed straight to <Image source={{uri}}>, which sends no
+ * Authorization header — and this endpoint requires a guard token, so it
+ * answered 401 and rendered an empty frame. For every ticket, photo or not:
+ * the guard was asked to compare a face against nothing.
+ *
+ * React Native's Image honours a headers map on a network source, so the
+ * native loader keeps the caching and memory handling rather than pulling a
+ * multi-megabyte photo through JS as base64. Whether a photo exists at all is
+ * a separate question, answered by the ticket's hasPhoto — never by waiting
+ * for this to fail.
+ */
+export const guestPhotoSource = (token: string) => ({
+  uri: `${VALET_BASE}/guard/tickets/${token}/photo`,
+  headers: {
+    Authorization: valet.defaults.headers.common['Authorization'] as string,
+  },
+});
 
 export default valet;

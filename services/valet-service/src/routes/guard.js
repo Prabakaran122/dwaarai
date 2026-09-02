@@ -696,6 +696,35 @@ router.post('/tickets/:token/confirm-pickup', guard, async (req, res) => {
     });
   }
 
+  // How the guard established the person is the right one, recorded rather
+  // than assumed.
+  //
+  // The scan above proves possession of the live ticket; it says nothing about
+  // who is holding it. The intake photo is the second factor, and it is
+  // optional — a guest may decline it under DPDP, and a denied camera must not
+  // strand a car that is already parked. So a pickup can legitimately happen
+  // with no photo, and the audit trail has to say which of the two it was. A
+  // single 'closed_pickup' event for both cases makes a later dispute
+  // unanswerable.
+  const photo = await queryOne(
+    'SELECT id FROM valet_photos WHERE ticket_id = $1 AND deleted_at IS NULL LIMIT 1',
+    [ticket.id]
+  );
+  const claimed = req.body.verification;
+  if (claimed && !['photo', 'vehicle_confirmed'].includes(claimed)) {
+    return res.status(400).json({ error: 'invalid_verification' });
+  }
+  // Checked server-side because the client is the thing being audited: an app
+  // that claimed a photo match on a ticket carrying no photo would write
+  // exactly the record a dispute relies on being true.
+  if (claimed === 'photo' && !photo) {
+    return res.status(409).json({
+      error: 'no_photo_to_match',
+      message: 'No guest photo was captured for this ticket',
+    });
+  }
+  const verification = claimed || (photo ? 'photo' : 'vehicle_confirmed');
+
   // Confirming a pickup does not close the ticket unless the guard marks it a
   // final checkout: otherwise the same URL and QR keep working for the next
   // pickup inside the stay window.
@@ -704,7 +733,7 @@ router.post('/tickets/:token/confirm-pickup', guard, async (req, res) => {
       `UPDATE valet_tickets SET status = 'final_closed', closed_at = NOW(), current_guard_id = NULL WHERE id = $1`,
       [ticket.id]
     );
-    await logEvent(ticket.id, 'final_closed', { guardId: req.user.sub });
+    await logEvent(ticket.id, 'final_closed', { guardId: req.user.sub, metadata: { verification } });
     await schedulePhotoDeletion(ticket.id);
     await scheduleConditionMediaDeletion(ticket.id);
   } else {
@@ -712,7 +741,7 @@ router.post('/tickets/:token/confirm-pickup', guard, async (req, res) => {
       `UPDATE valet_tickets SET status = 'parked_again', current_guard_id = NULL WHERE id = $1`,
       [ticket.id]
     );
-    await logEvent(ticket.id, 'closed_pickup', { guardId: req.user.sub });
+    await logEvent(ticket.id, 'closed_pickup', { guardId: req.user.sub, metadata: { verification } });
   }
 
   const updated = await findTicket(req.params.token, req.user.community_id);

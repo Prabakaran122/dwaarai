@@ -160,8 +160,31 @@ existing last row, and the loser resumes with a result set computed before the
 winner's row existed, picks the same number and 500s mid-intake — and with no
 tickets yet there was no row to lock at all.
 
-`services/valet-service/scripts/e2e-cards.mjs` covers all of this against a
-real service and database.
+**Identity at handover is recorded, not assumed.** The QR scan proves the
+person holds the live ticket; it says nothing about who they are. The intake
+photo is the second factor and is *optional* — a guest may decline it under
+DPDP, and a denied camera must not strand a parked car — so a release can
+legitimately happen with no photo on file. `confirm-pickup` therefore takes a
+`verification` of `photo` or `vehicle_confirmed` and stamps it on the
+`closed_pickup` / `final_closed` event, and the admin timeline shows which.
+Two rules hold it together:
+
+- The server **refuses** a `photo` claim on a ticket carrying no photo. The
+  client is the thing being audited; an app that could claim a match it never
+  performed would write exactly the record a dispute relies on being true.
+- A request with no `verification` falls back to the truth, never to `photo` —
+  an APK built before this change must not have its releases recorded as photo
+  matches.
+
+The handover screen reads `hasPhoto` from the ticket to decide which UI to
+show. It must never decide by waiting for the image to fail: the photo endpoint
+needs a guard token, `<Image source={{uri}}>` sends no Authorization header, and
+that combination rendered an empty frame above a "Matches" button for *every*
+ticket — training guards to tap through a check that never ran. The image
+source now carries the header explicitly.
+
+`services/valet-service/scripts/e2e-cards.mjs` and `e2e-verification.mjs` cover
+all of this against a real service and database.
 
 The retention/expiry sweep runs as a scheduled job
 (`pnpm --filter valet-service sweep`), not on a `setInterval` inside the web

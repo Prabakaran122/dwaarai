@@ -465,6 +465,7 @@ describe('POST /guard/tickets/:token/confirm-pickup', () => {
       .mockResolvedValueOnce(arrival)
       .mockResolvedValueOnce({ id: 'rt-1' })
       .mockResolvedValueOnce({ id: 'cond-1' })
+      .mockResolvedValueOnce({ id: 'photo-1' })
       .mockResolvedValueOnce(ticketRow({ status: 'parked_again' }));
 
     await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/confirm-pickup`, { token, body: {} });
@@ -481,6 +482,7 @@ describe('POST /guard/tickets/:token/confirm-pickup', () => {
       .mockResolvedValueOnce(arrival)
       .mockResolvedValueOnce({ id: 'rt-1' })
       .mockResolvedValueOnce({ id: 'cond-1' })
+      .mockResolvedValueOnce({ id: 'photo-1' })
       .mockResolvedValueOnce(ticketRow({ status: 'parked_again' }));
 
     const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/confirm-pickup`, {
@@ -499,6 +501,7 @@ describe('POST /guard/tickets/:token/confirm-pickup', () => {
       .mockResolvedValueOnce(arrival)
       .mockResolvedValueOnce({ id: 'rt-1' })
       .mockResolvedValueOnce({ id: 'cond-1' })
+      .mockResolvedValueOnce({ id: 'photo-1' })
       .mockResolvedValueOnce(ticketRow({ status: 'final_closed' }));
 
     const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/confirm-pickup`, {
@@ -517,6 +520,7 @@ describe('POST /guard/tickets/:token/confirm-pickup', () => {
       .mockResolvedValueOnce(arrival)
       .mockResolvedValueOnce({ id: 'rt-1' })
       .mockResolvedValueOnce({ id: 'cond-1' })
+      .mockResolvedValueOnce({ id: 'photo-1' })
       .mockResolvedValueOnce(ticketRow({ status: 'parked_again' }));
 
     const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/confirm-pickup`, {
@@ -762,5 +766,111 @@ describe('GET /guard/tickets/search', () => {
     await request(app, 'GET', '/guard/tickets/search?plate=KA03', { token });
 
     expect(queryRows.mock.calls[0][1][0]).toBe(COMMUNITY_ID);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// How the guest was identified at handover
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('recording how the guard identified the guest', () => {
+  // The scan proves possession of the live ticket; it says nothing about who is
+  // holding it. Which second check happened has to survive into the audit trail.
+  function mockConfirmFlow({ hasPhoto }) {
+    // Reset the queue, not just the call log: vi.clearAllMocks() clears calls
+    // but leaves queued mockResolvedValueOnce values in place, and a test that
+    // returns early (the refused claim below) leaves one behind to be consumed
+    // by whichever test runs next.
+    queryOne.mockReset();
+    queryOne
+      .mockResolvedValueOnce(ticketRow({ status: 'arrived' }))            // findTicket
+      .mockResolvedValueOnce({ created_at: '2026-09-01T10:00:00Z' })      // last arrival
+      .mockResolvedValueOnce({ id: 'scan-1' })                            // verified scan
+      .mockResolvedValueOnce({ id: 'return-1' })                          // return capture
+      .mockResolvedValueOnce(hasPhoto ? { id: 'photo-1' } : null)         // guest photo
+      .mockResolvedValueOnce(ticketRow({ status: 'parked_again' }));      // reload
+  }
+
+  /** The metadata written alongside an event, parsed back out. */
+  function metadataFor(eventType) {
+    const call = query.mock.calls.find(
+      (c) => String(c[0]).includes('valet_ticket_events') && c[1]?.[1] === eventType
+    );
+    return call ? JSON.parse(call[1][3]) : null;
+  }
+
+  it('records a photo match when a photo exists', async () => {
+    mockConfirmFlow({ hasPhoto: true });
+
+    const res = await request(app, 'POST', '/guard/tickets/tok/confirm-pickup', {
+      token, body: { verification: 'photo' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(metadataFor('closed_pickup').verification).toBe('photo');
+  });
+
+  it('records a vehicle confirmation when there is no photo', async () => {
+    // The distinction is the whole point: a dispute must be able to tell a
+    // real photo match from a release where nobody's face was ever recorded.
+    mockConfirmFlow({ hasPhoto: false });
+
+    const res = await request(app, 'POST', '/guard/tickets/tok/confirm-pickup', {
+      token, body: { verification: 'vehicle_confirmed' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(metadataFor('closed_pickup').verification).toBe('vehicle_confirmed');
+  });
+
+  it('refuses a claimed photo match on a ticket carrying no photo', async () => {
+    // Checked server-side because the client is the thing being audited.
+    mockConfirmFlow({ hasPhoto: false });
+
+    const res = await request(app, 'POST', '/guard/tickets/tok/confirm-pickup', {
+      token, body: { verification: 'photo' },
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('no_photo_to_match');
+  });
+
+  it('does not close the ticket when the claim is refused', async () => {
+    mockConfirmFlow({ hasPhoto: false });
+
+    await request(app, 'POST', '/guard/tickets/tok/confirm-pickup', {
+      token, body: { verification: 'photo' },
+    });
+
+    expect(JSON.stringify(query.mock.calls)).not.toContain('closed_pickup');
+  });
+
+  it('rejects a verification value it does not recognise', async () => {
+    mockConfirmFlow({ hasPhoto: true });
+
+    const res = await request(app, 'POST', '/guard/tickets/tok/confirm-pickup', {
+      token, body: { verification: 'vibes' },
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('falls back to the truth when an older app sends no verification field', async () => {
+    // A build from before this change must not silently record a photo match.
+    mockConfirmFlow({ hasPhoto: false });
+
+    await request(app, 'POST', '/guard/tickets/tok/confirm-pickup', { token, body: {} });
+
+    expect(metadataFor('closed_pickup').verification).toBe('vehicle_confirmed');
+  });
+
+  it('stamps the verification on a final checkout too', async () => {
+    mockConfirmFlow({ hasPhoto: true });
+
+    await request(app, 'POST', '/guard/tickets/tok/confirm-pickup', {
+      token, body: { verification: 'photo', final: true },
+    });
+
+    expect(metadataFor('final_closed').verification).toBe('photo');
   });
 });

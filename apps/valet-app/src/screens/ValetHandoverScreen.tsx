@@ -22,6 +22,19 @@ import { useT } from '../store/langStore';
 
 const ANGLES = ['front', 'back', 'left', 'right'] as const;
 
+/**
+ * Hides the last four digits of a plate.
+ *
+ * The guard is asking the guest to prove they know the vehicle. Showing the
+ * whole plate on the screen the guard is holding, in front of the person being
+ * checked, hands over the answer.
+ */
+export function maskPlate(plate: string): string {
+  const trimmed = String(plate ?? '').trim();
+  if (trimmed.length <= 4) return trimmed;
+  return trimmed.slice(0, -4) + '\u2022'.repeat(4);
+}
+
 type Stage = 'scan' | 'compare' | 'condition' | 'confirm';
 
 export default function ValetHandoverScreen({
@@ -38,6 +51,11 @@ export default function ValetHandoverScreen({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [captured, setCaptured] = useState<string[]>([]);
+  // Whether an intake photo exists is answered by the ticket, not by waiting
+  // for the image to fail: an empty frame and a "Matches" button is the one
+  // outcome this screen must never produce.
+  const [ticket, setTicket] = useState<api.TicketDetail | null>(null);
+  const [verification, setVerification] = useState<api.Verification>('photo');
   // Latched in a ref, not state: a real camera fires onBarcodeScanned many
   // times per second, far faster than React re-renders, so a state flag would
   // still be `true` for every call in the same frame and the same code would
@@ -47,6 +65,14 @@ export default function ValetHandoverScreen({
   useEffect(() => {
     if (permission && !permission.granted) requestPermission();
   }, [permission?.granted]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getTicket(sessionToken)
+      .then((res) => { if (!cancelled) setTicket(res.data); })
+      .catch(() => { /* the compare stage falls back to the no-photo path */ });
+    return () => { cancelled = true; };
+  }, [sessionToken]);
 
   async function onScanned({ data }: { data: string }) {
     if (!scanning.current) return;
@@ -92,7 +118,7 @@ export default function ValetHandoverScreen({
   async function confirm(final: boolean) {
     setBusy(true);
     try {
-      await api.confirmPickup(sessionToken, final);
+      await api.confirmPickup(sessionToken, final, verification);
       onDone?.();
     } catch (err) {
       const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -141,20 +167,58 @@ export default function ValetHandoverScreen({
         )}
 
         {stage === 'compare' && (
-          <>
-            <Text style={styles.label}>{t('valetCompareGuest')}</Text>
-            <Image
-              testID="handover-guest-photo"
-              source={{ uri: api.guestPhotoUrl(sessionToken) }}
-              style={styles.guestPhoto}
-              resizeMode="cover"
-            />
-            {/* No face-matching model runs. A human compares and decides. */}
-            <Text style={styles.hint}>{t('valetCompareHint')}</Text>
-            <Pressable testID="handover-match" style={styles.cta} onPress={() => setStage('condition')}>
-              <Text style={styles.ctaText}>{t('valetMatches')}</Text>
-            </Pressable>
-          </>
+          ticket && !ticket.hasPhoto ? (
+            <>
+              {/* No photo was taken at intake — a guest may decline it, and a
+                  denied camera must not strand a parked car. Saying so beats
+                  an empty frame above a "Matches" button, which teaches a
+                  guard to tap through and records a check that never ran. */}
+              <View style={styles.noPhotoBox} testID="handover-no-photo">
+                <MaterialCommunityIcons name="account-question-outline" size={22} color={colors.warning} />
+                <Text style={styles.noPhotoTitle}>{t('valetNoPhotoTaken')}</Text>
+              </View>
+
+              <Text style={styles.hint}>{t('valetConfirmVehicleHint')}</Text>
+              <View style={styles.detailBox}>
+                <Text style={styles.detailLabel}>{t('valetMake')}</Text>
+                <Text style={styles.detailValue} testID="handover-vehicle">{ticket.vehicleMake}</Text>
+                <Text style={styles.detailLabel}>{t('valetPlate')}</Text>
+                {/* Partly masked: reading the full plate aloud tells the person
+                    the answer they are supposed to be producing. */}
+                <Text style={styles.detailValue} testID="handover-plate">{maskPlate(ticket.plate)}</Text>
+              </View>
+
+              <Pressable
+                testID="handover-vehicle-confirmed"
+                style={styles.cta}
+                onPress={() => { setVerification('vehicle_confirmed'); setStage('condition'); }}
+              >
+                <Text style={styles.ctaText}>{t('valetGuestConfirmed')}</Text>
+              </Pressable>
+              <Pressable testID="handover-hold" style={styles.ghost} onPress={onDone}>
+                <Text style={styles.ghostText}>{t('valetCannotConfirm')}</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={styles.label}>{t('valetCompareGuest')}</Text>
+              <Image
+                testID="handover-guest-photo"
+                source={api.guestPhotoSource(sessionToken)}
+                style={styles.guestPhoto}
+                resizeMode="cover"
+              />
+              {/* No face-matching model runs. A human compares and decides. */}
+              <Text style={styles.hint}>{t('valetCompareHint')}</Text>
+              <Pressable
+                testID="handover-match"
+                style={styles.cta}
+                onPress={() => { setVerification('photo'); setStage('condition'); }}
+              >
+                <Text style={styles.ctaText}>{t('valetMatches')}</Text>
+              </Pressable>
+            </>
+          )
         )}
 
         {stage === 'condition' && (
@@ -232,6 +296,20 @@ const styles = StyleSheet.create({
   permissionBox: { padding: spacing.xl, alignItems: 'center', gap: spacing.md },
   guestPhoto: { width: '100%', aspectRatio: 1, borderRadius: radius.xl, backgroundColor: colors.card },
   hint: { color: colors.textTertiary, fontSize: 12, textAlign: 'center' },
+  noPhotoBox: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.warningBg, borderRadius: radius.md, padding: spacing.md,
+  },
+  noPhotoTitle: { color: colors.warning, fontWeight: '700', fontSize: 14, flex: 1 },
+  detailBox: {
+    backgroundColor: colors.card, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, padding: spacing.lg, gap: spacing.xs,
+  },
+  detailLabel: {
+    color: colors.textTertiary, fontSize: 11, fontWeight: '600',
+    letterSpacing: 0.6, textTransform: 'uppercase', marginTop: spacing.sm,
+  },
+  detailValue: { color: colors.textPrimary, fontSize: 20, fontWeight: '700', letterSpacing: 1 },
   error: { color: colors.danger, fontSize: 13, textAlign: 'center' },
   cta: {
     backgroundColor: colors.actionPrimary, borderRadius: radius.md,

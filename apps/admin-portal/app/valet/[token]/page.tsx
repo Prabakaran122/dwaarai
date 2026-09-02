@@ -34,6 +34,19 @@ const EVENT_LABEL: Record<string, string> = {
   disputed: 'Flagged as disputed',
 };
 
+/**
+ * How the guard established the person collecting was the right one.
+ *
+ * A handover records one of these on every release. The distinction is the
+ * point: the QR scan only proves someone holds the live ticket, and the intake
+ * photo is optional, so a release can legitimately happen with nobody's face
+ * on file. A dispute needs to be able to tell the two apart.
+ */
+const VERIFICATION_LABEL: Record<string, string> = {
+  photo: 'matched against the intake photo',
+  vehicle_confirmed: 'guest identified the vehicle — no photo on file',
+};
+
 function MediaTile({ token, record }: { token: string; record: ConditionRecord }) {
   const src = `${VALET_BASE}/guard/tickets/${token}/condition/${record.id}/media`;
   return (
@@ -175,6 +188,15 @@ export default function ValetTicketPage() {
                 {EVENT_LABEL[e.event_type] || e.event_type}
                 {e.guard_name && <span className="text-gray-500"> · {e.guard_name}</span>}
               </p>
+              {typeof e.metadata?.verification === 'string' && (
+                <p
+                  className={`text-xs mt-0.5 ${
+                    e.metadata.verification === 'photo' ? 'text-gray-500' : 'text-amber-700'
+                  }`}
+                >
+                  {VERIFICATION_LABEL[e.metadata.verification] || String(e.metadata.verification)}
+                </p>
+              )}
               <p className="text-xs text-gray-400">
                 {new Date(e.created_at).toLocaleString()}
                 {e.metadata?.etaMinutes ? ` · ETA ${String(e.metadata.etaMinutes)} min` : ''}

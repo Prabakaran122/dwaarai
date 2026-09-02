@@ -75,6 +75,10 @@ export const translations: Dict = {
   valetCardNotACard: { en: "That QR is not a valet card", hi: 'वह QR वैले कार्ड नहीं है', kn: 'ಆ QR ವ್ಯಾಲೆ ಕಾರ್ಡ್ ಅಲ್ಲ' },
   valetCardRemove: { en: 'Remove card', hi: 'कार्ड हटाएं', kn: 'ಕಾರ್ಡ್ ತೆಗೆಯಿರಿ' },
   valetCardHandOver: { en: 'Hand the card to the guest', hi: 'कार्ड मेहमान को दें', kn: 'ಕಾರ್ಡ್ ಅತಿಥಿಗೆ ನೀಡಿ' },
+  valetNoPhotoTaken: { en: 'No photo was taken at intake', hi: 'गाड़ी लेते समय फोटो नहीं ली गई', kn: 'ವಾಹನ ಪಡೆಯುವಾಗ ಫೋಟೋ ತೆಗೆದಿಲ್ಲ' },
+  valetConfirmVehicleHint: { en: 'Ask the guest to tell you the vehicle and its number before releasing the car.', hi: 'गाड़ी देने से पहले मेहमान से वाहन और उसका नंबर पूछें।', kn: 'ವಾಹನ ಬಿಡುಗಡೆ ಮಾಡುವ ಮೊದಲು ಅತಿಥಿಯಿಂದ ವಾಹನ ಮತ್ತು ಅದರ ಸಂಖ್ಯೆ ಕೇಳಿ.' },
+  valetGuestConfirmed: { en: 'Guest confirmed — release car', hi: 'मेहमान ने बताया — गाड़ी दें', kn: 'ಅತಿಥಿ ಖಚಿತಪಡಿಸಿದರು — ವಾಹನ ನೀಡಿ' },
+  valetCannotConfirm: { en: 'Cannot confirm — hold the car', hi: 'पुष्टि नहीं — गाड़ी रोकें', kn: 'ಖಚಿತಪಡಿಸಲಾಗಿಲ್ಲ — ವಾಹನ ತಡೆಹಿಡಿಯಿರಿ' },
 };
 
 export function translate(key: string, lang: Lang): string {
