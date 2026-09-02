@@ -153,6 +153,30 @@ async function resolveCard(client, communityId, code) {
   return { card: card.rows[0] };
 }
 
+const CARD_ERROR_MESSAGE = {
+  card_in_use: (displayId) =>
+    displayId ? `Card is already on ticket ${displayId}` : 'That card is already on another vehicle',
+  unknown_card: () => 'That card is not registered to this property',
+};
+
+function cardConflict(res, error, displayId) {
+  return res.status(409).json({ error, message: CARD_ERROR_MESSAGE[error](displayId) });
+}
+
+/**
+ * True when a write lost the race to the one-open-ticket-per-card index.
+ *
+ * resolveCard's lookup cannot prevent this on its own: two guards scanning the
+ * same card at the same moment both read "free" before either inserts, and
+ * with more than one service instance they are not even serialised by the
+ * event loop. The index is what actually holds — this turns losing to it into
+ * the same readable 409 the pre-check gives, rather than an opaque 500 that
+ * tells a guard nothing about the card in their hand.
+ */
+function isCardRaceLoss(err) {
+  return err?.code === '23505' && err?.constraint === 'idx_valet_card_one_open_ticket';
+}
+
 router.post('/tickets', guard, async (req, res) => {
   const parsed = createTicketSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -176,12 +200,7 @@ router.post('/tickets', guard, async (req, res) => {
       const resolved = await resolveCard(client, communityId, parsed.data.cardCode);
       if (resolved.error) {
         await client.query('ROLLBACK');
-        return res.status(409).json({
-          error: resolved.error,
-          message: resolved.error === 'card_in_use'
-            ? `Card is already on ticket ${resolved.displayId}`
-            : 'That card is not registered to this property',
-        });
+        return cardConflict(res, resolved.error, resolved.displayId);
       }
       card = resolved.card;
     }
@@ -232,6 +251,7 @@ router.post('/tickets', guard, async (req, res) => {
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
+    if (isCardRaceLoss(err)) return cardConflict(res, 'card_in_use');
     throw err;
   } finally {
     client.release();
@@ -309,12 +329,7 @@ router.post('/tickets/:token/card', guard, async (req, res) => {
     const resolved = await resolveCard(client, req.user.community_id, code);
     if (resolved.error) {
       await client.query('ROLLBACK');
-      return res.status(409).json({
-        error: resolved.error,
-        message: resolved.error === 'card_in_use'
-          ? `Card is already on ticket ${resolved.displayId}`
-          : 'That card is not registered to this property',
-      });
+      return cardConflict(res, resolved.error, resolved.displayId);
     }
     await client.query(
       'UPDATE valet_tickets SET card_id = $1, card_code = $2 WHERE id = $3',
@@ -324,6 +339,7 @@ router.post('/tickets/:token/card', guard, async (req, res) => {
     res.json({ cardCode: resolved.card.code });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
+    if (isCardRaceLoss(err)) return cardConflict(res, 'card_in_use');
     throw err;
   } finally {
     client.release();

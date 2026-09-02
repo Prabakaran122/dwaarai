@@ -628,6 +628,51 @@ describe('binding a printed card at intake', () => {
 
     expect(mockClient.query.mock.calls[1][1][0]).toBe(COMMUNITY_ID);
   });
+
+  it('turns losing the race to the index into a 409, not a 500', async () => {
+    // The lookup above cannot catch two guards scanning the same card at the
+    // same instant: both read "free" before either inserts, and across two
+    // service instances the event loop does not serialise them either. The
+    // partial unique index is what actually holds, and a guard who loses to it
+    // must be told the card is taken rather than shown an opaque server error.
+    const violation = Object.assign(new Error('duplicate key'), {
+      code: '23505',
+      constraint: 'idx_valet_card_one_open_ticket',
+    });
+    mockClient.query
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A047' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValueOnce(violation);
+
+    const res = await request(app, 'POST', '/guard/tickets', { token, body: body({ cardCode: 'A047' }) });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('card_in_use');
+    expect(res.body.message).toBeTruthy();
+    expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('does not mistake an unrelated unique violation for a card clash', async () => {
+    // The same INSERT can violate UNIQUE (community_id, display_id). That is a
+    // genuine server fault, and reporting it as "card is taken" would send a
+    // guard hunting for a card that is fine.
+    const violation = Object.assign(new Error('duplicate key'), {
+      code: '23505',
+      constraint: 'valet_tickets_community_id_display_id_key',
+    });
+    mockClient.query
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A047' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValueOnce(violation);
+
+    const res = await request(app, 'POST', '/guard/tickets', { token, body: body({ cardCode: 'A047' }) });
+
+    expect(res.status).toBe(500);
+  });
 });
 
 describe('GET /guard/tickets/search', () => {
