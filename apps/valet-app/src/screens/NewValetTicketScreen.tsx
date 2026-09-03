@@ -30,6 +30,11 @@ const PLATE_LOOKUP_DEBOUNCE_MS = 400;
 
 type Step = 'details' | 'card' | 'photo' | 'condition' | 'done';
 
+/** Drops the scheme so the address reads as something to type, not a link. */
+export function prettyUrl(url?: string | null): string {
+  return String(url || 'dwaarai.com/valet').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+}
+
 /**
  * What the guest leaves with.
  *
@@ -64,11 +69,17 @@ function TicketHandout({
       {/* Scanning only works while the guest is standing here. The code is
           what they leave with — sayable across a desk, writable on a bill, and
           relayable by phone to whoever actually collects the car. */}
+      {/* Sized to be read off a photograph of this screen, not just across a
+          desk. A guest who snaps it needs BOTH halves — the address is useless
+          without the code and the code is useless without the address — so
+          neither is set as a footnote. */}
       {created.claimCode && (
         <View style={styles.claimBlock}>
           <Text style={styles.claimLabel}>{t('valetOrTellGuest')}</Text>
+          <Text style={styles.claimUrl} testID="valet-claim-url">
+            {prettyUrl(created.claimUrl)}
+          </Text>
           <Text style={styles.bigCard} testID="valet-claim-code">{created.claimCode}</Text>
-          <Text style={styles.claimHint}>{t('valetClaimHint')}</Text>
         </View>
       )}
       <Text style={styles.qrCode}>{created.displayId}</Text>
@@ -536,8 +547,11 @@ const styles = StyleSheet.create({
   },
   claimLabel: {
     color: colors.bgPrimary, opacity: 0.55, fontSize: 11, fontWeight: '700',
-    letterSpacing: 1, textTransform: 'uppercase',
+    letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.xs,
   },
-  claimHint: { color: colors.bgPrimary, opacity: 0.5, fontSize: 11, textAlign: 'center' },
+  claimUrl: {
+    color: colors.bgPrimary, opacity: 0.85, fontSize: 17, fontWeight: '700',
+    letterSpacing: 0.3, textAlign: 'center',
+  },
   error: { color: colors.danger, fontSize: 13, textAlign: 'center' },
 });

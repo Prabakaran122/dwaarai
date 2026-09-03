@@ -312,7 +312,7 @@ router.get('/tickets/search', authenticateJWT(['admin']), async (req, res) => {
 
   const rows = await queryRows(
     `SELECT t.display_id, t.session_token, t.plate, t.vehicle_make, t.status,
-            t.created_at, t.closed_at, t.disputed, t.card_code,
+            t.created_at, t.closed_at, t.disputed, t.card_code, t.claim_code,
             cg.name AS created_guard_name
        FROM valet_tickets t
        JOIN residents cg ON cg.id = t.created_by_guard_id
@@ -335,6 +335,7 @@ router.get('/tickets/search', authenticateJWT(['admin']), async (req, res) => {
       closedAt: r.closed_at,
       disputed: r.disputed,
       cardCode: r.card_code,
+      claimCode: r.claim_code,
       createdGuardName: r.created_guard_name,
     })),
   });

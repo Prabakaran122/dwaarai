@@ -141,10 +141,15 @@ export default function ValetSearchPage() {
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
                       {t.vehicleMake}
-                      {/* The card code is what the guest is physically holding,
-                          so it leads over the internal ticket id. */}
                       {' · '}
-                      {t.cardCode ? `Card ${t.cardCode}` : t.displayId}
+                      {/* Whichever the guest is actually holding: plastic if
+                          they were given a card, otherwise the code they were
+                          told. A caller who has lost it needs it findable. */}
+                      {t.cardCode
+                        ? `Card ${t.cardCode}`
+                        : t.claimCode
+                          ? `Code ${t.claimCode}`
+                          : t.displayId}
                       {' · in '}{when(t.createdAt)}
                       {t.closedAt && ` · out ${when(t.closedAt)}`}
                     </p>

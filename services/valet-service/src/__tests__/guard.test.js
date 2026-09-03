@@ -874,3 +874,50 @@ describe('recording how the guard identified the guest', () => {
     expect(metadataFor('final_closed').verification).toBe('photo');
   });
 });
+
+
+describe('the claim code a guest carries away', () => {
+  function mockCreate() {
+    mockClient.query.mockReset();
+    mockClient.query
+      .mockResolvedValueOnce({})                              // BEGIN
+      .mockResolvedValueOnce({})                              // advisory lock
+      .mockResolvedValueOnce({ rows: [] })                    // display id
+      .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })   // insert
+      .mockResolvedValueOnce({})                              // logEvent
+      .mockResolvedValueOnce({});                             // COMMIT
+  }
+  const body = () => ({
+    plate: 'KA01AA1111', vehicleMake: 'Swift',
+    stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+  });
+
+  it('issues one on every ticket, card or no card', async () => {
+    mockCreate();
+
+    const res = await request(app, 'POST', '/guard/tickets', { token, body: body() });
+
+    expect(res.body.claimCode).toMatch(/^[ABCDEFGHJKLMNPQRTUVWXYZ23456789]{6}$/);
+  });
+
+  it('stores it on the ticket row', async () => {
+    mockCreate();
+
+    await request(app, 'POST', '/guard/tickets', { token, body: body() });
+
+    const params = mockClient.query.mock.calls[3][1];
+    expect(params[9]).toBeNull();                      // card_code, none here
+    expect(params[10]).toMatch(/^[A-Z0-9]{6}$/);       // claim_code
+  });
+
+  it('tells the app where the guest should type it', async () => {
+    // The app only knows the API base. A guessed public URL is exactly what
+    // shipped a guard APK pointing at a dead host.
+    mockCreate();
+
+    const res = await request(app, 'POST', '/guard/tickets', { token, body: body() });
+
+    expect(res.body.claimUrl).toBeTruthy();
+    expect(res.body.claimUrl).not.toContain('/v/');
+  });
+});

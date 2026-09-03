@@ -275,6 +275,11 @@ router.post('/tickets', guard, async (req, res) => {
       guestUrl,
       cardCode: card ? card.code : null,
       claimCode,
+      // Where the guest types that code. Sent by the server rather than
+      // assembled in the app: the app only knows the API base, and a guessed
+      // public URL is exactly the kind of thing that ships pointing at a dead
+      // host.
+      claimUrl: baseUrl,
       qrDataUrl: await toDataUrl(guestUrl),
     });
   } catch (err) {

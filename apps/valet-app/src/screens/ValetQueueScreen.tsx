@@ -184,7 +184,12 @@ export default function ValetQueueScreen({
                   </Text>
                 </View>
                 <Text style={styles.meta}>
-                  {item.vehicleMake} · {item.cardCode ? `Card ${item.cardCode}` : item.displayId} · {minutesSince(item.createdAt)}m
+                  {/* The guest is holding one of these, so lead with whichever
+                      it is. A guest who phones saying they have lost their
+                      code needs the guard to find it here. */}
+                  {item.vehicleMake} · {item.cardCode
+                    ? `Card ${item.cardCode}`
+                    : item.claimCode || item.displayId} · {minutesSince(item.createdAt)}m
                   {item.currentGuardName ? ` · ${item.currentGuardName}` : ''}
                 </Text>
                 {item.disputed && (

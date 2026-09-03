@@ -238,3 +238,36 @@ describe('printed card on the queue row', () => {
     expect(getByText(/SRT-0001/)).toBeTruthy();
   });
 });
+
+describe('finding the code a guest was given', () => {
+  it('shows the claim code when there is no card', () => {
+    // A guest who phones having lost their code needs the guard to find it,
+    // and the handout is long gone by then.
+    useValetStore.setState({
+      tickets: [ticket({ id: 'a', cardCode: null, claimCode: '4K7QP2' })], search: '',
+    });
+    const { getByText } = render(<ValetQueueScreen />);
+
+    expect(getByText(/4K7QP2/)).toBeTruthy();
+  });
+
+  it('prefers the card when one is bound — that is what they are holding', () => {
+    useValetStore.setState({
+      tickets: [ticket({ id: 'a', cardCode: 'A047', claimCode: '4K7QP2' })], search: '',
+    });
+    const { getByText, queryByText } = render(<ValetQueueScreen />);
+
+    expect(getByText(/Card A047/)).toBeTruthy();
+    expect(queryByText(/4K7QP2/)).toBeNull();
+  });
+
+  it('falls back to the ticket id when there is neither', () => {
+    useValetStore.setState({
+      tickets: [ticket({ id: 'a', cardCode: null, claimCode: null, displayId: 'SRT-0001' })],
+      search: '',
+    });
+    const { getByText } = render(<ValetQueueScreen />);
+
+    expect(getByText(/SRT-0001/)).toBeTruthy();
+  });
+});

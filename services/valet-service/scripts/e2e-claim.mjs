@@ -73,6 +73,20 @@ check('a misread O for Q or I for J still resolves',
 const guestView = await api(`/guest/tickets/${resolved.body.sessionToken}`);
 check('and the guest can drive the flow from there', guestView.body?.plate === 'KA 01 CC 1111');
 
+console.log('\n--- the guard can find the code again later ---');
+// A guest phones having lost it. The handout is long gone, so the code has to
+// be findable from the queue and from the operator's search.
+const queue = await api('/guard/tickets', { token: A.guard });
+const inQueue = queue.body?.tickets?.find((t) => t.sessionToken === t1.body.sessionToken);
+check('the queue carries the claim code', inQueue?.claimCode === claim, JSON.stringify(inQueue?.claimCode));
+
+const found = await api('/admin/tickets/search?plate=CC1111', { token: A.admin });
+check('the operator search carries it too',
+  found.body?.tickets?.[0]?.claimCode === claim, JSON.stringify(found.body?.tickets?.[0]));
+
+check('the create response says where the guest should type it',
+  typeof t1.body?.claimUrl === 'string' && t1.body.claimUrl.includes('/valet'), t1.body?.claimUrl);
+
 console.log('\n--- the code dies with the ticket ---');
 await api(`/guard/tickets/${t1.body.sessionToken}/expire`, { method: 'POST', token: A.guard });
 const afterClose = await api(`/guest/claim/${claim}`);

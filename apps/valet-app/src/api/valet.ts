@@ -55,6 +55,8 @@ export interface CreatedTicket {
   cardCode: string | null;
   /** Short code the guest can type at /valet later. Issued for every ticket. */
   claimCode: string | null;
+  /** Where they type it. From the server, never guessed from the API base. */
+  claimUrl?: string;
   qrDataUrl: string;
 }
 

@@ -98,6 +98,8 @@ export interface ValetTicket {
   disputed: boolean;
   /** The printed card bound to this ticket, or null for a screen-QR ticket. */
   cardCode: string | null;
+  /** The code the guest can type at /valet. Issued for every ticket. */
+  claimCode: string | null;
 }
 
 export interface ValetTicketDetail extends ValetTicket {
@@ -205,6 +207,7 @@ export interface SearchResult {
   closedAt: string | null;
   disputed: boolean;
   cardCode: string | null;
+  claimCode: string | null;
   createdGuardName: string;
 }
 
