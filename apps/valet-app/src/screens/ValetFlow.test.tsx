@@ -23,6 +23,7 @@ function ticket(overrides: Partial<ValetTicket> = {}): ValetTicket {
     stayEndAt: '2026-09-01T00:00:00Z', createdAt: new Date().toISOString(),
     closedAt: null, createdGuardName: 'Ramesh', currentGuardName: null,
     etaMinutes: null, enRouteStartedAt: null, disputed: false, cardCode: null,
+    claimCode: null,
     ...overrides,
   };
 }

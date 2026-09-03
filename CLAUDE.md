@@ -100,7 +100,7 @@ There is no shared Node package for cross-service code — each service duplicat
 Six CDK stacks wired together in `bin/app.ts`: `NetworkStack` (VPC/cluster) → `DataStack` (RDS + Redis + S3, depends on VPC) → `AuthStack` (Cognito) → `IotStack` (AWS IoT Core, replaces Mosquitto in prod) → `ServicesStack` (ECS services, depends on all of the above) → `FrontendStack`. Region is hardcoded to `ap-south-1`.
 
 ### Database migrations
-Sequential, numbered SQL files in `services/api-gateway/migrations/` (`001_core.sql` ... `045_valet_plate_search.sql`), applied in order by `src/db/migrate.js` and tracked so re-application is a no-op (CI enforces this in the `migrations` job). This is the only migration path in the repo — other Node services read/write the same Postgres database but don't own migrations themselves.
+Sequential, numbered SQL files in `services/api-gateway/migrations/` (`001_core.sql` ... `046_valet_claim_codes.sql`), applied in order by `src/db/migrate.js` and tracked so re-application is a no-op (CI enforces this in the `migrations` job). This is the only migration path in the repo — other Node services read/write the same Postgres database but don't own migrations themselves.
 
 ### Valet (Sarthi)
 Ported from a standalone Express + SQLite prototype into this monorepo. Three
@@ -147,6 +147,24 @@ is not replaced: a venue with no card stock behaves exactly as before.
   byte-identical 404 to an unknown one, so probing cannot enumerate stock.
 - Retiring a card deactivates rather than deletes: every ticket it has been on
   references it, and that history is the audit trail.
+
+**A card's QR must carry the venue** — `/valet/c/<community uuid>/<code>`.
+Card codes are unique per *venue*, deliberately, because every box of printed
+cards starts at A001 and two properties will own the same codes without
+coordinating. The first version resolved a bare code globally with `LIMIT 1`,
+so once two venues each had A001 on an open ticket a guest could scan their own
+card and be shown a stranger's vehicle at a property they had never visited.
+`scripts/e2e-claim.mjs` reproduces the two-venue collision and pins the scoped
+resolution.
+
+**Claim codes (046)** are what a guest walks away with when there is no card.
+Scanning the screen QR only works while they are standing at the desk, and
+photographing it barely helps — reading that picture back needs a second
+device. Every ticket issues a six-character code the guard can say out loud;
+the guest enters it at `/valet`. Unlike a card code it is globally unique
+among open tickets, because the guest types it with no venue context. The
+alphabet omits O/I/S/0/1 and the lookup folds those onto their survivors, since
+a guest typing one has misread a character that IS in the alphabet.
 
 **Plate search** matches anywhere in the plate, not just the start — guests
 quote the last four digits far more often than the state code. The trigram

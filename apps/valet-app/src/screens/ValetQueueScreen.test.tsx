@@ -24,6 +24,7 @@ function ticket(overrides: Partial<ValetTicket> = {}): ValetTicket {
     enRouteStartedAt: null,
     disputed: false,
     cardCode: null,
+    claimCode: null,
     ...overrides,
   };
 }
@@ -230,7 +231,8 @@ describe('printed card on the queue row', () => {
   });
 
   it('falls back to the ticket id when there is no card', () => {
-    useValetStore.setState({ tickets: [ticket({ id: 'a', cardCode: null, displayId: 'SRT-0001' })], search: '' });
+    useValetStore.setState({ tickets: [ticket({ id: 'a', cardCode: null,
+    claimCode: null, displayId: 'SRT-0001' })], search: '' });
     const { getByText } = render(<ValetQueueScreen />);
 
     expect(getByText(/SRT-0001/)).toBeTruthy();

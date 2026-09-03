@@ -21,6 +21,7 @@ function ticket(overrides: Partial<ValetTicket> = {}): ValetTicket {
     enRouteStartedAt: null,
     disputed: false,
     cardCode: null,
+    claimCode: null,
     ...overrides,
   };
 }

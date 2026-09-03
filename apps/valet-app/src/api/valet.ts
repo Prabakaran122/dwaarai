@@ -42,6 +42,8 @@ export interface ValetTicket {
   disputed: boolean;
   /** The printed card bound to this ticket, or null for a screen-QR ticket. */
   cardCode: string | null;
+  /** Short code the guest can type at /valet later. */
+  claimCode: string | null;
 }
 
 export interface CreatedTicket {
@@ -51,6 +53,8 @@ export interface CreatedTicket {
   guestUrl: string;
   /** Null when no printed card was scanned — the screen QR is then the ticket. */
   cardCode: string | null;
+  /** Short code the guest can type at /valet later. Issued for every ticket. */
+  claimCode: string | null;
   qrDataUrl: string;
 }
 

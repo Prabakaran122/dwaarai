@@ -30,6 +30,7 @@ const createdTicket = {
   guestUrl: 'https://dwaarai.com/valet/v/tok-9',
   qrDataUrl: 'data:image/png;base64,QR',
   cardCode: null as string | null,
+  claimCode: null as string | null,
 };
 
 beforeEach(() => {
@@ -219,6 +220,9 @@ describe('intake condition capture', () => {
 
 
 describe('binding a printed card at intake', () => {
+  // Card QRs carry the venue: codes are unique per venue, not globally.
+  const CARD_QR = 'https://dwaarai.com/valet/c/978aa095-6aa9-45b6-b6d5-d3a915dfca38/A047';
+
   it('does not force a card: a venue with no stock takes cars in as before', async () => {
     const screen = render(<NewValetTicketScreen />);
 
@@ -242,7 +246,7 @@ describe('binding a printed card at intake', () => {
 
     await act(async () => {
       screen.getByTestId('card-camera').props.onBarcodeScanned({
-        data: 'https://dwaarai.com/valet/c/A047',
+        data: CARD_QR,
       });
     });
 
@@ -255,7 +259,7 @@ describe('binding a printed card at intake', () => {
     fireEvent.press(screen.getByTestId('valet-scan-card'));
     await act(async () => {
       screen.getByTestId('card-camera').props.onBarcodeScanned({
-        data: 'https://dwaarai.com/valet/c/A047',
+        data: CARD_QR,
       });
     });
 
@@ -296,7 +300,7 @@ describe('binding a printed card at intake', () => {
     fireEvent.press(screen.getByTestId('valet-scan-card'));
     await act(async () => {
       screen.getByTestId('card-camera').props.onBarcodeScanned({
-        data: 'https://dwaarai.com/valet/c/A047',
+        data: CARD_QR,
       });
     });
 
@@ -516,5 +520,56 @@ describe('opening the card scanner', () => {
     fireEvent.press(screen.getByTestId('valet-scan-card'));
 
     expect(request).not.toHaveBeenCalled();
+  });
+});
+
+describe('what the guest leaves with when there is no card', () => {
+  // Scanning the screen QR only works while the guest is standing there.
+  // Photographing it barely helps — reading that picture back needs a second
+  // device — so without a card they had no route to their own vehicle.
+  it('shows a code the guest can take away', async () => {
+    (api.createTicket as jest.Mock).mockResolvedValue({
+      data: { ...createdTicket, cardCode: null, claimCode: '4K7QP2' },
+    });
+    const screen = render(<NewValetTicketScreen />);
+
+    await fillDetails(screen);
+
+    expect(screen.getByTestId('valet-claim-code').props.children).toBe('4K7QP2');
+  });
+
+  it('tells the valet where the guest should enter it', async () => {
+    (api.createTicket as jest.Mock).mockResolvedValue({
+      data: { ...createdTicket, cardCode: null, claimCode: '4K7QP2' },
+    });
+    const screen = render(<NewValetTicketScreen />);
+
+    await fillDetails(screen);
+
+    expect(screen.getByText(/dwaarai\.com\/valet/)).toBeTruthy();
+  });
+
+  it('leads with the card when one is bound, not the code', async () => {
+    // Plastic in hand beats a code to remember.
+    (api.createTicket as jest.Mock).mockResolvedValue({
+      data: { ...createdTicket, cardCode: 'A047', claimCode: '4K7QP2' },
+    });
+    const screen = render(<NewValetTicketScreen />);
+
+    await fillDetails(screen);
+
+    expect(screen.getByTestId('valet-handout-code').props.children).toBe('A047');
+    expect(screen.queryByTestId('valet-claim-code')).toBeNull();
+  });
+
+  it('still renders the QR alongside the code', async () => {
+    (api.createTicket as jest.Mock).mockResolvedValue({
+      data: { ...createdTicket, cardCode: null, claimCode: '4K7QP2' },
+    });
+    const screen = render(<NewValetTicketScreen />);
+
+    await fillDetails(screen);
+
+    expect(screen.getByTestId('valet-qr-card')).toBeTruthy();
   });
 });

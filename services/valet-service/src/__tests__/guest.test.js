@@ -301,11 +301,17 @@ describe('POST /guest/tickets/:token/discount-optin', () => {
 // Physical card resolution — what /valet/c/<code> hits
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('GET /guest/cards/:code', () => {
+describe('GET /guest/cards/:communityId/:code (legacy shape)', () => {
+  // clearAllMocks() clears call logs but not queued mockResolvedValueOnce
+  // values, and the tests below deliberately return early — an id that is not
+  // a uuid, a code too short to be one — leaving theirs unconsumed for the
+  // next test.
+  beforeEach(() => { queryOne.mockReset(); });
+
   it('resolves a bound card to its ticket', async () => {
     queryOne.mockResolvedValueOnce({ session_token: SESSION_TOKEN });
 
-    const res = await request(app, 'GET', '/guest/cards/A047');
+    const res = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A047`);
 
     expect(res.status).toBe(200);
     expect(res.body.sessionToken).toBe(SESSION_TOKEN);
@@ -316,7 +322,7 @@ describe('GET /guest/cards/:code', () => {
     // so this endpoint must not become a way to read someone's car details.
     queryOne.mockResolvedValueOnce({ session_token: SESSION_TOKEN });
 
-    const res = await request(app, 'GET', '/guest/cards/A047');
+    const res = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A047`);
 
     expect(Object.keys(res.body)).toEqual(['sessionToken']);
     expect(res.body.plate).toBeUndefined();
@@ -325,16 +331,16 @@ describe('GET /guest/cards/:code', () => {
   it('matches a card code case-insensitively — guests read them off plastic', async () => {
     queryOne.mockResolvedValueOnce({ session_token: SESSION_TOKEN });
 
-    await request(app, 'GET', '/guest/cards/a047');
+    await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/a047`);
 
-    expect(queryOne.mock.calls[0][1]).toEqual(['a047']);
-    expect(queryOne.mock.calls[0][0]).toContain('UPPER(c.code) = UPPER($1)');
+    expect(queryOne.mock.calls[0][1]).toEqual([COMMUNITY_ID, 'a047']);
+    expect(queryOne.mock.calls[0][0]).toContain('UPPER(c.code) = UPPER($2)');
   });
 
   it('only ever resolves a card on an OPEN ticket', async () => {
     queryOne.mockResolvedValueOnce(null);
 
-    await request(app, 'GET', '/guest/cards/A047');
+    await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A047`);
 
     // A card handed to tomorrow's guest must never surface yesterday's car.
     expect(queryOne.mock.calls[0][0]).toContain("status NOT IN ('final_closed', 'expired')");
@@ -342,13 +348,116 @@ describe('GET /guest/cards/:code', () => {
 
   it('gives an unknown code and a free card the identical 404', async () => {
     queryOne.mockResolvedValueOnce(null);
-    const unknown = await request(app, 'GET', '/guest/cards/ZZZZ');
+    const unknown = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/ZZZZ`);
 
     queryOne.mockResolvedValueOnce(null);
-    const free = await request(app, 'GET', '/guest/cards/A047');
+    const free = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A047`);
 
     // Probing codes must reveal neither which exist nor which are in use.
     expect(unknown.status).toBe(404);
     expect(unknown.body).toEqual(free.body);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Getting back in without holding anything
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('GET /guest/cards/:communityId/:code', () => {
+  // clearAllMocks() clears call logs but not queued mockResolvedValueOnce
+  // values, and the tests below deliberately return early — an id that is not
+  // a uuid, a code too short to be one — leaving theirs unconsumed for the
+  // next test.
+  beforeEach(() => { queryOne.mockReset(); });
+
+  it('scopes the lookup to the venue on the card', async () => {
+    // Card codes are unique per venue, never globally — a box of cards starts
+    // at A001 everywhere. An unscoped lookup would match whichever property
+    // the database returned first and could show a guest a stranger's vehicle.
+    queryOne.mockResolvedValueOnce({ session_token: 'tok-1' });
+
+    const res = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A001`);
+
+    expect(res.status).toBe(200);
+    const [sql, params] = queryOne.mock.calls[0];
+    expect(sql).toContain('c.community_id = $1');
+    expect(params[0]).toBe(COMMUNITY_ID);
+  });
+
+  it('refuses a venue that is not a real id, without querying', async () => {
+    const res = await request(app, 'GET', '/guest/cards/not-a-uuid/A001');
+
+    expect(res.status).toBe(404);
+    expect(queryOne).not.toHaveBeenCalled();
+  });
+
+  it('gives an unbound card the same answer as an unknown one', async () => {
+    queryOne.mockResolvedValueOnce(null);
+
+    const res = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A999`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('not_found');
+  });
+});
+
+describe('GET /guest/claim/:code', () => {
+  // clearAllMocks() clears call logs but not queued mockResolvedValueOnce
+  // values, and the tests below deliberately return early — an id that is not
+  // a uuid, a code too short to be one — leaving theirs unconsumed for the
+  // next test.
+  beforeEach(() => { queryOne.mockReset(); });
+
+  it('resolves a typed code to its ticket', async () => {
+    queryOne.mockResolvedValueOnce({ session_token: 'tok-9' });
+
+    const res = await request(app, 'GET', '/guest/claim/4K7QP2');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ sessionToken: 'tok-9' });
+  });
+
+  it('returns nothing but the token', async () => {
+    // The code is short and typed; it must never become a way to read a
+    // vehicle's details.
+    queryOne.mockResolvedValueOnce({ session_token: 'tok-9' });
+
+    const res = await request(app, 'GET', '/guest/claim/4K7QP2');
+
+    expect(Object.keys(res.body)).toEqual(['sessionToken']);
+  });
+
+  it('only matches an open ticket', async () => {
+    queryOne.mockResolvedValueOnce(null);
+
+    await request(app, 'GET', '/guest/claim/4K7QP2');
+
+    expect(queryOne.mock.calls[0][0]).toContain("status NOT IN ('final_closed', 'expired')");
+  });
+
+  it('forgives the characters guests misread', async () => {
+    // O for Q and I for J are the whole reason those letters are not in the
+    // alphabet; a guest typing one has misread a character that is.
+    queryOne.mockResolvedValueOnce({ session_token: 'tok-9' });
+
+    await request(app, 'GET', '/guest/claim/4k7op2');
+
+    expect(queryOne.mock.calls[0][1][0]).toBe('4K7QP2');
+  });
+
+  it('refuses a code too short to be one, without querying', async () => {
+    const res = await request(app, 'GET', '/guest/claim/AB');
+
+    expect(res.status).toBe(404);
+    expect(queryOne).not.toHaveBeenCalled();
+  });
+
+  it('gives a closed ticket the same answer as an unknown code', async () => {
+    queryOne.mockResolvedValueOnce(null);
+
+    const res = await request(app, 'GET', '/guest/claim/ZZZZZZ');
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('not_found');
   });
 });

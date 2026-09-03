@@ -1,14 +1,49 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { VALET_BASE } from '@/lib/api';
+
 /**
- * The bare /valet index.
+ * Where a guest lands with nothing but a code.
  *
- * Nobody reaches this in normal use: every real entry point is /valet/v/<token>,
- * encoded in the QR printed on a physical valet card. Someone who lands here
- * typed the URL, so the page's whole job is to say "there is nothing to do
- * here, and that is not a fault" — the previous copy ("Scan your valet card to
- * continue") read as an instruction this page would carry out, which made an
- * empty screen look like a scanner that had failed to load.
+ * Without a printed card, the only way into a ticket used to be scanning the
+ * QR off the guard's screen at that exact moment. Photographing it barely
+ * helped — reading that picture back needs a second device — so a guest who
+ * walked away had no route to their own vehicle at all.
+ *
+ * The claim code is the cloakroom ticket number: short enough to say across a
+ * desk, write on a bill, or relay down the phone to whoever is actually
+ * collecting the car.
  */
-export default function Index() {
+
+export default function ClaimPage() {
+  const router = useRouter();
+  const [code, setCode] = useState('');
+  const [state, setState] = useState<'idle' | 'checking' | 'unknown'>('idle');
+
+  const cleaned = code.replace(/[^A-Za-z0-9]/g, '');
+  const ready = cleaned.length >= 4;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!ready || state === 'checking') return;
+
+    setState('checking');
+    try {
+      const res = await fetch(`${VALET_BASE}/guest/claim/${encodeURIComponent(cleaned)}`, {
+        cache: 'no-store',
+      });
+      if (!res.ok) throw new Error('unresolved');
+      const { sessionToken } = await res.json();
+      // Replace, not push: this page is a doorway, and Back landing on it
+      // again with the code still typed reads as the code having failed.
+      router.replace(`/v/${sessionToken}`);
+    } catch {
+      setState('unknown');
+    }
+  }
+
   return (
     <main className="min-h-screen flex items-center justify-center px-6 py-12">
       <div className="w-full max-w-sm text-center">
@@ -22,8 +57,6 @@ export default function Index() {
           strokeLinejoin="round"
           aria-hidden="true"
         >
-          {/* A QR card, not a camera: the scanning happens on the guest's own
-              phone, pointed at the printed card. */}
           <rect x="8" y="12" width="48" height="40" rx="5" />
           <rect x="16" y="20" width="10" height="10" rx="1.5" />
           <rect x="38" y="20" width="10" height="10" rx="1.5" />
@@ -31,25 +64,54 @@ export default function Index() {
           <path d="M38 38h4M46 38h2M38 44h10" />
         </svg>
 
-        <h1 className="text-lg font-semibold text-white">
-          Your valet card opens this page
-        </h1>
-
+        <h1 className="text-lg font-semibold text-white">Find your vehicle</h1>
         <p className="mt-3 text-sm leading-relaxed text-white/60">
-          Point your phone&apos;s camera at the QR code on the card the valet
-          handed you. It opens your vehicle&apos;s page, where you can track it
-          and request it when you&apos;re ready.
+          Enter the code the valet gave you. If you were handed a card, point
+          your phone&apos;s camera at the QR on it instead.
         </p>
 
-        <p className="mt-6 text-xs text-white/35">
-          There is nothing to scan or sign in to on this screen.
-        </p>
+        <form onSubmit={submit} className="mt-8">
+          <label htmlFor="claim" className="sr-only">
+            Your code
+          </label>
+          <input
+            id="claim"
+            value={code}
+            onChange={(e) => {
+              setCode(e.target.value);
+              if (state === 'unknown') setState('idle');
+            }}
+            autoFocus
+            autoCapitalize="characters"
+            autoComplete="off"
+            spellCheck={false}
+            inputMode="text"
+            placeholder="4K7QP2"
+            aria-invalid={state === 'unknown'}
+            className="w-full px-4 py-4 rounded-xl bg-white/5 border border-white/15 text-center font-mono text-2xl tracking-[0.3em] text-white uppercase placeholder:text-white/25 placeholder:tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent"
+          />
+
+          <button
+            type="submit"
+            disabled={!ready || state === 'checking'}
+            className="mt-4 w-full py-4 rounded-xl bg-teal-500 text-slate-900 font-semibold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-teal-400 transition-colors"
+          >
+            {state === 'checking' ? 'Checking…' : 'Find my vehicle'}
+          </button>
+        </form>
+
+        {state === 'unknown' && (
+          <p className="mt-5 text-sm text-amber-300/90" role="alert">
+            That code doesn&apos;t match a vehicle here right now. It may
+            already have been checked out — please check the code, or ask the
+            valet desk.
+          </p>
+        )}
 
         <div className="mt-10 pt-6 border-t border-white/10">
           <p className="text-xs text-white/40">
-            Lost your card, or the code won&apos;t open?
-            <br />
-            Please ask the valet desk — they can look up your vehicle.
+            No code or card? The valet desk can look your vehicle up by its
+            number plate.
           </p>
         </div>
       </div>

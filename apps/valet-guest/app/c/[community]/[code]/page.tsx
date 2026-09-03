@@ -5,7 +5,12 @@ import { useParams, useRouter } from 'next/navigation';
 import { VALET_BASE } from '@/lib/api';
 
 /**
- * What a printed valet card's QR opens: /valet/c/<code>.
+ * What a printed valet card's QR opens: /valet/c/<venue>/<code>.
+ *
+ * The venue is in the path because card codes are unique per venue and not
+ * globally — a box of cards starts at A001 everywhere, so a bare code would
+ * resolve against whichever property the database returned first and could
+ * show a guest a stranger's vehicle.
  *
  * The card carries only the short code, never the session token. This page
  * exchanges one for the other and forwards to the real ticket page, so the
@@ -20,6 +25,7 @@ export default function CardPage() {
   const params = useParams();
   const router = useRouter();
   const code = String(params.code || '');
+  const community = String(params.community || '');
   const [state, setState] = useState<'resolving' | 'unknown'>('resolving');
 
   useEffect(() => {
@@ -27,9 +33,10 @@ export default function CardPage() {
 
     (async () => {
       try {
-        const res = await fetch(`${VALET_BASE}/guest/cards/${encodeURIComponent(code)}`, {
-          cache: 'no-store',
-        });
+        const res = await fetch(
+          `${VALET_BASE}/guest/cards/${encodeURIComponent(community)}/${encodeURIComponent(code)}`,
+          { cache: 'no-store' }
+        );
         if (!res.ok) throw new Error('unresolved');
         const { sessionToken } = await res.json();
         if (cancelled) return;
@@ -42,7 +49,7 @@ export default function CardPage() {
     })();
 
     return () => { cancelled = true; };
-  }, [code, router]);
+  }, [code, community, router]);
 
   return (
     <main className="min-h-screen flex items-center justify-center px-6 py-12">

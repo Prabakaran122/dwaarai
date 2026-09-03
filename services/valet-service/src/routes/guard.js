@@ -4,6 +4,7 @@ import { z } from 'zod';
 import pool, { query, queryOne, queryRows } from '../db.js';
 import { newSessionToken, nextDisplayId } from '../lib/tokens.js';
 import { normalizePlate } from '../lib/plate.js';
+import { newClaimCode } from '../lib/claim-code.js';
 import { toDataUrl } from '../lib/qr.js';
 import { logEvent } from '../lib/events.js';
 import { schedulePhotoDeletion, scheduleConditionMediaDeletion } from '../lib/expiry.js';
@@ -65,6 +66,7 @@ function ticketView(t) {
     enRouteStartedAt: t.en_route_started_at,
     disputed: t.disputed,
     cardCode: t.card_code ?? null,
+    claimCode: t.claim_code ?? null,
   };
 }
 
@@ -177,6 +179,11 @@ function isCardRaceLoss(err) {
   return err?.code === '23505' && err?.constraint === 'idx_valet_card_one_open_ticket';
 }
 
+/** Two tickets drew the same claim code. Vanishingly rare, but not a fault. */
+function isClaimCodeCollision(err) {
+  return err?.code === '23505' && err?.constraint === 'idx_valet_claim_code_open';
+}
+
 router.post('/tickets', guard, async (req, res) => {
   const parsed = createTicketSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -232,15 +239,21 @@ router.post('/tickets', guard, async (req, res) => {
     );
     const displayId = nextDisplayId(last.rows[0]?.display_id);
     const sessionToken = newSessionToken();
+    // What the guest walks away with when there is no card in their hand.
+    // Issued for every ticket, not only card-less ones: a card can be bound
+    // after the fact, and a code the guest already wrote down must keep
+    // working. Uniqueness is enforced by the index; a collision at ~729
+    // million combinations is rare enough to retry rather than design around.
+    const claimCode = newClaimCode();
 
     const inserted = await client.query(
       `INSERT INTO valet_tickets
          (community_id, display_id, session_token, plate, plate_normalized,
-          vehicle_make, stay_end_at, status, created_by_guard_id, card_id, card_code)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'parked', $8, $9, $10)
+          vehicle_make, stay_end_at, status, created_by_guard_id, card_id, card_code, claim_code)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'parked', $8, $9, $10, $11)
        RETURNING id`,
       [communityId, displayId, sessionToken, plate, normalizePlate(plate), vehicleMake, stayEnd.toISOString(), req.user.sub,
-       card ? card.id : null, card ? card.code : null]
+       card ? card.id : null, card ? card.code : null, claimCode]
     );
     const ticketId = inserted.rows[0].id;
 
@@ -261,6 +274,7 @@ router.post('/tickets', guard, async (req, res) => {
       sessionToken,
       guestUrl,
       cardCode: card ? card.code : null,
+      claimCode,
       qrDataUrl: await toDataUrl(guestUrl),
     });
   } catch (err) {

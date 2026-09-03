@@ -61,6 +61,16 @@ function TicketHandout({
     <View style={styles.qrCard} testID="valet-qr-card">
       <Text style={styles.qrTitle}>{t('valetShowQr')}</Text>
       <Image source={{ uri: created.qrDataUrl }} style={styles.qr} />
+      {/* Scanning only works while the guest is standing here. The code is
+          what they leave with — sayable across a desk, writable on a bill, and
+          relayable by phone to whoever actually collects the car. */}
+      {created.claimCode && (
+        <View style={styles.claimBlock}>
+          <Text style={styles.claimLabel}>{t('valetOrTellGuest')}</Text>
+          <Text style={styles.bigCard} testID="valet-claim-code">{created.claimCode}</Text>
+          <Text style={styles.claimHint}>{t('valetClaimHint')}</Text>
+        </View>
+      )}
       <Text style={styles.qrCode}>{created.displayId}</Text>
     </View>
   );
@@ -520,5 +530,14 @@ const styles = StyleSheet.create({
     color: colors.bgPrimary, fontWeight: '700', fontSize: 44, letterSpacing: 2,
   },
   qrSmall: { width: 140, height: 140 },
+  claimBlock: {
+    alignItems: 'center', gap: spacing.xs, paddingTop: spacing.md,
+    borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.08)', alignSelf: 'stretch',
+  },
+  claimLabel: {
+    color: colors.bgPrimary, opacity: 0.55, fontSize: 11, fontWeight: '700',
+    letterSpacing: 1, textTransform: 'uppercase',
+  },
+  claimHint: { color: colors.bgPrimary, opacity: 0.5, fontSize: 11, textAlign: 'center' },
   error: { color: colors.danger, fontSize: 13, textAlign: 'center' },
 });

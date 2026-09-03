@@ -82,6 +82,8 @@ export const translations: Dict = {
   valetCameraBlocked: { en: 'Camera is blocked for Sarthi. Turn it on in Settings.', hi: 'सारथी के लिए कैमरा बंद है। सेटिंग्स में चालू करें।', kn: 'ಸಾರಥಿಗೆ ಕ್ಯಾಮೆರಾ ನಿರ್ಬಂಧಿಸಲಾಗಿದೆ. ಸೆಟ್ಟಿಂಗ್‌ಗಳಲ್ಲಿ ಆನ್ ಮಾಡಿ.' },
   valetOpenSettings: { en: 'Open settings', hi: 'सेटिंग्स खोलें', kn: 'ಸೆಟ್ಟಿಂಗ್‌ಗಳನ್ನು ತೆರೆಯಿರಿ' },
   valetCameraFailed: { en: 'The camera did not open', hi: 'कैमरा नहीं खुला', kn: 'ಕ್ಯಾಮೆರಾ ತೆರೆಯಲಿಲ್ಲ' },
+  valetOrTellGuest: { en: 'Or tell the guest this code', hi: 'या मेहमान को यह कोड बताएं', kn: 'ಅಥವಾ ಅತಿಥಿಗೆ ಈ ಕೋಡ್ ಹೇಳಿ' },
+  valetClaimHint: { en: 'They can enter it at dwaarai.com/valet later', hi: 'वे बाद में dwaarai.com/valet पर डाल सकते हैं', kn: 'ಅವರು ನಂತರ dwaarai.com/valet ನಲ್ಲಿ ನಮೂದಿಸಬಹುದು' },
 };
 
 export function translate(key: string, lang: Lang): string {

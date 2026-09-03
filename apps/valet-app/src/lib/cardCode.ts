@@ -19,12 +19,20 @@ export function parseCardCode(scanned: string): string | null {
   const raw = String(scanned ?? '').trim();
   if (!raw) return null;
 
-  // A guest URL, from the card's own QR.
-  const fromUrl = raw.match(/\/c\/([^/?#\s]+)/i);
-  if (fromUrl) {
-    const code = decodeURIComponent(fromUrl[1]).trim().toUpperCase();
+  // A card QR: /valet/c/<venue uuid>/<code>. The venue is in the path because
+  // card codes are unique per venue and not globally — two properties both own
+  // an "A001", and a bare code would resolve to whichever the database
+  // returned first, showing a guest a stranger's vehicle.
+  const scoped = raw.match(/\/c\/[0-9a-f-]{36}\/([^/?#\s]+)/i);
+  if (scoped) {
+    const code = decodeURIComponent(scoped[1]).trim().toUpperCase();
     return CODE.test(code) ? code : null;
   }
+
+  // Any other /c/ shape is not a card QR this build understands. Refusing
+  // beats guessing: the pre-venue format would bind a code that resolves
+  // against the wrong property.
+  if (/\/c\//i.test(raw)) return null;
 
   // Anything else that looks like a URL is some other QR entirely — a wifi
   // join, a menu, another venue's sticker. Refusing is the point.

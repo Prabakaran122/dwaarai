@@ -3,11 +3,14 @@ import { query, queryOne } from '../db.js';
 import { newRotatingToken } from '../lib/tokens.js';
 import { toDataUrl } from '../lib/qr.js';
 import { logEvent } from '../lib/events.js';
+import { normalizeClaimCode } from '../lib/claim-code.js';
 import { issueDiscountCode } from '../lib/discount.js';
 import { storage } from '../lib/storage.js';
 import { emitTicketUpdate } from '../lib/realtime.js';
 
 const router = asyncRouter();
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const ROTATING_TTL_SECONDS = Number(process.env.ROTATING_TOKEN_TTL_SECONDS || 18);
 
@@ -82,9 +85,21 @@ router.get('/tickets/:token', async (req, res) => {
  * unknown code: someone trying codes learns neither which exist nor which are
  * in use.
  */
-router.get('/cards/:code', async (req, res) => {
+/**
+ * Resolves a printed card to its ticket. Venue-scoped, and that is not
+ * optional.
+ *
+ * Card codes are unique per venue, never globally — two properties can both
+ * own an "A001" without coordinating, and they will, because a box of cards
+ * starts at A001 everywhere. A lookup on the bare code would match whichever
+ * venue the database returned first, and a guest could be shown a stranger's
+ * vehicle at a property they have never visited. So the card's QR carries the
+ * venue and the lookup is scoped to it.
+ */
+router.get('/cards/:communityId/:code', async (req, res) => {
   const code = String(req.params.code || '').trim();
-  if (!code) return notFound(res);
+  const communityId = String(req.params.communityId || '').trim();
+  if (!code || !UUID.test(communityId)) return notFound(res);
 
   const row = await queryOne(
     `SELECT t.session_token
@@ -92,7 +107,32 @@ router.get('/cards/:code', async (req, res) => {
        JOIN valet_tickets t
          ON t.card_id = c.id
         AND t.status NOT IN ('final_closed', 'expired')
-      WHERE UPPER(c.code) = UPPER($1) AND c.is_active = true
+      WHERE c.community_id = $1 AND UPPER(c.code) = UPPER($2) AND c.is_active = true
+      LIMIT 1`,
+    [communityId, code]
+  );
+  if (!row) return notFound(res);
+
+  res.json({ sessionToken: row.session_token });
+});
+
+/**
+ * Resolves a claim code the guest typed.
+ *
+ * Globally unique among open tickets, unlike a card code, because this is all
+ * the guest has: they arrive at /valet with six characters and no idea which
+ * venue owns them.
+ *
+ * An unknown code and a closed ticket return the identical 404, so the space
+ * cannot be probed for which codes are live.
+ */
+router.get('/claim/:code', async (req, res) => {
+  const code = normalizeClaimCode(req.params.code);
+  if (code.length < 4) return notFound(res);
+
+  const row = await queryOne(
+    `SELECT session_token FROM valet_tickets
+      WHERE claim_code = $1 AND status NOT IN ('final_closed', 'expired')
       LIMIT 1`,
     [code]
   );
