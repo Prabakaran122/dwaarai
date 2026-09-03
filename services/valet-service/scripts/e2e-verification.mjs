@@ -72,73 +72,79 @@ async function metadataOf(sessionToken, eventType) {
   return r.rows[0]?.metadata ?? null;
 }
 
-console.log('\n--- a ticket with no intake photo ---');
-const noPhoto = await readyTicket('KA 01 NP 1111');
-const detail = await api(`/guard/tickets/${noPhoto}`, { token });
-check('the ticket reports no photo, so the app can say so', detail.body?.hasPhoto === false);
+// Cleanup runs even when an assertion throws. Two crashed runs of this
+// script once left four throwaway venues sitting in the production
+// database, which is exactly what seeding-and-deleting is meant to avoid.
+try {
+  console.log('\n--- a ticket with no intake photo ---');
+  const noPhoto = await readyTicket('KA 01 NP 1111');
+  const detail = await api(`/guard/tickets/${noPhoto}`, { token });
+  check('the ticket reports no photo, so the app can say so', detail.body?.hasPhoto === false);
 
-const liar = await api(`/guard/tickets/${noPhoto}/confirm-pickup`, {
-  method: 'POST', token, body: { verification: 'photo' },
-});
-// The client is the thing being audited, so this cannot be left to the client.
-check('a claimed photo match is refused when no photo exists',
-  liar.status === 409 && liar.body?.error === 'no_photo_to_match', JSON.stringify(liar.body));
-const stillOpen = await api(`/guard/tickets/${noPhoto}`, { token });
-check('and the refused claim did not release the car', stillOpen.body?.status === 'arrived', stillOpen.body?.status);
+  const liar = await api(`/guard/tickets/${noPhoto}/confirm-pickup`, {
+    method: 'POST', token, body: { verification: 'photo' },
+  });
+  // The client is the thing being audited, so this cannot be left to the client.
+  check('a claimed photo match is refused when no photo exists',
+    liar.status === 409 && liar.body?.error === 'no_photo_to_match', JSON.stringify(liar.body));
+  const stillOpen = await api(`/guard/tickets/${noPhoto}`, { token });
+  check('and the refused claim did not release the car', stillOpen.body?.status === 'arrived', stillOpen.body?.status);
 
-const honest = await api(`/guard/tickets/${noPhoto}/confirm-pickup`, {
-  method: 'POST', token, body: { verification: 'vehicle_confirmed' },
-});
-check('a vehicle confirmation releases the car', honest.status === 200, JSON.stringify(honest.body));
-check('and is recorded as such, not as a photo match',
-  (await metadataOf(noPhoto, 'closed_pickup'))?.verification === 'vehicle_confirmed',
-  JSON.stringify(await metadataOf(noPhoto, 'closed_pickup')));
+  const honest = await api(`/guard/tickets/${noPhoto}/confirm-pickup`, {
+    method: 'POST', token, body: { verification: 'vehicle_confirmed' },
+  });
+  check('a vehicle confirmation releases the car', honest.status === 200, JSON.stringify(honest.body));
+  check('and is recorded as such, not as a photo match',
+    (await metadataOf(noPhoto, 'closed_pickup'))?.verification === 'vehicle_confirmed',
+    JSON.stringify(await metadataOf(noPhoto, 'closed_pickup')));
 
-console.log('\n--- a ticket with an intake photo ---');
-const withPhoto = await readyTicket('KA 02 WP 2222');
-await pool.query(
-  `INSERT INTO valet_photos (ticket_id, storage_key, consent_at)
-   VALUES ((SELECT id FROM valet_tickets WHERE session_token=$1), 'p.jpg', NOW())`,
-  [withPhoto]
-);
-const d2 = await api(`/guard/tickets/${withPhoto}`, { token });
-check('the ticket reports a photo', d2.body?.hasPhoto === true);
+  console.log('\n--- a ticket with an intake photo ---');
+  const withPhoto = await readyTicket('KA 02 WP 2222');
+  await pool.query(
+    `INSERT INTO valet_photos (ticket_id, storage_key, consent_at)
+     VALUES ((SELECT id FROM valet_tickets WHERE session_token=$1), 'p.jpg', NOW())`,
+    [withPhoto]
+  );
+  const d2 = await api(`/guard/tickets/${withPhoto}`, { token });
+  check('the ticket reports a photo', d2.body?.hasPhoto === true);
 
-const photoOk = await api(`/guard/tickets/${withPhoto}/confirm-pickup`, {
-  method: 'POST', token, body: { verification: 'photo' },
-});
-check('a photo match is accepted', photoOk.status === 200);
-check('and recorded as a photo match',
-  (await metadataOf(withPhoto, 'closed_pickup'))?.verification === 'photo');
+  const photoOk = await api(`/guard/tickets/${withPhoto}/confirm-pickup`, {
+    method: 'POST', token, body: { verification: 'photo' },
+  });
+  check('a photo match is accepted', photoOk.status === 200);
+  check('and recorded as a photo match',
+    (await metadataOf(withPhoto, 'closed_pickup'))?.verification === 'photo');
 
-console.log('\n--- an older app that sends no verification field ---');
-const legacy = await readyTicket('KA 03 LG 3333');
-await api(`/guard/tickets/${legacy}/confirm-pickup`, { method: 'POST', token, body: {} });
-// A build from before this change must never have its release recorded as a
-// photo match it never performed.
-check('falls back to the truth rather than claiming a photo match',
-  (await metadataOf(legacy, 'closed_pickup'))?.verification === 'vehicle_confirmed',
-  JSON.stringify(await metadataOf(legacy, 'closed_pickup')));
+  console.log('\n--- an older app that sends no verification field ---');
+  const legacy = await readyTicket('KA 03 LG 3333');
+  await api(`/guard/tickets/${legacy}/confirm-pickup`, { method: 'POST', token, body: {} });
+  // A build from before this change must never have its release recorded as a
+  // photo match it never performed.
+  check('falls back to the truth rather than claiming a photo match',
+    (await metadataOf(legacy, 'closed_pickup'))?.verification === 'vehicle_confirmed',
+    JSON.stringify(await metadataOf(legacy, 'closed_pickup')));
 
-console.log('\n--- the photo endpoint still needs a guard token ---');
-const anon = await fetch(`${BASE}/guard/tickets/${withPhoto}/photo`);
-check('an unauthenticated fetch is refused', anon.status === 401, String(anon.status));
-const authed = await fetch(`${BASE}/guard/tickets/${withPhoto}/photo`, {
-  headers: { Authorization: `Bearer ${token}` },
-});
-// 404 here only because the scratch row points at a key with no stored bytes;
-// what matters is that the token gets past the guard rather than 401ing.
-check('an authenticated one gets past auth', authed.status !== 401, String(authed.status));
+  console.log('\n--- the photo endpoint still needs a guard token ---');
+  const anon = await fetch(`${BASE}/guard/tickets/${withPhoto}/photo`);
+  check('an unauthenticated fetch is refused', anon.status === 401, String(anon.status));
+  const authed = await fetch(`${BASE}/guard/tickets/${withPhoto}/photo`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  // 404 here only because the scratch row points at a key with no stored bytes;
+  // what matters is that the token gets past the guard rather than 401ing.
+  check('an authenticated one gets past auth', authed.status !== 401, String(authed.status));
+} finally {
+  await pool.query('DELETE FROM valet_ticket_events WHERE ticket_id IN (SELECT id FROM valet_tickets WHERE community_id=$1)', [cid]);
+  await pool.query('DELETE FROM valet_condition_records WHERE ticket_id IN (SELECT id FROM valet_tickets WHERE community_id=$1)', [cid]);
+  await pool.query('DELETE FROM valet_photos WHERE ticket_id IN (SELECT id FROM valet_tickets WHERE community_id=$1)', [cid]);
+  await pool.query('DELETE FROM valet_rotating_tokens WHERE ticket_id IN (SELECT id FROM valet_tickets WHERE community_id=$1)', [cid]);
+  await pool.query('DELETE FROM valet_tickets WHERE community_id=$1', [cid]);
+  await pool.query('DELETE FROM residents WHERE community_id=$1', [cid]);
+  await pool.query('DELETE FROM units WHERE community_id=$1', [cid]);
+  await pool.query('DELETE FROM blocks WHERE community_id=$1', [cid]);
+  await pool.query('DELETE FROM communities WHERE id=$1', [cid]);
+  await pool.end();
+}
 
-await pool.query('DELETE FROM valet_ticket_events WHERE ticket_id IN (SELECT id FROM valet_tickets WHERE community_id=$1)', [cid]);
-await pool.query('DELETE FROM valet_condition_records WHERE ticket_id IN (SELECT id FROM valet_tickets WHERE community_id=$1)', [cid]);
-await pool.query('DELETE FROM valet_photos WHERE ticket_id IN (SELECT id FROM valet_tickets WHERE community_id=$1)', [cid]);
-await pool.query('DELETE FROM valet_rotating_tokens WHERE ticket_id IN (SELECT id FROM valet_tickets WHERE community_id=$1)', [cid]);
-await pool.query('DELETE FROM valet_tickets WHERE community_id=$1', [cid]);
-await pool.query('DELETE FROM residents WHERE community_id=$1', [cid]);
-await pool.query('DELETE FROM units WHERE community_id=$1', [cid]);
-await pool.query('DELETE FROM blocks WHERE community_id=$1', [cid]);
-await pool.query('DELETE FROM communities WHERE id=$1', [cid]);
-await pool.end();
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
