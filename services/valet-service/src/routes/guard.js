@@ -10,6 +10,7 @@ import { logEvent } from '../lib/events.js';
 import { schedulePhotoDeletion, scheduleConditionMediaDeletion } from '../lib/expiry.js';
 import { storage, buildKey, extensionFor } from '../lib/storage.js';
 import { emitTicketUpdate } from '../lib/realtime.js';
+import { lastArrivalAt, usedTokenSince } from '../lib/handover.js';
 import { authenticateJWT } from '../middleware/auth.js';
 
 const router = asyncRouter();
@@ -674,25 +675,10 @@ router.post('/tickets/:token/confirm-pickup', guard, async (req, res) => {
     return res.status(409).json({ error: 'wrong_status', status: ticket.status });
   }
 
-  // The QR keeps rotating for freshness even after a successful scan, so this
-  // must not require the *latest* token to be the used one. It only needs a
-  // successful scan since this arrival — matched against the 'arrived' event
-  // rather than a token pointer the guest's next auto-refresh may already
-  // have superseded.
-  const lastArrival = await queryOne(
-    `SELECT created_at FROM valet_ticket_events
-      WHERE ticket_id = $1 AND event_type = 'arrived'
-      ORDER BY created_at DESC LIMIT 1`,
-    [ticket.id]
-  );
-
-  const verifiedScan = lastArrival
-    ? await queryOne(
-        `SELECT id FROM valet_rotating_tokens
-          WHERE ticket_id = $1 AND used_at IS NOT NULL AND generated_at >= $2 LIMIT 1`,
-        [ticket.id, lastArrival.created_at]
-      )
-    : null;
+  // Shares its definition of "since this arrival" with the guest view, which
+  // shows the thank-you screen off the same scan.
+  const lastArrival = await lastArrivalAt(ticket.id);
+  const verifiedScan = lastArrival ? await usedTokenSince(ticket.id, lastArrival.created_at) : null;
   if (!verifiedScan) {
     return res.status(409).json({ error: 'scan_required', message: 'Scan the guest QR before confirming pickup' });
   }

@@ -35,6 +35,7 @@ const baseTicket: GuestTicket = {
   guardName: null,
   etaSeconds: null,
   dropOffGuardName: 'Ramesh',
+  handedOver: false,
 };
 
 const mockGetTicket = vi.mocked(getTicket);
@@ -267,5 +268,40 @@ describe('arriving from the claim code with the request intent', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(CANCEL_WINDOW_MS * 3); });
 
     expect(mockRequestCar).not.toHaveBeenCalled();
+  });
+});
+
+describe('the handover moment', () => {
+  // The guard scans, then photographs the car before confirming pickup. The
+  // guest is already in the driver's seat, so the thank-you has to land on the
+  // scan or it lands in a pocket.
+  const handedOver = { ...baseTicket, status: 'arrived' as const, guardName: 'Suresh', handedOver: true };
+
+  it('thanks the guest on the scan, without waiting for the guard to close the ticket', async () => {
+    mockGetTicket.mockResolvedValue(handedOver);
+
+    render(<GuestPage />);
+
+    expect(await screen.findByText(/thank you/i)).toBeInTheDocument();
+    expect(screen.getByText(/get a discount for next time/i)).toBeInTheDocument();
+  });
+
+  it('drops the pickup QR once it has been scanned', async () => {
+    mockGetTicket.mockResolvedValue(handedOver);
+
+    render(<GuestPage />);
+    await screen.findByText(/thank you/i);
+
+    expect(screen.queryByAltText('Pickup QR code')).not.toBeInTheDocument();
+    expect(mockGetQr).not.toHaveBeenCalled();
+  });
+
+  it('still shows the QR while the car waits to be collected', async () => {
+    mockGetTicket.mockResolvedValue({ ...handedOver, handedOver: false });
+
+    render(<GuestPage />);
+
+    expect(await screen.findByAltText('Pickup QR code')).toBeInTheDocument();
+    expect(screen.queryByText(/thank you/i)).not.toBeInTheDocument();
   });
 });

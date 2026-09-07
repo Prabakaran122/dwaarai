@@ -4,6 +4,7 @@ import { newRotatingToken } from '../lib/tokens.js';
 import { toDataUrl } from '../lib/qr.js';
 import { logEvent } from '../lib/events.js';
 import { normalizeClaimCode } from '../lib/claim-code.js';
+import { handedOver } from '../lib/handover.js';
 import { issueDiscountCode } from '../lib/discount.js';
 import { storage } from '../lib/storage.js';
 import { emitTicketUpdate } from '../lib/realtime.js';
@@ -41,7 +42,7 @@ function notFound(res) {
   return res.status(404).json({ error: 'not_found', message: 'This valet link is invalid or has expired.' });
 }
 
-function guestView(t) {
+function guestView(t, isHandedOver = false) {
   // Counts down from the guard's estimate, and floors at 0 rather than going
   // negative, so a guard running slightly behind shows "any moment now"
   // instead of a confusing negative number.
@@ -64,13 +65,16 @@ function guestView(t) {
     etaSeconds,
     // Always present once a ticket exists: the guard who took the car in.
     dropOffGuardName: t.created_guard_name,
+    // True from the scan, not from the guard's later confirm-pickup: by the
+    // time the car is formally closed the guest is in traffic.
+    handedOver: isHandedOver,
   };
 }
 
 router.get('/tickets/:token', async (req, res) => {
   const ticket = await findTicket(req.params.token);
   if (!ticket) return notFound(res);
-  res.json(guestView(ticket));
+  res.json(guestView(ticket, await handedOver(ticket)));
 });
 
 /**
@@ -236,7 +240,10 @@ router.get('/tickets/:token/guard-badge/:which/photo', async (req, res) => {
 router.post('/tickets/:token/discount-optin', async (req, res) => {
   const ticket = await findTicket(req.params.token);
   if (!ticket) return notFound(res);
-  if (ticket.status !== 'final_closed') {
+  // Offered from the handover, not from the formal close. The guard still has
+  // to photograph the car after scanning, and a guest asked for their number
+  // while the valet walks round the bonnet is a guest still holding the phone.
+  if (ticket.status !== 'final_closed' && !(await handedOver(ticket))) {
     return res.status(409).json({ error: 'wrong_status', status: ticket.status });
   }
 

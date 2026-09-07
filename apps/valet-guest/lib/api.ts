@@ -25,6 +25,12 @@ export interface GuestTicket {
   guardName: string | null;
   etaSeconds: number | null;
   dropOffGuardName: string;
+  /**
+   * The guard has scanned the guest's pickup QR for this arrival — the car is
+   * theirs. Confirming pickup happens minutes later, after the guard has
+   * photographed the car, by which point the guest has driven off.
+   */
+  handedOver: boolean;
 }
 
 export interface RotatingQr {

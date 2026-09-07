@@ -219,7 +219,7 @@ export default function GuestPage() {
   // issued will scan, so an old screenshot is useless.
   const qrTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (ticket?.status !== 'arrived') {
+    if (ticket?.status !== 'arrived' || ticket.handedOver) {
       setQr(null);
       return;
     }
@@ -369,7 +369,7 @@ export default function GuestPage() {
         </section>
       )}
 
-      {ticket.status === 'arrived' && (
+      {ticket.status === 'arrived' && !ticket.handedOver && (
         <section className="mt-5 rounded-2xl bg-white p-5 text-center">
           <p className="text-[#0D2535] font-bold">Your car is here</p>
           <p className="text-xs text-[#0D2535]/60 mt-1">Show this to the valet</p>
@@ -385,7 +385,7 @@ export default function GuestPage() {
         </section>
       )}
 
-      {ticket.status === 'final_closed' && (
+      {(ticket.handedOver || ticket.status === 'final_closed') && (
         <>
           <section className="mt-5 rounded-2xl bg-[#1B3A4B] p-5 ring-1 ring-white/10 text-center">
             <p className="text-white font-semibold">Thank you</p>

@@ -461,3 +461,69 @@ describe('GET /guest/claim/:code', () => {
     expect(res.body.error).toBe('not_found');
   });
 });
+
+describe('the handover moment', () => {
+  // The guard scans the guest QR, then walks round the car photographing it
+  // before confirming pickup. The guest is in the driver's seat for all of
+  // that, so anything the guest is meant to see has to land on the scan.
+  const ARRIVED_AT = '2026-09-07T10:00:00.000Z';
+
+  it('reports the handover once the guest QR has been scanned since this arrival', async () => {
+    queryOne
+      .mockResolvedValueOnce(ticketRow({ status: 'arrived' }))
+      .mockResolvedValueOnce({ created_at: ARRIVED_AT })
+      .mockResolvedValueOnce({ id: 'rotating-token-1' });
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.handedOver).toBe(true);
+  });
+
+  it('does not count a scan from a previous arrival on a multi-day ticket', async () => {
+    queryOne
+      .mockResolvedValueOnce(ticketRow({ status: 'arrived' }))
+      .mockResolvedValueOnce({ created_at: ARRIVED_AT })
+      .mockResolvedValueOnce(null);
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+
+    expect(res.body.handedOver).toBe(false);
+  });
+
+  it('is not a handover while the car has merely arrived, unscanned', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ status: 'parked' }));
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+
+    expect(res.body.handedOver).toBe(false);
+  });
+
+  it('offers the discount on the scan, before the guard has finished closing', async () => {
+    queryOne
+      .mockResolvedValueOnce(ticketRow({ status: 'arrived' }))
+      .mockResolvedValueOnce({ created_at: ARRIVED_AT })
+      .mockResolvedValueOnce({ id: 'rotating-token-1' });
+    issueDiscountCode.mockResolvedValueOnce({ code: 'SARTHI-ABC234', expiry: 'x' });
+
+    const res = await request(app, 'POST', `/guest/tickets/${SESSION_TOKEN}/discount-optin`, {
+      body: { phoneNumber: '9876543210' },
+    });
+
+    expect(res.status).toBe(201);
+  });
+
+  it('still refuses the discount when the car has arrived but nothing was scanned', async () => {
+    queryOne
+      .mockResolvedValueOnce(ticketRow({ status: 'arrived' }))
+      .mockResolvedValueOnce({ created_at: ARRIVED_AT })
+      .mockResolvedValueOnce(null);
+
+    const res = await request(app, 'POST', `/guest/tickets/${SESSION_TOKEN}/discount-optin`, {
+      body: { phoneNumber: '9876543210' },
+    });
+
+    expect(res.status).toBe(409);
+    expect(issueDiscountCode).not.toHaveBeenCalled();
+  });
+});
