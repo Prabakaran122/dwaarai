@@ -9,6 +9,7 @@ import { useAppFonts } from '../src/lib/fonts';
 import ErrorBoundary from '../src/components/ErrorBoundary';
 import LoginScreen from '../src/screens/LoginScreen';
 import ValetFlow from '../src/screens/ValetFlow';
+import { installAuthRefresh } from '../src/api/valet';
 
 /**
  * Sarthi's entry point.
@@ -30,6 +31,9 @@ export default function App() {
   const fontsLoaded = useAppFonts();
 
   useEffect(() => {
+    // Before restore(), so a stored token that expired during the night is
+    // refreshed on the first call rather than failing it.
+    installAuthRefresh();
     restore();
     rehydrateLang();
   }, []);

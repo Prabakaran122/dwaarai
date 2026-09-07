@@ -2,9 +2,9 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { setValetAuthToken, clearValetAuthToken } from '../api/valet';
-
-const TOKEN_KEY = 'sarthi_valet_token';
-const USER_KEY = 'sarthi_valet_user';
+import {
+  TOKEN_KEY, USER_KEY, saveTokens, clearSession, setSessionExpiredHandler,
+} from '../api/session';
 
 /**
  * Sarthi signs valets in against the same api-gateway endpoint the guard app
@@ -26,10 +26,13 @@ interface AuthState {
   loading: boolean;
   restoring: boolean;
   error: string | null;
+  /** The hour ran out and the refresh token could not save it either. */
+  sessionExpired: boolean;
 
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   restore: () => Promise<void>;
+  expireSession: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -38,6 +41,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   loading: false,
   restoring: true,
   error: null,
+  sessionExpired: false,
 
   login: async (username, password) => {
     set({ loading: true, error: null });
@@ -54,10 +58,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       };
 
       setValetAuthToken(token);
-      await AsyncStorage.setItem(TOKEN_KEY, token);
+      // The refresh token is the whole point: the access token above is good
+      // for an hour, and a valet's shift is not.
+      await saveTokens(token, data.refreshToken);
       await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
 
-      set({ token, user, loading: false });
+      set({ token, user, loading: false, sessionExpired: false });
       return true;
     } catch {
       set({ loading: false, error: 'loginFailed' });
@@ -67,8 +73,16 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: async () => {
     clearValetAuthToken();
-    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
-    set({ token: null, user: null });
+    await clearSession();
+    set({ token: null, user: null, sessionExpired: false });
+  },
+
+  // Reached from the API layer when a 401 could not be refreshed away. Storage
+  // is already cleared by then; this is what moves the app off the screen the
+  // valet is stuck on and tells them what to do about it.
+  expireSession: () => {
+    clearValetAuthToken();
+    set({ token: null, user: null, sessionExpired: true });
   },
 
   // A valet stand's shift outlives the app being backgrounded, so a stored
@@ -90,3 +104,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 }));
+
+// Wired here rather than in the API module so session.ts stays free of any
+// import back into the store.
+setSessionExpiredHandler(() => useAuthStore.getState().expireSession());

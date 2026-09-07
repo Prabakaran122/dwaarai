@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { resolveAuthRetry } from './session';
 
 /**
  * Client for valet-service.
@@ -19,6 +20,35 @@ export function setValetAuthToken(token: string) {
 
 export function clearValetAuthToken() {
   delete valet.defaults.headers.common['Authorization'];
+}
+
+/**
+ * An expired access token retries itself once, silently.
+ *
+ * Without this a valet's hour ran out mid-shift and every screen reported a
+ * generic failure they could do nothing about -- on a car whose keys they were
+ * already holding. Mirrors the guard app's interceptor; the decision itself
+ * lives in session.ts so it can be tested without an HTTP layer.
+ *
+ * Called from the app entry rather than registered on import: several suites
+ * automock axios, which makes axios.create() return undefined, and a
+ * module-level registration would then throw before any test ran.
+ */
+export function installAuthRefresh() {
+  valet.interceptors.response.use(
+    (res) => res,
+    async (err) => {
+      const decision = await resolveAuthRetry(err);
+      if (!decision.retry) return Promise.reject(err);
+
+      setValetAuthToken(decision.token);
+      err.config.headers = {
+        ...(err.config.headers || {}),
+        Authorization: `Bearer ${decision.token}`,
+      };
+      return valet(err.config);
+    }
+  );
 }
 
 export type ValetStatus =

@@ -52,6 +52,7 @@ export const translations: Dict = {
   valetConditionRequired: { en: 'Capture at least one photo or video first', hi: 'पहले कम से कम एक फोटो या वीडियो लें', kn: 'ಮೊದಲು ಕನಿಷ್ಠ ಒಂದು ಫೋಟೋ ಅಥವಾ ವೀಡಿಯೊ ತೆಗೆಯಿರಿ' },
   valetCameraDenied: { en: 'Camera permission is needed for this step', hi: 'इस चरण के लिए कैमरा अनुमति चाहिए', kn: 'ಈ ಹಂತಕ್ಕೆ ಕ್ಯಾಮೆರಾ ಅನುಮತಿ ಬೇಕು' },
   valetFailed: { en: 'That action failed, try again', hi: 'कार्रवाई विफल, फिर कोशिश करें', kn: 'ಕ್ರಿಯೆ ವಿಫಲವಾಗಿದೆ, ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ' },
+  valetSessionExpired: { en: 'Your shift session ended. Please sign in again.', hi: 'आपका सत्र समाप्त हो गया। कृपया फिर साइन इन करें।', kn: 'ನಿಮ್ಮ ಅವಧಿ ಮುಗಿದಿದೆ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಸೈನ್ ಇನ್ ಮಾಡಿ.' },
   valetQrExpired: { en: 'QR expired, ask the guest to let it refresh', hi: 'QR समाप्त, मेहमान से रिफ्रेश होने दें', kn: 'QR ಅವಧಿ ಮುಗಿದಿದೆ, ಅತಿಥಿಯನ್ನು ರಿಫ್ರೆಶ್ ಮಾಡಲು ಕೇಳಿ' },
   valetScanRequired: { en: 'Scan the guest QR first', hi: 'पहले मेहमान का QR स्कैन करें', kn: 'ಮೊದಲು ಅತಿಥಿ QR ಸ್ಕ್ಯಾನ್ ಮಾಡಿ' },
   valetScanHint: { en: 'Point the camera at the QR on the guest\'s phone', hi: 'कैमरा मेहमान के फोन के QR पर रखें', kn: 'ಕ್ಯಾಮೆರಾವನ್ನು ಅತಿಥಿಯ ಫೋನ್‌ನ QR ಗೆ ಗುರಿಮಾಡಿ' },

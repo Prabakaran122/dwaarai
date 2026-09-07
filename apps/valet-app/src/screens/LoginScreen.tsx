@@ -18,7 +18,7 @@ import { LANGUAGES } from '../i18n/translations';
 export default function LoginScreen() {
   const t = useT();
   const { lang, setLang } = useLangStore();
-  const { login, loading, error } = useAuthStore();
+  const { login, loading, error, sessionExpired } = useAuthStore();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -63,6 +63,11 @@ export default function LoginScreen() {
           />
         </View>
 
+        {sessionExpired && !error && (
+          <Text style={styles.notice} testID="login-session-expired">
+            {t('valetSessionExpired')}
+          </Text>
+        )}
         {error && <Text style={styles.error} testID="login-error">{t(error)}</Text>}
 
         <Pressable
@@ -120,6 +125,8 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, paddingVertical: spacing.md, color: colors.textPrimary, fontSize: 15 },
   error: { color: colors.danger, fontSize: 13, textAlign: 'center' },
+  // Not an error: nothing went wrong, the shift simply ran long.
+  notice: { color: colors.textSecondary, fontSize: 13, textAlign: 'center' },
   cta: {
     backgroundColor: colors.actionPrimary, borderRadius: radius.md,
     paddingVertical: spacing.lg, alignItems: 'center', marginTop: spacing.sm,

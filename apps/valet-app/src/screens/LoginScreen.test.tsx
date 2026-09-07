@@ -15,7 +15,7 @@ import { useLangStore } from '../store/langStore';
 
 beforeEach(() => {
   jest.clearAllMocks();
-  useAuthStore.setState({ token: null, user: null, loading: false, restoring: false, error: null });
+  useAuthStore.setState({ token: null, user: null, loading: false, restoring: false, error: null, sessionExpired: false });
   useLangStore.setState({ lang: 'en' });
 });
 
@@ -84,5 +84,23 @@ describe('Sarthi sign-in', () => {
     fireEvent.press(getByTestId('lang-hi'));
 
     expect(useLangStore.getState().lang).toBe('hi');
+  });
+});
+
+describe('coming back from an expired shift session', () => {
+  it('says why the valet is looking at sign-in again', () => {
+    // Landing on a login screen with no explanation reads as the app having
+    // lost the car, not the session.
+    useAuthStore.setState({ sessionExpired: true });
+
+    const { getByTestId } = render(<LoginScreen />);
+
+    expect(getByTestId('login-session-expired')).toBeTruthy();
+  });
+
+  it('says nothing of the sort on an ordinary first sign-in', () => {
+    const { queryByTestId } = render(<LoginScreen />);
+
+    expect(queryByTestId('login-session-expired')).toBeNull();
   });
 });
