@@ -1,9 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ token: 'test-token' }),
 }));
+
+// The request intent rides in on the URL, so the tests drive the real address
+// bar rather than a mocked hook.
+function arriveAt(search: string) {
+  window.history.replaceState({}, '', `/v/test-token${search}`);
+}
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -17,7 +23,7 @@ vi.mock('@/lib/api', async () => {
 });
 
 import GuestPage from './page';
-import { getTicket, getRotatingQr, GuestTicket, GuestError } from '@/lib/api';
+import { getTicket, requestCar, getRotatingQr, GuestTicket, GuestError } from '@/lib/api';
 
 const baseTicket: GuestTicket = {
   displayId: 'SRT-0001',
@@ -32,10 +38,12 @@ const baseTicket: GuestTicket = {
 };
 
 const mockGetTicket = vi.mocked(getTicket);
+const mockRequestCar = vi.mocked(requestCar);
 const mockGetQr = vi.mocked(getRotatingQr);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  arriveAt('');
   mockGetQr.mockResolvedValue({
     qrDataUrl: 'data:image/png;base64,QR',
     expiresAt: new Date(Date.now() + 18000).toISOString(),
@@ -208,5 +216,56 @@ describe('live updates', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
 
     expect(mockGetTicket.mock.calls.length).toBeGreaterThan(1);
+  });
+});
+
+// The window the guest gets to call it off, in ms — mirrors CANCEL_WINDOW_MS
+// in the page. Stated here as the behaviour under test: three seconds is a
+// promise to the guest, not an implementation detail.
+const CANCEL_WINDOW_MS = 3000;
+
+describe('arriving from the claim code with the request intent', () => {
+  it('requests the car on its own once the cancel window closes', async () => {
+    arriveAt('?request=1');
+    mockGetTicket.mockResolvedValue(baseTicket);
+    mockRequestCar.mockResolvedValue({ ...baseTicket, status: 'requested' });
+    vi.useFakeTimers();
+
+    render(<GuestPage />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+    // The window is the whole point: nothing is sent while it is open.
+    expect(mockRequestCar).not.toHaveBeenCalled();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(CANCEL_WINDOW_MS); });
+
+    expect(mockRequestCar).toHaveBeenCalledWith('test-token');
+  });
+
+  it('never requests the car when the guest cancels inside the window', async () => {
+    arriveAt('?request=1');
+    mockGetTicket.mockResolvedValue(baseTicket);
+    vi.useFakeTimers();
+
+    render(<GuestPage />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(CANCEL_WINDOW_MS * 3); });
+
+    expect(mockRequestCar).not.toHaveBeenCalled();
+  });
+
+  it('ignores the intent when the car is already on its way', async () => {
+    arriveAt('?request=1');
+    mockGetTicket.mockResolvedValue({
+      ...baseTicket, status: 'en_route', guardName: 'Suresh', etaSeconds: 120,
+    });
+    vi.useFakeTimers();
+
+    render(<GuestPage />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(CANCEL_WINDOW_MS * 3); });
+
+    expect(mockRequestCar).not.toHaveBeenCalled();
   });
 });

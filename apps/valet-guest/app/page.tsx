@@ -38,7 +38,12 @@ export default function ClaimPage() {
       const { sessionToken } = await res.json();
       // Replace, not push: this page is a doorway, and Back landing on it
       // again with the code still typed reads as the code having failed.
-      router.replace(`/v/${sessionToken}`);
+      //
+      // The intent rides along: tapping the button here IS the request, so the
+      // ticket page acts on it rather than presenting the same button again.
+      // A car that is already on its way ignores it — the doorway cannot see
+      // the ticket's status, and only `parked` can be requested.
+      router.replace(`/v/${sessionToken}?request=1`);
     } catch {
       setState('unknown');
     }
@@ -64,7 +69,7 @@ export default function ClaimPage() {
           <path d="M38 38h4M46 38h2M38 44h10" />
         </svg>
 
-        <h1 className="text-lg font-semibold text-white">Find your vehicle</h1>
+        <h1 className="text-lg font-semibold text-white">Request your car</h1>
         <p className="mt-3 text-sm leading-relaxed text-white/60">
           Enter the code the valet gave you. If you were handed a card, point
           your phone&apos;s camera at the QR on it instead.
@@ -96,7 +101,7 @@ export default function ClaimPage() {
             disabled={!ready || state === 'checking'}
             className="mt-4 w-full py-4 rounded-xl bg-teal-500 text-slate-900 font-semibold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-teal-400 transition-colors"
           >
-            {state === 'checking' ? 'Checking…' : 'Find my vehicle'}
+            {state === 'checking' ? 'Checking…' : 'Request my car'}
           </button>
         </form>
 

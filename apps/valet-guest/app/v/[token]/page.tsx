@@ -19,6 +19,22 @@ import {
  */
 
 const POLL_MS = 4000;
+
+/**
+ * How long the guest gets to call off a request that was made for them.
+ *
+ * A guest who taps "Request my car" on the claim-code page has asked for the
+ * car, so the request fires without a second tap. But the same six characters
+ * get typed by someone only checking their car is still on the ticket, and
+ * summoning a car nobody is walking towards costs the venue a blocked porch
+ * and the valet a wasted round trip.
+ *
+ * This is a delayed send, not an undo: nothing reaches the server until the
+ * window closes. A real cancel would need a route walking `requested` back to
+ * `parked`, which would race the guard who has already seen the ticket light
+ * up and started moving.
+ */
+const CANCEL_WINDOW_MS = 3000;
 const ROTATE_REFRESH_MARGIN_MS = 2000;
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -163,6 +179,14 @@ export default function GuestPage() {
   const [qr, setQr] = useState<RotatingQr | null>(null);
   const [eta, setEta] = useState<number | null>(null);
 
+  // Counts down to an automatic request when the guest arrived from the
+  // claim-code page having already tapped "Request my car". The send hangs off
+  // its own timer rather than the display's, so a dropped tick delays the
+  // number on screen, never the car.
+  const [pending, setPending] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  const intentHandled = useRef(false);
+
   const load = useCallback(async () => {
     try {
       const t = await getTicket(token);
@@ -223,6 +247,37 @@ export default function GuestPage() {
     };
   }, [ticket?.status, token]);
 
+  // Arms once, off the address the guest arrived on. Anything but a parked
+  // car ignores the intent: a request is a 409 server-side in every other
+  // state, and a guest whose car is already coming wants the ETA, not a button.
+  useEffect(() => {
+    if (intentHandled.current || !ticket) return;
+    intentHandled.current = true;
+
+    if (!new URLSearchParams(window.location.search).has('request')) return;
+
+    if (ticket.status === 'parked' || ticket.status === 'parked_again') {
+      setSecondsLeft(Math.round(CANCEL_WINDOW_MS / 1000));
+      setPending(true);
+    }
+    // Drop the intent from the URL so a refresh cannot arm it a second time,
+    // while leaving the guest holding the same durable ticket address.
+    window.history.replaceState({}, '', `/v/${token}`);
+  }, [ticket, token]);
+
+  useEffect(() => {
+    if (!pending) return;
+    const send = setTimeout(() => {
+      setPending(false);
+      onRequest();
+    }, CANCEL_WINDOW_MS);
+    const tick = setInterval(() => setSecondsLeft((s) => Math.max(0, s - 1)), 1000);
+    return () => {
+      clearTimeout(send);
+      clearInterval(tick);
+    };
+  }, [pending]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function onRequest() {
     setRequesting(true);
     try {
@@ -257,7 +312,22 @@ export default function GuestPage() {
     <Shell>
       <VehicleCard ticket={ticket} onViewBadge={setBadgeFor} />
 
-      {canRequest && (
+      {pending && (
+        <section className="mt-5 rounded-2xl bg-amber-500/10 p-5 ring-1 ring-amber-500/30 text-center">
+          <p className="text-white font-semibold">Requesting your car…</p>
+          <p className="text-sm text-white/50 mt-1">
+            Sending in {secondsLeft}s
+          </p>
+          <button
+            onClick={() => setPending(false)}
+            className="mt-3 w-full py-3 rounded-xl ring-1 ring-white/20 text-white text-sm font-semibold"
+          >
+            Cancel
+          </button>
+        </section>
+      )}
+
+      {canRequest && !pending && (
         <>
           <p className="mt-5 text-center text-sm text-white/50">
             Parked for {ticket.elapsedMinutes} min
