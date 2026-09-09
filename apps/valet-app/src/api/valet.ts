@@ -87,6 +87,12 @@ export interface CreatedTicket {
   claimCode: string | null;
   /** Where they type it. From the server, never guessed from the API base. */
   claimUrl?: string;
+  /**
+   * Whether the code actually reached the guest's phone. Null when no number
+   * was given. Never assumed: a guard told "sent" for a message that never
+   * left would not read the code out, and the guest is already walking away.
+   */
+  smsStatus?: 'sent' | 'skipped' | 'failed' | null;
   qrDataUrl: string;
 }
 
@@ -114,9 +120,11 @@ export const getTicket = (token: string) =>
   valet.get<TicketDetail>(`/guard/tickets/${token}`);
 
 export const createTicket = (
-  plate: string, vehicleMake: string, stayEndAt: string, cardCode?: string
+  plate: string, vehicleMake: string, stayEndAt: string, cardCode?: string, phoneNumber?: string
 ) =>
-  valet.post<CreatedTicket>('/guard/tickets', { plate, vehicleMake, stayEndAt, cardCode });
+  valet.post<CreatedTicket>('/guard/tickets', {
+    plate, vehicleMake, stayEndAt, cardCode, phoneNumber,
+  });
 
 /** Searches beyond the open queue — a closed ticket, or a queue too big to hold. */
 export const searchTickets = (plate: string) =>

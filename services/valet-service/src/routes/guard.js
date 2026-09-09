@@ -11,6 +11,7 @@ import { schedulePhotoDeletion, scheduleConditionMediaDeletion } from '../lib/ex
 import { storage, buildKey, extensionFor } from '../lib/storage.js';
 import { emitTicketUpdate } from '../lib/realtime.js';
 import { lastArrivalAt, usedTokenSince } from '../lib/handover.js';
+import { sendClaimCode } from '../lib/sms.js';
 import { authenticateJWT } from '../middleware/auth.js';
 
 const router = asyncRouter();
@@ -126,6 +127,9 @@ const createTicketSchema = z.object({
   // Optional: a venue with no printed card stock still works exactly as
   // before, showing the QR on the guard's screen.
   cardCode: z.string().trim().max(20).optional(),
+  // Optional: the guest may decline, and a valet stand must work for a guest
+  // who gives nothing but a car.
+  phoneNumber: z.string().trim().max(20).optional(),
 });
 
 /**
@@ -198,6 +202,16 @@ router.post('/tickets', guard, async (req, res) => {
     return res.status(400).json({ error: 'invalid_stay_end', message: 'stayEndAt must be a valid future datetime' });
   }
 
+  // Checked before the car is taken in, not after: a typo caught here is a
+  // guard retyping a number, while the same typo caught later is a stranger
+  // getting a text about someone else's car.
+  const phoneNumber = parsed.data.phoneNumber
+    ? parsed.data.phoneNumber.replace(/\s+/g, '')
+    : null;
+  if (phoneNumber && !/^(\+91)?[6-9]\d{9}$/.test(phoneNumber)) {
+    return res.status(400).json({ error: 'invalid_phone', message: 'Enter a valid 10-digit mobile number' });
+  }
+
   const communityId = req.user.community_id;
   const client = await pool.connect();
   try {
@@ -250,11 +264,13 @@ router.post('/tickets', guard, async (req, res) => {
     const inserted = await client.query(
       `INSERT INTO valet_tickets
          (community_id, display_id, session_token, plate, plate_normalized,
-          vehicle_make, stay_end_at, status, created_by_guard_id, card_id, card_code, claim_code)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'parked', $8, $9, $10, $11)
+          vehicle_make, stay_end_at, status, created_by_guard_id, card_id, card_code, claim_code,
+          phone_number, phone_consent_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'parked', $8, $9, $10, $11,
+               $12, CASE WHEN $12 IS NULL THEN NULL ELSE NOW() END)
        RETURNING id`,
       [communityId, displayId, sessionToken, plate, normalizePlate(plate), vehicleMake, stayEnd.toISOString(), req.user.sub,
-       card ? card.id : null, card ? card.code : null, claimCode]
+       card ? card.id : null, card ? card.code : null, claimCode, phoneNumber]
     );
     const ticketId = inserted.rows[0].id;
 
@@ -269,7 +285,24 @@ router.post('/tickets', guard, async (req, res) => {
     const baseUrl = process.env.VALET_GUEST_BASE_URL || 'https://dwaarai.com/valet';
     const guestUrl = `${baseUrl}/v/${sessionToken}`;
 
+    // After COMMIT, deliberately. The car is in; a texting problem must not
+    // roll back a ticket that already exists in the world. The status comes
+    // back so the guard knows whether to read the code out instead.
+    let smsStatus = null;
+    if (phoneNumber) {
+      let venueName = 'Sarthi valet';
+      try {
+        const venue = await queryOne('SELECT name FROM communities WHERE id = $1', [communityId]);
+        if (venue?.name) venueName = venue.name;
+      } catch {
+        // The venue name is decoration on the message; failing to read it must
+        // not cost the guest their code.
+      }
+      ({ status: smsStatus } = await sendClaimCode({ phoneNumber, claimCode, claimUrl: baseUrl, venueName }));
+    }
+
     res.status(201).json({
+      smsStatus,
       id: ticketId,
       displayId,
       sessionToken,

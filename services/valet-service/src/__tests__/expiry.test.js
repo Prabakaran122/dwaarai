@@ -23,6 +23,7 @@ import {
   schedulePhotoDeletion,
   scheduleConditionMediaDeletion,
   runSweep,
+  forgetClosedGuestPhones,
 } from '../lib/expiry.js';
 
 beforeEach(() => {
@@ -169,11 +170,48 @@ describe('runSweep', () => {
     queryRows
       .mockResolvedValueOnce([{ id: 't1' }])   // tickets
       .mockResolvedValueOnce([])               // photos
-      .mockResolvedValueOnce([{ id: 'c1', storage_key: 'k' }]); // condition
+      .mockResolvedValueOnce([{ id: 'c1', storage_key: 'k' }])  // condition
+      .mockResolvedValueOnce([]);                               // guest phones
     query.mockResolvedValue({});
 
     const result = await runSweep();
 
-    expect(result).toEqual({ tickets: 1, photos: 0, condition: 1 });
+    expect(result).toEqual({ tickets: 1, photos: 0, condition: 1, phones: 0 });
+  });
+});
+
+describe('forgetting a guest phone number once the stay is over', () => {
+  it('clears the number and its consent on every closed ticket', async () => {
+    queryRows.mockResolvedValueOnce([{ id: 't1' }, { id: 't2' }]);
+
+    // The number was taken for one purpose -- delivering one code for one
+    // stay -- and that purpose is spent the moment the car leaves. Keeping it
+    // would turn a delivery mechanism into a customer list nobody agreed to.
+    expect(await forgetClosedGuestPhones()).toBe(2);
+
+    const sql = queryRows.mock.calls[0][0];
+    expect(sql).toMatch(/phone_number\s*=\s*NULL/i);
+    expect(sql).toMatch(/phone_consent_at\s*=\s*NULL/i);
+    expect(sql).toMatch(/final_closed/);
+    expect(sql).toMatch(/expired/);
+  });
+
+  it('leaves an open ticket alone — the guest may still need the code', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    expect(await forgetClosedGuestPhones()).toBe(0);
+  });
+
+  it('is part of the sweep, not something to remember to call', async () => {
+    queryRows
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 't9' }]);
+    query.mockResolvedValue({});
+
+    const result = await runSweep();
+
+    expect(result.phones).toBe(1);
   });
 });

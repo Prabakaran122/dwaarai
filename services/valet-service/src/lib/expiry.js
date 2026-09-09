@@ -108,11 +108,37 @@ export async function sweepExpiredConditionMedia() {
   return due.length;
 }
 
+/**
+ * Drops the guest phone number from every closed ticket.
+ *
+ * The number is collected for one purpose -- delivering one claim code for one
+ * stay -- and that purpose is spent the moment the car leaves. Keeping it
+ * would quietly turn a delivery mechanism into a customer list nobody
+ * consented to, which is the distinction the separate DPDP timestamps exist to
+ * preserve. The discount opt-in keeps its number because it has to honour a
+ * code later; this one has no such reason.
+ *
+ * Done in the sweep rather than at each closing point so there is one place it
+ * happens, and so a ticket closed by any path -- final pickup, expiry, or a
+ * route added later -- is covered without anyone remembering to.
+ */
+export async function forgetClosedGuestPhones() {
+  const cleared = await queryRows(
+    `UPDATE valet_tickets
+        SET phone_number = NULL, phone_consent_at = NULL
+      WHERE phone_number IS NOT NULL
+        AND status IN ('final_closed', 'expired')
+      RETURNING id`
+  );
+  return cleared.length;
+}
+
 export async function runSweep() {
   const tickets = await sweepExpiredTickets();
   const photos = await sweepExpiredPhotos();
   const condition = await sweepExpiredConditionMedia();
-  return { tickets, photos, condition };
+  const phones = await forgetClosedGuestPhones();
+  return { tickets, photos, condition, phones };
 }
 
 /**

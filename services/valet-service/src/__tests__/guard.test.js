@@ -17,6 +17,7 @@ vi.mock('../lib/storage.js', () => ({
   buildKey: vi.fn(() => 'valet/photo/t/key.jpg'),
   extensionFor: vi.fn(() => 'jpg'),
 }));
+vi.mock('../lib/sms.js', () => ({ sendClaimCode: vi.fn(async () => ({ status: 'sent' })) }));
 vi.mock('../lib/realtime.js', () => ({ emitTicketUpdate: vi.fn(), getIO: vi.fn(), initRealtime: vi.fn() }));
 vi.mock('../lib/expiry.js', () => ({
   schedulePhotoDeletion: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock('../lib/expiry.js', () => ({
 
 import pool, { query, queryOne, queryRows } from '../db.js';
 import { schedulePhotoDeletion, scheduleConditionMediaDeletion } from '../lib/expiry.js';
+import { sendClaimCode } from '../lib/sms.js';
 import guardRoutes from '../routes/guard.js';
 import {
   createApp, request, ticketRow, guardToken, adminToken,
@@ -919,5 +921,74 @@ describe('the claim code a guest carries away', () => {
 
     expect(res.body.claimUrl).toBeTruthy();
     expect(res.body.claimUrl).not.toContain('/v/');
+  });
+});
+
+describe('POST /guard/tickets — texting the guest the code', () => {
+  const future = () => new Date(Date.now() + 86400000).toISOString();
+
+  function mockCreateFlow() {
+    mockClient.query
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({});
+  }
+
+  it('texts the claim code when the guest gave a number, and says it went', async () => {
+    mockCreateFlow();
+    vi.mocked(sendClaimCode).mockResolvedValueOnce({ status: 'sent' });
+
+    const res = await request(app, 'POST', '/guard/tickets', {
+      token,
+      body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future(), phoneNumber: '9876543210' },
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.smsStatus).toBe('sent');
+    expect(sendClaimCode).toHaveBeenCalledWith(
+      expect.objectContaining({ phoneNumber: '9876543210', claimCode: res.body.claimCode })
+    );
+  });
+
+  it('sends nothing and says nothing when no number was given', async () => {
+    mockCreateFlow();
+
+    const res = await request(app, 'POST', '/guard/tickets', {
+      token,
+      body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future() },
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.smsStatus).toBeNull();
+    expect(sendClaimCode).not.toHaveBeenCalled();
+  });
+
+  it('refuses a number that is not a real Indian mobile, before taking the car in', async () => {
+    const res = await request(app, 'POST', '/guard/tickets', {
+      token,
+      body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future(), phoneNumber: '12345' },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_phone');
+    expect(sendClaimCode).not.toHaveBeenCalled();
+  });
+
+  it('still creates the ticket when the text fails — the car is already parked', async () => {
+    mockCreateFlow();
+    vi.mocked(sendClaimCode).mockResolvedValueOnce({ status: 'failed' });
+
+    const res = await request(app, 'POST', '/guard/tickets', {
+      token,
+      body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future(), phoneNumber: '9876543210' },
+    });
+
+    // The guard needs to know it failed so they read the code out instead.
+    expect(res.status).toBe(201);
+    expect(res.body.smsStatus).toBe('failed');
+    expect(res.body.claimCode).toBeTruthy();
   });
 });

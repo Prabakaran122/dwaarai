@@ -230,7 +230,7 @@ describe('binding a printed card at intake', () => {
     await fillDetails(screen);
 
     expect(api.createTicket).toHaveBeenCalledWith(
-      'KA03NJ0435', 'Maruti Swift', expect.any(String), undefined
+      'KA03NJ0435', 'Maruti Swift', expect.any(String), undefined, undefined
     );
   });
 
@@ -266,7 +266,7 @@ describe('binding a printed card at intake', () => {
     await fillDetails(screen);
 
     expect(api.createTicket).toHaveBeenCalledWith(
-      'KA03NJ0435', 'Maruti Swift', expect.any(String), 'A047'
+      'KA03NJ0435', 'Maruti Swift', expect.any(String), 'A047', undefined
     );
   });
 
@@ -571,5 +571,58 @@ describe('what the guest leaves with when there is no card', () => {
     await fillDetails(screen);
 
     expect(screen.getByTestId('valet-qr-card')).toBeTruthy();
+  });
+});
+
+describe('texting the guest their claim code', () => {
+  async function fillAndSubmit(phone?: string) {
+    const screen = render(<NewValetTicketScreen onClose={jest.fn()} />);
+    fireEvent.changeText(screen.getByTestId('valet-plate-input'), 'KA03NJ0435');
+    fireEvent.changeText(screen.getByTestId('valet-make-input'), 'Maruti Swift');
+    if (phone !== undefined) {
+      fireEvent.changeText(screen.getByTestId('valet-phone-input'), phone);
+    }
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('valet-create'));
+    });
+    return screen;
+  }
+
+  it('sends the number along so the guest gets the code on their phone', async () => {
+    await fillAndSubmit('9876543210');
+
+    expect(api.createTicket).toHaveBeenCalledWith(
+      'KA03NJ0435', 'Maruti Swift', expect.any(String), undefined, '9876543210'
+    );
+  });
+
+  it('asks for nothing when the guest declines to give a number', async () => {
+    await fillAndSubmit();
+
+    expect(api.createTicket).toHaveBeenCalledWith(
+      'KA03NJ0435', 'Maruti Swift', expect.any(String), undefined, undefined
+    );
+  });
+
+  it('tells the guard when the text did not go, so they read the code out instead', async () => {
+    (api.createTicket as jest.Mock).mockResolvedValue({
+      data: { ...createdTicket, claimCode: '4K7QP2', smsStatus: 'failed' },
+    });
+
+    const screen = await fillAndSubmit('9876543210');
+
+    // Silence here would leave the guard assuming a text arrived, on a guest
+    // who has already walked away.
+    expect(screen.getByTestId('valet-sms-status')).toBeTruthy();
+  });
+
+  it('says nothing about SMS when no number was given', async () => {
+    (api.createTicket as jest.Mock).mockResolvedValue({
+      data: { ...createdTicket, claimCode: '4K7QP2', smsStatus: null },
+    });
+
+    const screen = await fillAndSubmit();
+
+    expect(screen.queryByTestId('valet-sms-status')).toBeNull();
   });
 });

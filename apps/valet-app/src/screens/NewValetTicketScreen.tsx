@@ -82,6 +82,15 @@ function TicketHandout({
           <Text style={styles.bigCard} testID="valet-claim-code">{created.claimCode}</Text>
         </View>
       )}
+      {/* Stated, never assumed. 'skipped' means SMS is not configured on this
+          deployment; to the guard at the desk that is the same instruction as
+          a failure — read the code out — so the two share a line. */}
+      {created.smsStatus && created.smsStatus !== 'sent' && (
+        <Text style={styles.smsFailed} testID="valet-sms-status">{t('valetSmsFailed')}</Text>
+      )}
+      {created.smsStatus === 'sent' && (
+        <Text style={styles.smsSent} testID="valet-sms-status">{t('valetSmsSent')}</Text>
+      )}
       <Text style={styles.qrCode}>{created.displayId}</Text>
     </View>
   );
@@ -96,6 +105,7 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
   const [plate, setPlate] = useState('');
   const [vehicleMake, setVehicleMake] = useState('');
   const [days, setDays] = useState(1);
+  const [phone, setPhone] = useState('');
   const [cardCode, setCardCode] = useState<string | null>(null);
   const [typedCard, setTypedCard] = useState('');
   // Latched in a ref for the same reason as the handover scanner: a real
@@ -208,7 +218,8 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
       const stayEnd = new Date();
       stayEnd.setDate(stayEnd.getDate() + days);
       const res = await api.createTicket(
-        plate.trim(), vehicleMake.trim(), stayEnd.toISOString(), cardCode ?? undefined
+        plate.trim(), vehicleMake.trim(), stayEnd.toISOString(), cardCode ?? undefined,
+        phone.trim() ? phone.replace(/\s+/g, '') : undefined
       );
       setCreated(res.data);
       setStep('photo');
@@ -219,6 +230,7 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
       const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       if (code === 'card_in_use') setError(t('valetCardInUse'));
       else if (code === 'unknown_card') setError(t('valetCardUnknown'));
+      else if (code === 'invalid_phone') setError(t('valetPhoneInvalid'));
       else setError(t('valetFailed'));
     } finally {
       setBusy(false);
@@ -324,6 +336,19 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
                 </Pressable>
               ))}
             </View>
+
+            <Text style={styles.label}>{t('valetPhone')}</Text>
+            <TextInput
+              testID="valet-phone-input"
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="98765 43210"
+              placeholderTextColor={colors.textTertiary}
+              keyboardType="phone-pad"
+              maxLength={13}
+              style={styles.input}
+            />
+            <Text style={styles.hint}>{t('valetPhoneHint')}</Text>
 
             <Text style={styles.label}>{t('valetScanCard')}</Text>
             {cardCode ? (
@@ -524,6 +549,8 @@ const styles = StyleSheet.create({
   angleTileDone: { borderColor: colors.teal, backgroundColor: colors.successBg },
   angleText: { color: colors.textSecondary, fontSize: 12, textTransform: 'capitalize' },
   hint: { color: colors.textTertiary, fontSize: 12, textAlign: 'center' },
+  smsSent: { color: colors.success, fontSize: 13, textAlign: 'center', marginTop: 10 },
+  smsFailed: { color: colors.danger, fontSize: 13, textAlign: 'center', marginTop: 10, fontWeight: '600' },
   cardScanBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
     borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
