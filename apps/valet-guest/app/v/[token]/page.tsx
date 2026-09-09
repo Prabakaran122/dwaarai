@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import GuardBadgeModal from '@/components/GuardBadgeModal';
 import {
-  getTicket, requestCar, getRotatingQr, claimDiscount,
+  getTicket, requestCar, getRotatingQr, claimDiscount, venueLogoUrl,
   isValidIndianMobile, formatCountdown,
   GuestTicket, RotatingQr, GuestError,
 } from '@/lib/api';
@@ -71,7 +71,9 @@ function VehicleCard({
 
         {ticket.guardName && (
           <div className="flex items-center justify-between gap-3">
-            <dt className="text-white/50">Bringing your car</dt>
+            <dt className="text-white/50">
+              {ticket.handedOver ? 'Brought by' : 'Bringing your car'}
+            </dt>
             <dd className="flex items-center gap-2">
               <span className="text-white">{ticket.guardName}</span>
               <button
@@ -387,9 +389,68 @@ export default function GuestPage() {
 
       {(ticket.handedOver || ticket.status === 'final_closed') && (
         <>
-          <section className="mt-5 rounded-2xl bg-[#1B3A4B] p-5 ring-1 ring-white/10 text-center">
-            <p className="text-white font-semibold">Thank you</p>
-            <p className="text-sm text-white/50 mt-1">We hope to see you again.</p>
+          {/* The one screen that belongs to the venue rather than to us: a
+              white card so their mark sits on its own ground, inside the dark
+              shell the rest of the journey uses. Going white page-wide would
+              flash a phone at a porch at night for the sake of one screen. */}
+          <section className="mt-5 rounded-2xl bg-white px-6 py-10 text-center">
+            {ticket.hasVenueLogo ? (
+              <img
+                src={venueLogoUrl(token)}
+                alt={ticket.venueName}
+                className="mx-auto max-h-24 w-auto object-contain"
+              />
+            ) : (
+              /* A wordmark is what most venue logos are anyway, so a venue
+                 with nothing uploaded still gets a considered screen. */
+              <p
+                data-testid="venue-wordmark"
+                className="text-2xl font-semibold tracking-[0.15em] uppercase text-slate-900"
+              >
+                {ticket.venueName}
+              </p>
+            )}
+
+            <h2 className="mt-10 text-3xl font-bold tracking-tight text-slate-900">
+              Thank You for Visiting
+            </h2>
+            {ticket.hasCard && (
+              <p className="mt-2 text-sm text-slate-500">
+                Please return the card back to the venue
+              </p>
+            )}
+
+            <p className="mt-8 text-xs text-slate-400">Ticket {ticket.displayId}</p>
+
+            {/* Stacked, not inline. The supplied mark is a square lockup with
+                a tagline inside it, so shrinking it to sit beside a caption
+                renders the wordmark at about eight pixels. Given its own line
+                it reads. */}
+            <div className="mt-8">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                Powered by
+              </p>
+              {/* basePath is not applied to a raw img src, only to next/image
+                  and Link, so the /valet prefix is written out. */}
+              <img
+                src="/valet/dwaar-ai-logo.png"
+                alt="DwaarAI"
+                className="mx-auto mt-2 h-14 w-auto"
+              />
+            </div>
+
+            <p className="mt-6 text-[11px] text-slate-400">
+              © {new Date().getFullYear()} Dwaar AI
+            </p>
+            <p className="mt-1 text-[11px]">
+              <a href="https://dwaarai.com/privacy-policy.html" className="text-slate-500 underline">
+                Privacy Policy
+              </a>
+              <span className="text-slate-300"> | </span>
+              <a href="https://dwaarai.com/terms-of-service.html" className="text-slate-500 underline">
+                Terms &amp; Conditions
+              </a>
+            </p>
           </section>
           <DiscountOffer token={token} />
         </>

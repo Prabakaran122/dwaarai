@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Readable } from 'stream';
 
 vi.mock('../db.js', () => ({
   default: {},
@@ -6,8 +7,14 @@ vi.mock('../db.js', () => ({
   queryOne: vi.fn(),
   queryRows: vi.fn(),
 }));
+vi.mock('../lib/storage.js', () => ({
+  storage: { put: vi.fn(async () => {}), getStream: vi.fn(), delete: vi.fn(async () => {}) },
+  buildKey: vi.fn(() => 'valet/branding/community/logo.png'),
+  extensionFor: vi.fn(() => 'png'),
+}));
 
-import { queryOne, queryRows } from '../db.js';
+import { query, queryOne, queryRows } from '../db.js';
+import { storage } from '../lib/storage.js';
 import adminRoutes from '../routes/admin.js';
 import { createApp, request, guardToken, adminToken, COMMUNITY_ID } from './helpers.js';
 
@@ -532,5 +539,71 @@ describe('GET /admin/tickets/search', () => {
     const res = await request(app, 'GET', '/admin/tickets/search?plate=KA03', { token: guardToken() });
 
     expect(res.status).toBe(403);
+  });
+});
+
+describe('venue branding — the logo a guest sees on the thank-you screen', () => {
+  it('requires an admin: a guard cannot rebrand the venue', async () => {
+    const res = await request(app, 'GET', '/admin/branding', { token: guardToken() });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('reports no logo before one is uploaded', async () => {
+    queryOne.mockResolvedValueOnce({ logo_key: null });
+
+    const res = await request(app, 'GET', '/admin/branding', { token: adminToken() });
+
+    expect(res.status).toBe(200);
+    expect(res.body.hasLogo).toBe(false);
+  });
+
+  it('reports the logo once the venue has one', async () => {
+    queryOne.mockResolvedValueOnce({ logo_key: 'valet/branding/c1/logo.png' });
+
+    const res = await request(app, 'GET', '/admin/branding', { token: adminToken() });
+
+    expect(res.body.hasLogo).toBe(true);
+  });
+
+  it('refuses to forget a logo for a venue that has none', async () => {
+    queryOne.mockResolvedValueOnce({ logo_key: null });
+
+    const res = await request(app, 'DELETE', '/admin/branding/logo', { token: adminToken() });
+
+    expect(res.status).toBe(404);
+    expect(storage.delete).not.toHaveBeenCalled();
+  });
+
+  it('removes the file as well as the reference, so nothing is orphaned', async () => {
+    queryOne.mockResolvedValueOnce({ logo_key: 'valet/branding/c1/logo.png' });
+    query.mockResolvedValueOnce({});
+
+    const res = await request(app, 'DELETE', '/admin/branding/logo', { token: adminToken() });
+
+    expect(res.status).toBe(200);
+    expect(storage.delete).toHaveBeenCalledWith('valet/branding/c1/logo.png');
+    // The key is cleared from the venue's config in the same breath.
+    expect(query.mock.calls[0][0]).toMatch(/config/i);
+  });
+});
+
+describe('GET /admin/branding/logo', () => {
+  it('serves the current logo back so the operator can see what is live', async () => {
+    queryOne.mockResolvedValueOnce({ logo_key: 'valet/branding/c1/logo.png' });
+    storage.getStream.mockResolvedValueOnce(Readable.from([Buffer.from('PNG')]));
+
+    const res = await request(app, 'GET', '/admin/branding/logo', { token: adminToken() });
+
+    expect(res.status).toBe(200);
+    expect(storage.getStream).toHaveBeenCalledWith('valet/branding/c1/logo.png');
+  });
+
+  it('404s rather than serving a placeholder when nothing is set', async () => {
+    queryOne.mockResolvedValueOnce({ logo_key: null });
+
+    const res = await request(app, 'GET', '/admin/branding/logo', { token: adminToken() });
+
+    expect(res.status).toBe(404);
   });
 });

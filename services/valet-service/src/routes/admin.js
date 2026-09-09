@@ -1,9 +1,30 @@
+import multer from 'multer';
 import { asyncRouter } from '../lib/async-router.js';
-import { queryOne, queryRows } from '../db.js';
+import { query, queryOne, queryRows } from '../db.js';
 import { normalizePlate } from '../lib/plate.js';
+import { storage, extensionFor } from '../lib/storage.js';
 import { authenticateJWT } from '../middleware/auth.js';
 
 const router = asyncRouter();
+
+// Small on purpose. This is a wordmark shown above a thank-you message on a
+// phone, not a hero image, and a venue uploading a 12MB print asset would make
+// the guest wait on a hotel's patchy wifi for something they glance at.
+const logoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
+});
+
+const admin = authenticateJWT(['admin']);
+
+/** The venue's own logo key, kept in communities.config rather than a column. */
+function logoKeyOf(communityId) {
+  return queryOne(
+    `SELECT config->>'valetLogoKey' AS logo_key FROM communities WHERE id = $1`,
+    [communityId]
+  );
+}
 
 /**
  * Venue-level reporting, deliberately separate from the guard's fast-path
@@ -342,3 +363,65 @@ router.get('/tickets/search', authenticateJWT(['admin']), async (req, res) => {
 });
 
 export default router;
+
+// --- venue branding --------------------------------------------------------
+
+/**
+ * The venue's logo, shown to the guest on the thank-you screen.
+ *
+ * Lives in communities.config rather than its own column: it is one optional
+ * string per venue, and a venue with no logo behaves exactly as it does today
+ * -- its name set in type, which is all a wordmark is anyway.
+ */
+router.get('/branding', admin, async (req, res) => {
+  const row = await logoKeyOf(req.user.community_id);
+  res.json({ hasLogo: !!row?.logo_key });
+});
+
+/** The live logo, so the operator sees what a guest sees rather than a filename. */
+router.get('/branding/logo', admin, async (req, res) => {
+  const row = await logoKeyOf(req.user.community_id);
+  if (!row?.logo_key) return res.status(404).json({ error: 'no_logo' });
+
+  const stream = await storage.getStream(row.logo_key);
+  if (!stream) return res.status(404).json({ error: 'no_logo' });
+
+  res.setHeader('Cache-Control', 'private, no-store');
+  stream.pipe(res);
+});
+
+router.post('/branding/logo', admin, logoUpload.single('logo'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'no_file', message: 'Choose a PNG or JPG to upload' });
+  }
+
+  const communityId = req.user.community_id;
+  const key = `valet/branding/${communityId}/logo-${Date.now()}.${extensionFor(req.file.mimetype)}`;
+  await storage.put(key, req.file.buffer, req.file.mimetype);
+
+  // The previous file is removed after the new one is written and recorded, so
+  // a failure part-way leaves the venue with the old logo rather than none.
+  const previous = await logoKeyOf(communityId);
+  await query(
+    `UPDATE communities
+        SET config = jsonb_set(COALESCE(config, '{}'::jsonb), '{valetLogoKey}', to_jsonb($2::text))
+      WHERE id = $1`,
+    [communityId, key]
+  );
+  if (previous?.logo_key) await storage.delete(previous.logo_key).catch(() => {});
+
+  res.status(201).json({ hasLogo: true });
+});
+
+router.delete('/branding/logo', admin, async (req, res) => {
+  const row = await logoKeyOf(req.user.community_id);
+  if (!row?.logo_key) return res.status(404).json({ error: 'no_logo' });
+
+  await query(
+    `UPDATE communities SET config = config - 'valetLogoKey' WHERE id = $1`,
+    [req.user.community_id]
+  );
+  await storage.delete(row.logo_key).catch(() => {});
+
+  res.json({ hasLogo: false });
+});

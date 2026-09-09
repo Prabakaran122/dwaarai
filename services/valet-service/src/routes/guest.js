@@ -24,6 +24,7 @@ const ROTATING_TTL_SECONDS = Number(process.env.ROTATING_TOKEN_TTL_SECONDS || 18
 function findTicket(sessionToken) {
   return queryOne(
     `SELECT t.*, c.name AS community_name,
+            c.config->>'valetLogoKey' AS venue_logo_key,
             cg.name AS created_guard_name, ug.name AS current_guard_name
        FROM valet_tickets t
        JOIN communities c ON c.id = t.community_id
@@ -68,6 +69,13 @@ function guestView(t, isHandedOver = false) {
     // True from the scan, not from the guard's later confirm-pickup: by the
     // time the car is formally closed the guest is in traffic.
     handedOver: isHandedOver,
+    // Whether a logo exists, never where it lives. The file is fetched back
+    // through the session token, so no storage key or community id crosses to
+    // the guest.
+    hasVenueLogo: !!t.venue_logo_key,
+    // Only a guest actually holding a printed card should be asked to hand it
+    // back; a screen-QR guest never had one.
+    hasCard: !!t.card_code,
   };
 }
 
@@ -165,6 +173,25 @@ router.post('/tickets/:token/request', async (req, res) => {
  * token will validate at the guard's scanner, so a screenshot of a prior one
  * cannot be replayed.
  */
+/**
+ * The venue's logo for the thank-you screen.
+ *
+ * Addressed by session token like the guard badge photo, not by community id:
+ * guestView deliberately leaks no internal identifier, and adding one here to
+ * save a lookup would undo that for a picture.
+ */
+router.get('/tickets/:token/venue-logo', async (req, res) => {
+  const ticket = await findTicket(req.params.token);
+  if (!ticket) return notFound(res);
+  if (!ticket.venue_logo_key) return res.status(404).json({ error: 'no_logo' });
+
+  const stream = await storage.getStream(ticket.venue_logo_key);
+  if (!stream) return res.status(404).json({ error: 'no_logo' });
+
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  stream.pipe(res);
+});
+
 router.get('/tickets/:token/rotating-qr', async (req, res) => {
   const ticket = await findTicket(req.params.token);
   if (!ticket) return notFound(res);

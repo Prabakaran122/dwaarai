@@ -36,6 +36,8 @@ const baseTicket: GuestTicket = {
   etaSeconds: null,
   dropOffGuardName: 'Ramesh',
   handedOver: false,
+  hasVenueLogo: false,
+  hasCard: false,
 };
 
 const mockGetTicket = vi.mocked(getTicket);
@@ -303,5 +305,76 @@ describe('the handover moment', () => {
 
     expect(await screen.findByAltText('Pickup QR code')).toBeInTheDocument();
     expect(screen.queryByText(/thank you/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('the thank-you screen', () => {
+  const done = { ...baseTicket, status: 'final_closed' as const };
+
+  it('leads with the venue logo when the venue has uploaded one', async () => {
+    mockGetTicket.mockResolvedValue({ ...done, hasVenueLogo: true });
+
+    render(<GuestPage />);
+
+    const logo = await screen.findByAltText('Prestige Lakeside');
+    expect(logo.getAttribute('src')).toContain('/guest/tickets/test-token/venue-logo');
+  });
+
+  it('sets the venue name in type when there is no logo — a wordmark either way', async () => {
+    mockGetTicket.mockResolvedValue(done);
+
+    render(<GuestPage />);
+
+    expect(await screen.findByTestId('venue-wordmark')).toHaveTextContent('Prestige Lakeside');
+    expect(screen.queryByAltText('Prestige Lakeside')).not.toBeInTheDocument();
+  });
+
+  it('asks for the card back only from a guest who was given one', async () => {
+    mockGetTicket.mockResolvedValue({ ...done, hasCard: true });
+
+    render(<GuestPage />);
+
+    expect(await screen.findByText(/return the card/i)).toBeInTheDocument();
+  });
+
+  it('says nothing about a card to a guest who scanned the screen', async () => {
+    mockGetTicket.mockResolvedValue(done);
+
+    render(<GuestPage />);
+    await screen.findByText(/thank you for visiting/i);
+
+    expect(screen.queryByText(/return the card/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the ticket number, which is what the desk will ask for', async () => {
+    mockGetTicket.mockResolvedValue(done);
+
+    render(<GuestPage />);
+
+    expect(await screen.findByText(/SRT-0001/)).toBeInTheDocument();
+  });
+
+  it('carries the Powered by DwaarAI mark and the legal links', async () => {
+    mockGetTicket.mockResolvedValue(done);
+
+    render(<GuestPage />);
+
+    expect(await screen.findByAltText('DwaarAI')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /privacy/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /terms/i })).toBeInTheDocument();
+  });
+
+  it('stops saying a car is being brought once the guest has it', async () => {
+    mockGetTicket.mockResolvedValue({
+      ...baseTicket, status: 'arrived' as const, guardName: 'Suresh', handedOver: true,
+    });
+
+    render(<GuestPage />);
+    await screen.findByText(/thank you for visiting/i);
+
+    // "Bringing your car" over a thank-you note is a car already in the
+    // guest's hands being described as still on its way.
+    expect(screen.queryByText(/bringing your car/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/brought by/i)).toBeInTheDocument();
   });
 });

@@ -237,3 +237,70 @@ export function previewRange(prefix: string, from: number, to: number, width = 3
   }
   return out;
 }
+
+// --- venue branding ---------------------------------------------------------
+
+export const getBranding = () => valetFetch<{ hasLogo: boolean }>('/admin/branding');
+
+export const removeVenueLogo = () =>
+  valetFetch<{ hasLogo: boolean }>('/admin/branding/logo', { method: 'DELETE' });
+
+/**
+ * Multipart, so it cannot go through valetFetch: that sets a JSON content type,
+ * and setting one by hand on a FormData body strips the boundary the server
+ * needs to parse it.
+ */
+export async function uploadVenueLogo(file: File): Promise<{ hasLogo: boolean }> {
+  const token = typeof window === 'undefined' ? '' : localStorage.getItem('cg_admin_token') || '';
+  const communityId =
+    typeof window === 'undefined' ? null : localStorage.getItem('cg_selected_community_id');
+
+  const body = new FormData();
+  body.append('logo', file);
+
+  const res = await fetch(`${VALET_BASE}/admin/branding/logo`, {
+    method: 'POST',
+    body,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(communityId ? { 'X-Community-Id': communityId } : {}),
+    },
+  });
+
+  if (!res.ok) {
+    let code = 'error';
+    let message = `${res.status} ${res.statusText}`;
+    try {
+      const b = await res.json();
+      code = b?.error || code;
+      message = b?.message || message;
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new ValetError(res.status, code, message);
+  }
+  return res.json();
+}
+
+/**
+ * The logo as an object URL.
+ *
+ * Fetched rather than pointed at with an <img src>: the route is admin-only
+ * and a browser sends no Authorization header for an image request, so a plain
+ * src would 401. Returns null when the venue has no logo.
+ */
+export async function fetchVenueLogo(): Promise<string | null> {
+  const token = typeof window === 'undefined' ? '' : localStorage.getItem('cg_admin_token') || '';
+  const communityId =
+    typeof window === 'undefined' ? null : localStorage.getItem('cg_selected_community_id');
+
+  const res = await fetch(`${VALET_BASE}/admin/branding/logo`, {
+    cache: 'no-store',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(communityId ? { 'X-Community-Id': communityId } : {}),
+    },
+  });
+  if (!res.ok) return null;
+  return URL.createObjectURL(await res.blob());
+}

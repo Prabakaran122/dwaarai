@@ -31,6 +31,10 @@ export interface GuestTicket {
    * photographed the car, by which point the guest has driven off.
    */
   handedOver: boolean;
+  /** The venue uploaded a logo. Where it lives stays on our side of the wire. */
+  hasVenueLogo: boolean;
+  /** A printed card is in the guest's hand and should be handed back. */
+  hasCard: boolean;
 }
 
 export interface RotatingQr {
@@ -92,6 +96,10 @@ export const getBadge = (token: string, which: 'dropoff' | 'current') =>
 
 export const badgePhotoUrl = (token: string, which: 'dropoff' | 'current') =>
   `${VALET_BASE}/guest/tickets/${token}/guard-badge/${which}/photo`;
+
+/** Addressed by session token, like the guard badge photo — no ids cross. */
+export const venueLogoUrl = (token: string) =>
+  `${VALET_BASE}/guest/tickets/${token}/venue-logo`;
 
 export const claimDiscount = (token: string, phoneNumber: string) =>
   call<{ code: string; expiry: string }>(`/guest/tickets/${token}/discount-optin`, {

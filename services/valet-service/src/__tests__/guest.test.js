@@ -15,7 +15,9 @@ vi.mock('../lib/storage.js', () => ({
 vi.mock('../lib/realtime.js', () => ({ emitTicketUpdate: vi.fn(), getIO: vi.fn(), initRealtime: vi.fn() }));
 vi.mock('../lib/discount.js', () => ({ issueDiscountCode: vi.fn() }));
 
+import { Readable } from 'stream';
 import { query, queryOne } from '../db.js';
+import { storage } from '../lib/storage.js';
 import { issueDiscountCode } from '../lib/discount.js';
 import guestRoutes from '../routes/guest.js';
 import { createApp, request, ticketRow, SESSION_TOKEN, TICKET_ID, COMMUNITY_ID } from './helpers.js';
@@ -525,5 +527,64 @@ describe('the handover moment', () => {
 
     expect(res.status).toBe(409);
     expect(issueDiscountCode).not.toHaveBeenCalled();
+  });
+});
+
+describe('what the thank-you screen needs to know', () => {
+  it('says whether the venue has a logo, without leaking which venue', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ venue_logo_key: 'valet/branding/c1/logo.png' }));
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+
+    expect(res.body.hasVenueLogo).toBe(true);
+    // The storage key and the community id are ours, not the guest's.
+    expect(res.body.venueLogoKey).toBeUndefined();
+    expect(res.body.communityId).toBeUndefined();
+  });
+
+  it('says there is no logo when the venue never uploaded one', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ venue_logo_key: null }));
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+
+    expect(res.body.hasVenueLogo).toBe(false);
+  });
+
+  it('says a printed card is in the guest hand, so they can be asked to return it', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ card_code: 'A047' }));
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+
+    expect(res.body.hasCard).toBe(true);
+  });
+
+  it('does not ask a screen-QR guest to return a card they never held', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ card_code: null }));
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+
+    expect(res.body.hasCard).toBe(false);
+  });
+});
+
+describe('GET /guest/tickets/:token/venue-logo', () => {
+  it('serves the logo off the session token, never off a community id', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ venue_logo_key: 'valet/branding/c1/logo.png' }));
+    // A real stream, so the response actually ends — a stubbed pipe() leaves
+    // the request hanging and the test just times out.
+    storage.getStream.mockResolvedValueOnce(Readable.from([Buffer.from('PNG')]));
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}/venue-logo`);
+
+    expect(storage.getStream).toHaveBeenCalledWith('valet/branding/c1/logo.png');
+    expect(res.status).toBe(200);
+  });
+
+  it('404s when the venue has no logo', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ venue_logo_key: null }));
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}/venue-logo`);
+
+    expect(res.status).toBe(404);
   });
 });
