@@ -10,7 +10,7 @@ import { colors } from '../theme/colors';
  * on the device turns "it crashes" into a specific, reportable fact.
  *
  * Deliberately styles nothing through the app's `font()` helper — the first
- * Sarthi crash WAS a missing font family, and a boundary that dies for the
+ * DwaarAI Valet crash WAS a missing font family, and a boundary that dies for the
  * same reason as the thing it is reporting is worse than useless. Everything
  * here uses system fonts and literal colours.
  */
@@ -29,7 +29,7 @@ export default class ErrorBoundary extends React.Component<{ children: React.Rea
 
   componentDidCatch(error: Error, info: { componentStack?: string }) {
     // Also logged so `adb logcat` picks it up when a cable is available.
-    console.error('[Sarthi] render crash:', error?.message, info?.componentStack);
+    console.error('[DwaarAI Valet] render crash:', error?.message, info?.componentStack);
     this.setState({ info: info?.componentStack ?? null });
   }
 
@@ -40,7 +40,7 @@ export default class ErrorBoundary extends React.Component<{ children: React.Rea
     return (
       <View style={styles.root}>
         <ScrollView contentContainerStyle={styles.scroll}>
-          <Text style={styles.title}>Sarthi hit an error</Text>
+          <Text style={styles.title}>DwaarAI Valet hit an error</Text>
           <Text style={styles.hint}>
             Please screenshot this and send it to the team — it names the exact failure.
           </Text>

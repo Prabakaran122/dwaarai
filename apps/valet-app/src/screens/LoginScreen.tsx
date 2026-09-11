@@ -8,7 +8,7 @@ import { useLangStore, useT } from '../store/langStore';
 import { LANGUAGES } from '../i18n/translations';
 
 /**
- * Sarthi's own sign-in.
+ * DwaarAI Valet's own sign-in.
  *
  * Deliberately not Nazar's: a valet at a hotel is not a society gate guard,
  * and signing into a screen branded "Guard Station" would be the wrong product
@@ -34,7 +34,7 @@ export default function LoginScreen() {
         <View style={styles.logo}>
           <MaterialCommunityIcons name="car-key" size={30} color={colors.bgPrimary} />
         </View>
-        <Text style={styles.wordmark}>Sarthi</Text>
+        <Text style={styles.wordmark}>DwaarAI Valet</Text>
         <Text style={styles.tagline}>{t('valetStation')}</Text>
 
         <View style={styles.field}>

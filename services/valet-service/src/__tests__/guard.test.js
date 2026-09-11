@@ -115,7 +115,7 @@ describe('POST /guard/tickets', () => {
   }
 
   it('creates a ticket and returns the guest URL and QR', async () => {
-    mockCreateFlow('SRT-0004');
+    mockCreateFlow('DWR-0004');
 
     const res = await request(app, 'POST', '/guard/tickets', {
       token,
@@ -127,7 +127,7 @@ describe('POST /guard/tickets', () => {
     });
 
     expect(res.status).toBe(201);
-    expect(res.body.displayId).toBe('SRT-0005');
+    expect(res.body.displayId).toBe('DWR-0005');
     expect(res.body.sessionToken).toHaveLength(32);
     expect(res.body.guestUrl).toContain(res.body.sessionToken);
     expect(res.body.qrDataUrl).toBe('data:image/png;base64,QR');
@@ -202,7 +202,7 @@ describe('POST /guard/tickets', () => {
     // UNIQUE (community_id, display_id) — a 500 for a guard mid-intake. With
     // no tickets yet there is no row to lock at all. The advisory lock exists
     // regardless of rows and is held to commit.
-    mockCreateFlow('SRT-0004');
+    mockCreateFlow('DWR-0004');
 
     await request(app, 'POST', '/guard/tickets', {
       token,
@@ -222,7 +222,7 @@ describe('POST /guard/tickets', () => {
   });
 
   it('no longer takes a row lock that never serialised anything', async () => {
-    mockCreateFlow('SRT-0004');
+    mockCreateFlow('DWR-0004');
 
     await request(app, 'POST', '/guard/tickets', {
       token,
@@ -600,7 +600,7 @@ describe('binding a printed card at intake', () => {
     mockClient.query
       .mockResolvedValueOnce({})                                                   // BEGIN
       .mockResolvedValueOnce({ rows: cardFound ? [{ id: 'card-1', code: 'A047' }] : [] })
-      .mockResolvedValueOnce({ rows: cardInUse ? [{ display_id: 'SRT-0009' }] : [] })
+      .mockResolvedValueOnce({ rows: cardInUse ? [{ display_id: 'DWR-0009' }] : [] })
       .mockResolvedValueOnce({})                                                    // advisory lock
       .mockResolvedValueOnce({ rows: [] })                                          // display id
       .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })                          // insert
@@ -643,7 +643,7 @@ describe('binding a printed card at intake', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('card_in_use');
-    expect(res.body.message).toContain('SRT-0009');
+    expect(res.body.message).toContain('DWR-0009');
     expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
   });
 

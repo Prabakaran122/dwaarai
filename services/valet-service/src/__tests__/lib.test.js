@@ -25,22 +25,22 @@ describe('normalizePlate', () => {
 });
 
 describe('nextDisplayId', () => {
-  it('starts at SRT-0001 when a community has no tickets yet', () => {
-    expect(nextDisplayId(undefined)).toBe('SRT-0001');
-    expect(nextDisplayId(null)).toBe('SRT-0001');
+  it('starts at DWR-0001 when a community has no tickets yet', () => {
+    expect(nextDisplayId(undefined)).toBe('DWR-0001');
+    expect(nextDisplayId(null)).toBe('DWR-0001');
   });
 
   it('increments and keeps the four-digit padding', () => {
-    expect(nextDisplayId('SRT-0001')).toBe('SRT-0002');
-    expect(nextDisplayId('SRT-0099')).toBe('SRT-0100');
+    expect(nextDisplayId('DWR-0001')).toBe('DWR-0002');
+    expect(nextDisplayId('DWR-0099')).toBe('DWR-0100');
   });
 
   it('grows past four digits rather than wrapping', () => {
-    expect(nextDisplayId('SRT-9999')).toBe('SRT-10000');
+    expect(nextDisplayId('DWR-9999')).toBe('DWR-10000');
   });
 
   it('falls back to 1 on an unparseable previous id instead of producing NaN', () => {
-    expect(nextDisplayId('GARBAGE')).toBe('SRT-0001');
+    expect(nextDisplayId('GARBAGE')).toBe('DWR-0001');
   });
 });
 
@@ -62,7 +62,7 @@ describe('token generation', () => {
     // Codes get read aloud and typed at a counter, so 0/O and 1/I are excluded.
     for (let i = 0; i < 100; i += 1) {
       const code = newDiscountCode();
-      expect(code).toMatch(/^SARTHI-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/);
+      expect(code).toMatch(/^DWAAR-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/);
     }
   });
 });

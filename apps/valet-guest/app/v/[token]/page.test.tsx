@@ -26,7 +26,7 @@ import GuestPage from './page';
 import { getTicket, requestCar, getRotatingQr, GuestTicket, GuestError } from '@/lib/api';
 
 const baseTicket: GuestTicket = {
-  displayId: 'SRT-0001',
+  displayId: 'DWR-0001',
   plate: 'KA03NJ0435',
   vehicleMake: 'Maruti Swift',
   venueName: 'Prestige Lakeside',
@@ -351,7 +351,7 @@ describe('the thank-you screen', () => {
 
     render(<GuestPage />);
 
-    expect(await screen.findByText(/SRT-0001/)).toBeInTheDocument();
+    expect(await screen.findByText(/DWR-0001/)).toBeInTheDocument();
   });
 
   it('carries the Powered by DwaarAI mark and the legal links', async () => {

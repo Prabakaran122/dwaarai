@@ -12,7 +12,7 @@ import ValetFlow from '../src/screens/ValetFlow';
 import { installAuthRefresh } from '../src/api/valet';
 
 /**
- * Sarthi's entry point.
+ * DwaarAI Valet's entry point.
  *
  * The whole app is the valet flow — there is no tab bar, because a valet does
  * one job. That is the difference between this and folding valet into the gate

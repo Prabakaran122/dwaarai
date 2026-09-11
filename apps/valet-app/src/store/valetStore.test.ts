@@ -7,7 +7,7 @@ import type { ValetTicket, ValetStatus } from '../api/valet';
 function ticket(overrides: Partial<ValetTicket> = {}): ValetTicket {
   return {
     id: 'id-1',
-    displayId: 'SRT-0001',
+    displayId: 'DWR-0001',
     sessionToken: 'tok-1',
     plate: 'KA03NJ0435',
     vehicleMake: 'Swift',

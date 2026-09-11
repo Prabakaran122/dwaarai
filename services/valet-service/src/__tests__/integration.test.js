@@ -27,7 +27,7 @@ let otherGuardId;
 
 async function makeTicket(overrides = {}) {
   const {
-    displayId = `SRT-${Math.floor(Math.random() * 100000)}`,
+    displayId = `DWR-${Math.floor(Math.random() * 100000)}`,
     plate = 'KA03NJ0435',
     status = 'parked',
     stayEndAt = new Date(Date.now() + 86400000).toISOString(),
@@ -100,8 +100,8 @@ suite('valet schema against a real database', () => {
   });
 
   it('enforces one display id per community', async () => {
-    await makeTicket({ displayId: 'SRT-DUP' });
-    await expect(makeTicket({ displayId: 'SRT-DUP' })).rejects.toThrow(/duplicate key/);
+    await makeTicket({ displayId: 'DWR-DUP' });
+    await expect(makeTicket({ displayId: 'DWR-DUP' })).rejects.toThrow(/duplicate key/);
   });
 
   it('enforces globally unique session tokens', async () => {
@@ -111,7 +111,7 @@ suite('valet schema against a real database', () => {
         `INSERT INTO valet_tickets
            (community_id, display_id, session_token, plate, plate_normalized,
             vehicle_make, stay_end_at, created_by_guard_id)
-         VALUES ($1, 'SRT-CLASH', $2, 'X', 'X', 'Y', NOW() + interval '1 day', $3)`,
+         VALUES ($1, 'DWR-CLASH', $2, 'X', 'X', 'Y', NOW() + interval '1 day', $3)`,
         [communityId, first.session_token, guardId]
       )
     ).rejects.toThrow(/duplicate key/);

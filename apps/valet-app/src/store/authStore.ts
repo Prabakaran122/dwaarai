@@ -7,7 +7,7 @@ import {
 } from '../api/session';
 
 /**
- * Sarthi signs valets in against the same api-gateway endpoint the guard app
+ * DwaarAI Valet signs valets in against the same api-gateway endpoint the guard app
  * uses (`/auth/guard-login`, `residents.type = 'guard'`), because valet-service
  * verifies exactly those tokens. It is a separate app, not a separate identity
  * system — a property's staff exist once.

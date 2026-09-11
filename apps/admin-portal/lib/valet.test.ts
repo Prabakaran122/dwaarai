@@ -225,12 +225,12 @@ describe('card stock client', () => {
 
   it('surfaces the service\'s reason a card cannot be retired', async () => {
     vi.mocked(global.fetch).mockResolvedValue(
-      mockResponse(409, { error: 'card_in_use', message: 'Card is on ticket SRT-0009.' })
+      mockResponse(409, { error: 'card_in_use', message: 'Card is on ticket DWR-0009.' })
     );
 
     await expect(setCardActive('c1', false)).rejects.toMatchObject({
       code: 'card_in_use',
-      message: 'Card is on ticket SRT-0009.',
+      message: 'Card is on ticket DWR-0009.',
     });
   });
 });

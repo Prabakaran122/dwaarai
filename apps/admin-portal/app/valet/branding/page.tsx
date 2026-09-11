@@ -9,7 +9,7 @@ import {
 /**
  * The one screen a venue's own brand appears on.
  *
- * A guest sees the valet flow in Sarthi's colours the whole way through, which
+ * A guest sees the valet flow in DwaarAI Valet's colours the whole way through, which
  * is right while they are tracking a car. The thank-you screen is different:
  * it is the venue saying goodbye, so it carries the venue's mark and only a
  * small "Powered by DwaarAI" underneath.

@@ -17,7 +17,7 @@ export function newRotatingToken() {
 
 /** Human-typeable discount code, e.g. read aloud or typed at a POS later. */
 export function newDiscountCode() {
-  return `SARTHI-${humanId()}`;
+  return `DWAAR-${humanId()}`;
 }
 
 /**
@@ -28,11 +28,11 @@ export function newDiscountCode() {
  * data. Derived from the highest existing sequence in the database rather
  * than an in-memory counter, so it survives a restart without colliding.
  *
- * `SRT-0001`. The caller runs this inside the same transaction as the insert
+ * `DWR-0001`. The caller runs this inside the same transaction as the insert
  * so two concurrent ticket creations cannot pick the same sequence; the
  * UNIQUE (community_id, display_id) constraint is the backstop if they do.
  */
 export function nextDisplayId(lastDisplayId) {
   const lastSeq = lastDisplayId ? Number(String(lastDisplayId).split('-')[1]) || 0 : 0;
-  return `SRT-${String(lastSeq + 1).padStart(4, '0')}`;
+  return `DWR-${String(lastSeq + 1).padStart(4, '0')}`;
 }

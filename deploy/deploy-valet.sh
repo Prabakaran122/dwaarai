@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Deploys the valet (Sarthi) surfaces onto the dwaarai.com host.
+# Deploys the valet (DwaarAI Valet) surfaces onto the dwaarai.com host.
 #
 # Additive and idempotent: it never touches the existing api-gateway, landing
 # site, or database contents. Re-running it is safe — every step either
@@ -226,7 +226,7 @@ path = sys.argv[1]
 s = io.open(path, encoding='utf-8').read()
 
 block = """
-    # ---- Valet (Sarthi) ----
+    # ---- Valet (DwaarAI Valet) ----
     # `^~` so the css/js regex location above cannot steal /valet/_next/ assets.
     location ^~ /valet-api/ {
         proxy_pass http://127.0.0.1:3060/;

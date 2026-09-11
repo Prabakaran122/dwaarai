@@ -40,11 +40,11 @@ describe('GET /admin/plate-history', () => {
   it('returns every visit for a plate, newest first', async () => {
     queryRows.mockResolvedValueOnce([
       {
-        display_id: 'SRT-0007', plate: 'KA 03 NJ 0435', created_at: '2026-08-20T10:00:00Z',
+        display_id: 'DWR-0007', plate: 'KA 03 NJ 0435', created_at: '2026-08-20T10:00:00Z',
         closed_at: '2026-08-20T18:00:00Z', status: 'final_closed', disputed: false, created_guard_name: 'Ramesh',
       },
       {
-        display_id: 'SRT-0003', plate: 'KA03NJ0435', created_at: '2026-04-12T10:00:00Z',
+        display_id: 'DWR-0003', plate: 'KA03NJ0435', created_at: '2026-04-12T10:00:00Z',
         closed_at: '2026-04-12T20:00:00Z', status: 'final_closed', disputed: true, created_guard_name: 'Suresh',
       },
     ]);
@@ -56,7 +56,7 @@ describe('GET /admin/plate-history', () => {
     expect(res.status).toBe(200);
     expect(res.body.visitCount).toBe(2);
     expect(res.body.disputedCount).toBe(1);
-    expect(res.body.visits[0].displayId).toBe('SRT-0007');
+    expect(res.body.visits[0].displayId).toBe('DWR-0007');
   });
 
   it('matches a plate regardless of how it was spaced when entered', async () => {
@@ -69,7 +69,7 @@ describe('GET /admin/plate-history', () => {
 
   it('keeps the as-entered plate on each visit alongside the normalized one', async () => {
     queryRows.mockResolvedValueOnce([{
-      display_id: 'SRT-0007', plate: 'KA 03 NJ 0435', created_at: 'x', closed_at: null,
+      display_id: 'DWR-0007', plate: 'KA 03 NJ 0435', created_at: 'x', closed_at: null,
       status: 'parked', disputed: false, created_guard_name: 'Ramesh',
     }]);
 
@@ -129,7 +129,7 @@ describe('GET /admin/summary', () => {
 
 function visitRow(overrides = {}) {
   return {
-    id: 't1', display_id: 'SRT-0001', plate: 'KA 03 NJ 0435',
+    id: 't1', display_id: 'DWR-0001', plate: 'KA 03 NJ 0435',
     plate_normalized: 'KA03NJ0435', vehicle_make: 'Swift', status: 'final_closed',
     created_at: '2026-08-20T10:00:00Z', closed_at: '2026-08-20T18:00:00Z',
     disputed: false, created_guard_name: 'Ramesh', stay_seconds: 28800,
@@ -196,7 +196,7 @@ describe('GET /admin/visits', () => {
     const res = await request(app, 'GET', '/admin/visits', { token: adminToken() });
 
     expect(res.body.visits[0]).toMatchObject({
-      displayId: 'SRT-0001',
+      displayId: 'DWR-0001',
       plate: 'KA 03 NJ 0435',
       vehicleMake: 'Swift',
       takenInBy: 'Ramesh',
@@ -308,13 +308,13 @@ describe('GET /admin/cards', () => {
   it('names the vehicle a card is currently out with', async () => {
     queryRows.mockResolvedValueOnce([
       { id: 'c1', code: 'A001', is_active: true, created_at: 'now',
-        display_id: 'SRT-0009', plate: 'KA 03 NJ 0435', status: 'parked' },
+        display_id: 'DWR-0009', plate: 'KA 03 NJ 0435', status: 'parked' },
     ]);
 
     const res = await request(app, 'GET', '/admin/cards', { token: adminToken() });
 
     expect(res.body.cards[0].inUseBy).toEqual({
-      displayId: 'SRT-0009', plate: 'KA 03 NJ 0435', status: 'parked',
+      displayId: 'DWR-0009', plate: 'KA 03 NJ 0435', status: 'parked',
     });
   });
 
@@ -435,12 +435,12 @@ describe('POST /admin/cards/:id/deactivate', () => {
     // the first vehicle is still parked.
     queryOne
       .mockResolvedValueOnce({ id: 'c1' })
-      .mockResolvedValueOnce({ display_id: 'SRT-0009' });
+      .mockResolvedValueOnce({ display_id: 'DWR-0009' });
 
     const res = await request(app, 'POST', '/admin/cards/c1/deactivate', { token: adminToken() });
 
     expect(res.status).toBe(409);
-    expect(res.body.message).toContain('SRT-0009');
+    expect(res.body.message).toContain('DWR-0009');
     expect(queryRows).not.toHaveBeenCalled();
   });
 
@@ -517,7 +517,7 @@ describe('GET /admin/tickets/search', () => {
 
   it('returns the bound card code so a desk can match plastic to a car', async () => {
     queryRows.mockResolvedValueOnce([{
-      display_id: 'SRT-0001', session_token: 'tok', plate: 'KA 03 NJ 0435',
+      display_id: 'DWR-0001', session_token: 'tok', plate: 'KA 03 NJ 0435',
       vehicle_make: 'Swift', status: 'parked', created_at: 'now', closed_at: null,
       disputed: false, card_code: 'A047', created_guard_name: 'Ramesh',
     }]);

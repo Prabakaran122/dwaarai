@@ -19,13 +19,13 @@ beforeEach(() => {
   useLangStore.setState({ lang: 'en' });
 });
 
-describe('Sarthi sign-in', () => {
-  it('is branded Sarthi, not the gate app', () => {
+describe('DwaarAI Valet sign-in', () => {
+  it('is branded DwaarAI Valet, not the gate app', () => {
     // The whole reason this app exists separately: a hotel valet must not be
     // signing into something called "Nazar — Guard Station".
     const { getByText, queryByText } = render(<LoginScreen />);
 
-    expect(getByText('Sarthi')).toBeTruthy();
+    expect(getByText('DwaarAI Valet')).toBeTruthy();
     expect(queryByText('Nazar')).toBeNull();
     expect(queryByText(/guard station/i)).toBeNull();
   });

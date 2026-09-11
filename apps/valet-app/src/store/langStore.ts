@@ -8,7 +8,7 @@ const STORAGE_KEY = 'sarthi_valet_lang';
  * Language is stored on the device only.
  *
  * The guard app writes a valet's choice back to the server because a guard has
- * a profile there to hold it; Sarthi has no per-valet preference endpoint, and
+ * a profile there to hold it; DwaarAI Valet has no per-valet preference endpoint, and
  * inventing one to hold a UI toggle would be more surface than it is worth. A
  * valet who switches devices re-picks a language once.
  */

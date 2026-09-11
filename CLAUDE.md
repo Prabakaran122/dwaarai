@@ -47,7 +47,7 @@ pnpm --filter resident-app test       # jest
 pnpm --filter resident-app exec jest src/screens/DuesScreen.test.tsx   # single test file
 pnpm --filter resident-app typecheck  # tsc --noEmit
 pnpm --filter guard-app test          # jest (jest.config.js, jest-expo preset)
-pnpm --filter valet-app start         # Expo (Sarthi valet app, iOS + Android)
+pnpm --filter valet-app start         # Expo (DwaarAI Valet app, iOS + Android)
 pnpm --filter valet-app test          # jest
 pnpm --filter valet-app typecheck     # tsc --noEmit
 pnpm --filter valet-guest dev         # Next.js 14 guest valet page, port 3110
@@ -72,7 +72,7 @@ Four jobs: `test-python` (pytest against real postgres/redis/mosquitto container
 ### Services (`services/*`, each an independent Express app + own Postgres migrations/tables)
 - **api-gateway** (port 3000, `PORT_API_GATEWAY`) — the primary backend. Owns almost all domain routes (auth, vehicles, passes, dues, notices, facilities, community feed, guard/resident/admin views, face recognition, SOS, incidents, deliveries, handovers, etc.), the Postgres migration runner (`src/db/migrate.js`, 42+ sequential `migrations/*.sql` files), Socket.IO (`websocket.js`) for live dashboard/guard updates, and MQTT publish for gate commands (`mqtt.js`).
 - **vehicle-service** (3020), **visitor-service** (3030, OTP-based pre-approvals), **gate-command-service** (3050, mirrors the event-sync schema and publishes MQTT commands), **notification-service** (3004, FCM + SMS via `msg91`), **audit-service** (3005, PDF report generation) — smaller domain services split out of api-gateway, each with its own `src/routes.js` + `src/db.js`.
-- **valet-service** (3060, `PORT_VALET_SERVICE`) — the Sarthi valet flow: guard ticket handling, the public guest-page API, and operator plate-history reporting. Its tables ship in `043_valet.sql` like every other service's (api-gateway owns all migrations). Media goes through `src/lib/storage.js`, which selects S3 or a local directory from `VALET_STORAGE`. Routes mount on an `asyncRouter()` (`src/lib/async-router.js`) rather than a bare `express.Router()`: Express 4 does not forward an async handler's rejection to the error middleware, so without it a database blip hangs the request with no response instead of returning 500.
+- **valet-service** (3060, `PORT_VALET_SERVICE`) — the DwaarAI Valet flow: guard ticket handling, the public guest-page API, and operator plate-history reporting. Its tables ship in `043_valet.sql` like every other service's (api-gateway owns all migrations). Media goes through `src/lib/storage.js`, which selects S3 or a local directory from `VALET_STORAGE`. Routes mount on an `asyncRouter()` (`src/lib/async-router.js`) rather than a bare `express.Router()`: Express 4 does not forward an async handler's rejection to the error middleware, so without it a database blip hangs the request with no response instead of returning 500.
 - **anpr-service** (Python, FastAPI-style, port 8001) — plate detection/OCR (`detector.py`, `ocr_engine.py`, `normalizer.py`), called by both the edge node and the cloud.
 
 There is no shared Node package for cross-service code — each service duplicates its own `db/pool.js`-equivalent and route conventions rather than importing from a common library.
@@ -92,7 +92,7 @@ There is no shared Node package for cross-service code — each service duplicat
 ### Frontend apps (`apps/*`)
 - **admin-portal** — Next.js 14 App Router (`app/<section>/page.tsx` per feature: gates, communities, units, vehicles, guards, incidents, sos, reports, etc.), talks to api-gateway via `lib/api.ts` and live updates via `lib/socket.ts`. The `app/valet/*` pages are the exception: they talk to valet-service via `lib/valet.ts`, a second client on a different base URL that reuses the same api-gateway JWT from localStorage.
 - **guard-app** — Expo/React Native, Android tablet at the gate. Zustand stores per domain in `src/store/` (queue, approvals, SOS, handover, staff, deliveries), i18n via `src/i18n/translations.ts` (guards may not read English).
-- **valet-app** — Expo/React Native, the Sarthi valet product. A **separate app from guard-app on purpose**: a hotel valet is not a society gate guard, and folding valet in would have meant them signing into "Nazar — Guard Station" and seeing a tab bar of Gate / Visitors / Parcels / Incidents they will never use. It has no tab bar at all — the whole app is the three-screen valet flow (queue → new ticket → handover) behind its own Sarthi sign-in. Auth is *not* separate: it posts to the same `/auth/guard-login` and `residents.type='guard'` records, because valet-service verifies those tokens and a property's staff exist once.
+- **valet-app** — Expo/React Native, the DwaarAI Valet product. A **separate app from guard-app on purpose**: a hotel valet is not a society gate guard, and folding valet in would have meant them signing into "Nazar — Guard Station" and seeing a tab bar of Gate / Visitors / Parcels / Incidents they will never use. It has no tab bar at all — the whole app is the three-screen valet flow (queue → new ticket → handover) behind its own DwaarAI Valet sign-in. Auth is *not* separate: it posts to the same `/auth/guard-login` and `residents.type='guard'` records, because valet-service verifies those tokens and a property's staff exist once.
 - **valet-guest** — Next.js 14, `basePath: /valet`, the one public surface: a guest opens `/valet/v/<session token>` by scanning a physical valet card. No login, no account, and deliberately nothing in localStorage — the token in the URL is the only credential, so reopening the link reconstructs the state exactly.
 - **resident-app** — Expo/React Native, iOS + Android. Same store-per-domain + screen-per-feature pattern as guard-app, but with much heavier Jest test coverage (most screens/components have a co-located `.test.tsx`).
 
@@ -102,7 +102,7 @@ Six CDK stacks wired together in `bin/app.ts`: `NetworkStack` (VPC/cluster) → 
 ### Database migrations
 Sequential, numbered SQL files in `services/api-gateway/migrations/` (`001_core.sql` ... `046_valet_claim_codes.sql`), applied in order by `src/db/migrate.js` and tracked so re-application is a no-op (CI enforces this in the `migrations` job). This is the only migration path in the repo — other Node services read/write the same Postgres database but don't own migrations themselves.
 
-### Valet (Sarthi)
+### Valet (DwaarAI Valet)
 Ported from a standalone Express + SQLite prototype into this monorepo. Three
 things changed structurally in the port, and each is load-bearing:
 
@@ -244,7 +244,7 @@ refusal (`canAskAgain === false`, Android stops prompting after two denials)
 from a one-off one, since only the first needs the OS settings screen, and
 carries the underlying reason into the on-screen message.
 
-### Shipping the Sarthi APK
+### Shipping the DwaarAI Valet APK
 `apps/valet-app/eas.json` mirrors guard-app's profiles. Both build URLs are
 pinned explicitly in **both** profiles, because `EXPO_PUBLIC_*` values are baked
 in at build time — the same trap that shipped a guard APK pointing at the dead
@@ -302,7 +302,7 @@ Two things this has already caught:
   Metro resolution. Tests live in `src/__tests__/`, importing `../../app/index`.
 - **Fonts are load-bearing, not cosmetic.** Every screen styles text through
   `font()`, which returns a `DMSans_*` fontFamily. On Android, naming a family
-  that was never loaded is FATAL — the first Sarthi APK crashed on launch for
+  that was never loaded is FATAL — the first DwaarAI Valet APK crashed on launch for
   exactly this. `useAppFonts()` must gate rendering in the entry, and
   `src/__tests__/app-entry.test.tsx` asserts both the gate and that every family
   the theme names is one the loader loads. Expo web silently substitutes a

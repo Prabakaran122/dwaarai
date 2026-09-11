@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Sarthi",
+    "name": "DwaarAI Valet",
     "slug": "sarthi-valet",
-    "version": "0.1.9",
+    "version": "0.1.10",
     "orientation": "portrait",
     "platforms": [
       "android",
@@ -10,21 +10,21 @@
     ],
     "android": {
       "package": "com.dwaarai.sarthi",
-      "versionCode": 10
+      "versionCode": 11
     },
     "plugins": [
       "expo-router",
       [
         "expo-camera",
         {
-          "cameraPermission": "Sarthi uses the camera to scan a guest's pickup QR code."
+          "cameraPermission": "DwaarAI Valet uses the camera to scan a guest's pickup QR code."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Sarthi uses photos to record vehicle condition at drop-off and pickup.",
-          "cameraPermission": "Sarthi uses the camera to photograph vehicle condition."
+          "photosPermission": "DwaarAI Valet uses photos to record vehicle condition at drop-off and pickup.",
+          "cameraPermission": "DwaarAI Valet uses the camera to photograph vehicle condition."
         }
       ]
     ],

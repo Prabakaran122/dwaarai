@@ -246,14 +246,14 @@ describe('GET /guest/tickets/:token/guard-badge/:which', () => {
 describe('POST /guest/tickets/:token/discount-optin', () => {
   it('issues a code for a valid Indian mobile number', async () => {
     queryOne.mockResolvedValueOnce(ticketRow({ status: 'final_closed' }));
-    issueDiscountCode.mockResolvedValueOnce({ code: 'SARTHI-ABC234', expiry: '2026-09-30T00:00:00Z' });
+    issueDiscountCode.mockResolvedValueOnce({ code: 'DWAAR-ABC234', expiry: '2026-09-30T00:00:00Z' });
 
     const res = await request(app, 'POST', `/guest/tickets/${SESSION_TOKEN}/discount-optin`, {
       body: { phoneNumber: '9876543210' },
     });
 
     expect(res.status).toBe(201);
-    expect(res.body.code).toBe('SARTHI-ABC234');
+    expect(res.body.code).toBe('DWAAR-ABC234');
     expect(issueDiscountCode).toHaveBeenCalledWith(
       expect.objectContaining({ phoneNumber: '9876543210', communityId: COMMUNITY_ID, ticketId: TICKET_ID })
     );
@@ -261,7 +261,7 @@ describe('POST /guest/tickets/:token/discount-optin', () => {
 
   it('accepts a +91 prefix and spacing', async () => {
     queryOne.mockResolvedValueOnce(ticketRow({ status: 'final_closed' }));
-    issueDiscountCode.mockResolvedValueOnce({ code: 'SARTHI-ABC234', expiry: 'x' });
+    issueDiscountCode.mockResolvedValueOnce({ code: 'DWAAR-ABC234', expiry: 'x' });
 
     const res = await request(app, 'POST', `/guest/tickets/${SESSION_TOKEN}/discount-optin`, {
       body: { phoneNumber: '+91 98765 43210' },
@@ -506,7 +506,7 @@ describe('the handover moment', () => {
       .mockResolvedValueOnce(ticketRow({ status: 'arrived' }))
       .mockResolvedValueOnce({ created_at: ARRIVED_AT })
       .mockResolvedValueOnce({ id: 'rotating-token-1' });
-    issueDiscountCode.mockResolvedValueOnce({ code: 'SARTHI-ABC234', expiry: 'x' });
+    issueDiscountCode.mockResolvedValueOnce({ code: 'DWAAR-ABC234', expiry: 'x' });
 
     const res = await request(app, 'POST', `/guest/tickets/${SESSION_TOKEN}/discount-optin`, {
       body: { phoneNumber: '9876543210' },

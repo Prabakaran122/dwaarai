@@ -5,7 +5,7 @@ import axios from 'axios';
  * The valet's session, and how it survives an hour.
  *
  * api-gateway issues an access token good for one hour and a refresh token
- * good for a week. Sarthi originally kept only the first: an hour into a
+ * good for a week. DwaarAI Valet originally kept only the first: an hour into a
  * shift every call started returning 401, and because nothing handled it the
  * valet saw "That action failed, try again" on a car they were holding keys
  * for -- forever, since the dead token was restored again on every app start.

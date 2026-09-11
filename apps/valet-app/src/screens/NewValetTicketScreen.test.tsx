@@ -25,7 +25,7 @@ import NewValetTicketScreen from './NewValetTicketScreen';
 
 const createdTicket = {
   id: 'id-1',
-  displayId: 'SRT-0009',
+  displayId: 'DWR-0009',
   sessionToken: 'tok-9',
   guestUrl: 'https://dwaarai.com/valet/v/tok-9',
   qrDataUrl: 'data:image/png;base64,QR',
@@ -90,7 +90,7 @@ describe('ticket details', () => {
     await fillDetails(screen);
 
     await waitFor(() => expect(screen.getByTestId('valet-qr-card')).toBeTruthy());
-    expect(screen.getByText('SRT-0009')).toBeTruthy();
+    expect(screen.getByText('DWR-0009')).toBeTruthy();
   });
 
   it('reports a failure instead of pretending the ticket was made', async () => {

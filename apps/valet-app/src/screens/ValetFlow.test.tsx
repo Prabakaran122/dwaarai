@@ -18,7 +18,7 @@ import type { ValetTicket } from '../api/valet';
 
 function ticket(overrides: Partial<ValetTicket> = {}): ValetTicket {
   return {
-    id: 'a', displayId: 'SRT-0001', sessionToken: 'tok-1',
+    id: 'a', displayId: 'DWR-0001', sessionToken: 'tok-1',
     plate: 'KA03NJ0435', vehicleMake: 'Swift', status: 'arrived',
     stayEndAt: '2026-09-01T00:00:00Z', createdAt: new Date().toISOString(),
     closedAt: null, createdGuardName: 'Ramesh', currentGuardName: null,

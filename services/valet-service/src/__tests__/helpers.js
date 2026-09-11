@@ -81,7 +81,7 @@ export function ticketRow(overrides = {}) {
   return {
     id: TICKET_ID,
     community_id: COMMUNITY_ID,
-    display_id: 'SRT-0001',
+    display_id: 'DWR-0001',
     session_token: SESSION_TOKEN,
     plate: 'KA03NJ0435',
     plate_normalized: 'KA03NJ0435',

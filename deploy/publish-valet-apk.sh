@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Publishes a built Sarthi APK to dwaarai.com/install.
+# Publishes a built DwaarAI Valet APK to dwaarai.com/install.
 #
 # Run this only AFTER `eas build` has produced an APK — it uploads the file
 # first and patches install.html second, so the download card can never appear
@@ -53,7 +53,7 @@ if 'sarthi-valet.apk' in s:
 
 card = io.open('/tmp/valet-card.html', encoding='utf-8').read()
 
-# The three app cards sit in one <section>; append before it closes so Sarthi
+# The three app cards sit in one <section>; append before it closes so DwaarAI Valet
 # lands beside Nazar and Resident rather than outside the grid.
 idx = s.rindex('</section>')
 s = s[:idx] + card + s[idx:]
@@ -65,8 +65,8 @@ PY"
 
 echo "==> verifying the page"
 curl -s https://dwaarai.com/install --max-time 20 | grep -q 'sarthi-valet.apk' \
-  && echo "  install page lists Sarthi" \
-  || { echo "  install page does NOT list Sarthi"; exit 1; }
+  && echo "  install page lists DwaarAI Valet" \
+  || { echo "  install page does NOT list DwaarAI Valet"; exit 1; }
 
 echo
 echo "Done: https://dwaarai.com/install"

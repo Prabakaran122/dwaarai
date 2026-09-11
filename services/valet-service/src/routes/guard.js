@@ -235,7 +235,7 @@ router.post('/tickets', guard, async (req, res) => {
     // row existed, picks the same number, and violates
     // UNIQUE (community_id, display_id) — a 500 for a guard mid-intake. With
     // no tickets yet the lock had nothing to take at all and both picked
-    // SRT-0001. An end-to-end test creating three tickets at once reproduces
+    // DWR-0001. An end-to-end test creating three tickets at once reproduces
     // it every run.
     //
     // An advisory lock has no such gap: it exists whether or not any row does,
@@ -290,7 +290,7 @@ router.post('/tickets', guard, async (req, res) => {
     // back so the guard knows whether to read the code out instead.
     let smsStatus = null;
     if (phoneNumber) {
-      let venueName = 'Sarthi valet';
+      let venueName = 'DwaarAI Valet';
       try {
         const venue = await queryOne('SELECT name FROM communities WHERE id = $1', [communityId]);
         if (venue?.name) venueName = venue.name;

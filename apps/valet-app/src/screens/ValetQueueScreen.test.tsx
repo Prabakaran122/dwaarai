@@ -10,7 +10,7 @@ import type { ValetTicket } from '../api/valet';
 function ticket(overrides: Partial<ValetTicket> = {}): ValetTicket {
   return {
     id: 'id-1',
-    displayId: 'SRT-0001',
+    displayId: 'DWR-0001',
     sessionToken: 'tok-1',
     plate: 'KA03NJ0435',
     vehicleMake: 'Swift',
@@ -232,10 +232,10 @@ describe('printed card on the queue row', () => {
 
   it('falls back to the ticket id when there is no card', () => {
     useValetStore.setState({ tickets: [ticket({ id: 'a', cardCode: null,
-    claimCode: null, displayId: 'SRT-0001' })], search: '' });
+    claimCode: null, displayId: 'DWR-0001' })], search: '' });
     const { getByText } = render(<ValetQueueScreen />);
 
-    expect(getByText(/SRT-0001/)).toBeTruthy();
+    expect(getByText(/DWR-0001/)).toBeTruthy();
   });
 });
 
@@ -263,11 +263,11 @@ describe('finding the code a guest was given', () => {
 
   it('falls back to the ticket id when there is neither', () => {
     useValetStore.setState({
-      tickets: [ticket({ id: 'a', cardCode: null, claimCode: null, displayId: 'SRT-0001' })],
+      tickets: [ticket({ id: 'a', cardCode: null, claimCode: null, displayId: 'DWR-0001' })],
       search: '',
     });
     const { getByText } = render(<ValetQueueScreen />);
 
-    expect(getByText(/SRT-0001/)).toBeTruthy();
+    expect(getByText(/DWR-0001/)).toBeTruthy();
   });
 });

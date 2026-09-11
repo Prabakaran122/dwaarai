@@ -4,7 +4,7 @@ import { colors } from '../theme/colors';
 import ValetQueueScreen from './ValetQueueScreen';
 import NewValetTicketScreen from './NewValetTicketScreen';
 // Loaded lazily on purpose. This screen imports expo-camera, the one native
-// module Sarthi uses that the proven-working guard app does not. A native
+// module DwaarAI Valet uses that the proven-working guard app does not. A native
 // module that fails while being imported takes the app down BEFORE React
 // renders, so no error boundary can catch it — deferring the import keeps a
 // camera problem contained to the handover screen instead of the whole app.
