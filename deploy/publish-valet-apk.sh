@@ -6,7 +6,7 @@
 # first and patches install.html second, so the download card can never appear
 # on the page before the file it links to exists.
 #
-#   deploy/publish-valet-apk.sh ~/Downloads/sarthi-valet.apk
+#   deploy/publish-valet-apk.sh ~/Downloads/dwaarai-valet.apk
 #
 # Idempotent: re-running replaces the APK and leaves the card alone if it is
 # already there.
@@ -17,12 +17,12 @@ APK="${1:-}"
 SSH_HOST="${SSH_HOST:-dwaar}"
 SSH_CFG="${SSH_CFG:-}"
 LANDING=/opt/communitygate/landing
-REMOTE_APK="$LANDING/apps/sarthi-valet.apk"
+REMOTE_APK="$LANDING/apps/dwaarai-valet.apk"
 
 ssh_cmd() { ssh ${SSH_CFG:+-F "$SSH_CFG"} "$SSH_HOST" "$@"; }
 scp_cmd() { scp ${SSH_CFG:+-F "$SSH_CFG"} "$@"; }
 
-[ -n "$APK" ] || { echo "usage: $0 <path-to-sarthi-valet.apk>"; exit 2; }
+[ -n "$APK" ] || { echo "usage: $0 <path-to-dwaarai-valet.apk>"; exit 2; }
 [ -f "$APK" ] || { echo "not found: $APK"; exit 2; }
 
 # An APK is a zip; a truncated or HTML-error download is the common failure and
@@ -33,11 +33,11 @@ SIZE_MB=$(( $(wc -c < "$APK") / 1024 / 1024 ))
 echo "publishing ${SIZE_MB}MB APK"
 
 echo "==> uploading"
-scp_cmd "$APK" "$SSH_HOST:/tmp/sarthi-valet.apk"
-ssh_cmd "sudo mv /tmp/sarthi-valet.apk $REMOTE_APK && sudo chmod 644 $REMOTE_APK"
+scp_cmd "$APK" "$SSH_HOST:/tmp/dwaarai-valet.apk"
+ssh_cmd "sudo mv /tmp/dwaarai-valet.apk $REMOTE_APK && sudo chmod 644 $REMOTE_APK"
 
 echo "==> verifying it serves"
-CODE=$(curl -s -o /dev/null -w '%{http_code}' -r 0-1023 https://dwaarai.com/apps/sarthi-valet.apk --max-time 30)
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -r 0-1023 https://dwaarai.com/apps/dwaarai-valet.apk --max-time 30)
 [ "$CODE" = "206" ] || [ "$CODE" = "200" ] || { echo "APK not served (HTTP $CODE)"; exit 1; }
 
 echo "==> adding the install card"
@@ -47,8 +47,21 @@ import io
 path = '$LANDING/install.html'
 s = io.open(path, encoding='utf-8').read()
 
-if 'sarthi-valet.apk' in s:
+if 'dwaarai-valet.apk' in s:
     print('card already present, leaving install.html alone')
+    raise SystemExit(0)
+
+# The card used to point at sarthi-valet.apk, under the old product name.
+# Repoint it in place: appending a fresh card would leave two valet entries on
+# the page, one of them linking to an APK nobody publishes any more.
+if 'sarthi-valet.apk' in s:
+    io.open(path + '.bak.valet', 'w', encoding='utf-8').write(s)
+    io.open(path, 'w', encoding='utf-8').write(
+        s.replace('sarthi-valet.apk', 'dwaarai-valet.apk')
+         .replace('com.dwaarai.sarthi', 'com.dwaarai.valet')
+         .replace('Sarthi', 'DwaarAI Valet')
+    )
+    print('existing card repointed at the renamed APK')
     raise SystemExit(0)
 
 card = io.open('/tmp/valet-card.html', encoding='utf-8').read()
@@ -64,7 +77,7 @@ print('install card added')
 PY"
 
 echo "==> verifying the page"
-curl -s https://dwaarai.com/install --max-time 20 | grep -q 'sarthi-valet.apk' \
+curl -s https://dwaarai.com/install --max-time 20 | grep -q 'dwaarai-valet.apk' \
   && echo "  install page lists DwaarAI Valet" \
   || { echo "  install page does NOT list DwaarAI Valet"; exit 1; }
 

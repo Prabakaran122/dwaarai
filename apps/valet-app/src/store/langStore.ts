@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Lang, translate } from '../i18n/translations';
 
-const STORAGE_KEY = 'sarthi_valet_lang';
+const STORAGE_KEY = 'dwaar_valet_lang';
 
 /**
  * Language is stored on the device only.

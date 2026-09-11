@@ -14,9 +14,9 @@ import axios from 'axios';
  * importing each other.
  */
 
-export const TOKEN_KEY = 'sarthi_valet_token';
-export const REFRESH_KEY = 'sarthi_valet_refresh';
-export const USER_KEY = 'sarthi_valet_user';
+export const TOKEN_KEY = 'dwaar_valet_token';
+export const REFRESH_KEY = 'dwaar_valet_refresh';
+export const USER_KEY = 'dwaar_valet_user';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://dwaarai.com/api/v1';
 

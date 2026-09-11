@@ -9,7 +9,7 @@
       "web"
     ],
     "android": {
-      "package": "com.dwaarai.sarthi",
+      "package": "com.dwaarai.valet",
       "versionCode": 11
     },
     "plugins": [
@@ -28,7 +28,7 @@
         }
       ]
     ],
-    "scheme": "sarthi",
+    "scheme": "dwaarvalet",
     "owner": "skprabakaran122",
     "extra": {
       "router": {
