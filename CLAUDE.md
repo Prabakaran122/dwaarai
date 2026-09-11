@@ -244,6 +244,44 @@ refusal (`canAskAgain === false`, Android stops prompting after two denials)
 from a one-off one, since only the first needs the OS settings screen, and
 carries the underlying reason into the on-screen message.
 
+### WhatsApp (the default way into a ticket)
+
+The intake QR opens `/valet/w/<claimCode>`, a page offering WhatsApp first and
+the browser second. It is deliberately not a raw `wa.me` QR: a guest without
+WhatsApp would scan that and land on a download page holding nothing, having
+been handed no card either.
+
+Three layers, and the boundaries matter:
+
+- `lib/whatsapp.js` — transport only. Sends, and verifies a signature. Swapping
+  MSG91 for Meta's Cloud API should touch this file and no other.
+- `lib/whatsapp-guest.js` — every message the guest ever sees, and the single
+  decision about how to send it. **Nothing else composes or sends a message.**
+- `routes/webhooks.js` — inbound: signature, de-duplication, binding, commands.
+
+**The 24-hour window is the whole reason this is affordable.** A guest who
+messages us first opens a window in which free-form replies need no template
+approval at all, and every reply from them extends it. Outside it, only an
+approved template is delivered — and a free-form send outside the window is
+*accepted by the API and silently dropped*, which would mean a multi-day guest
+never hearing their car was ready. Hence one template, and hence
+`notifyGuest()` being the only way out.
+
+**The rotating pickup QR cannot be sent over WhatsApp.** It rotates every 18
+seconds and only the newest validates, so any image is stale before it is read.
+Messages carry the link; the web page keeps the QR.
+
+Messages carry the **claim code, never the session token**: the code stops
+resolving when the ticket closes, the token would keep working for whoever the
+message was forwarded to.
+
+Webhook inbound is recorded in `valet_whatsapp_messages` *before* it is acted
+on. Providers retry, and without that row a redelivered "bring my car" sends a
+second valet.
+
+With `WHATSAPP_NUMBER` unset the QR still opens the door page, only the browser
+button shows, and every send reports `skipped`.
+
 ### Shipping the DwaarAI Valet APK
 `apps/valet-app/eas.json` mirrors guard-app's profiles. Both build URLs are
 pinned explicitly in **both** profiles, because `EXPO_PUBLIC_*` values are baked

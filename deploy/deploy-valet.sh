@@ -109,6 +109,10 @@ Environment=PHOTO_RETENTION_HOURS=24
 Environment=CORS_ORIGIN=https://$PUBLIC_HOST
 # Off deliberately: the sweep runs from its own timer, below.
 Environment=VALET_RUN_SWEEP_IN_PROCESS=false
+Environment=WHATSAPP_PROVIDER=${WHATSAPP_PROVIDER:-}
+Environment=WHATSAPP_NUMBER=${WHATSAPP_NUMBER:-}
+Environment=WHATSAPP_WEBHOOK_SECRET=${WHATSAPP_WEBHOOK_SECRET:-}
+Environment=WHATSAPP_TEMPLATE_CAR_READY=${WHATSAPP_TEMPLATE_CAR_READY:-car_ready}
 ExecStart=/usr/bin/node src/index.js
 Restart=always
 RestartSec=5
@@ -127,6 +131,7 @@ say "Building the guest app (:3110)"
 # --------------------------------------------------------------------------
 pnpm install --filter valet-guest
 NEXT_PUBLIC_VALET_API_URL="https://$PUBLIC_HOST/valet-api" \
+NEXT_PUBLIC_WHATSAPP_NUMBER="${WHATSAPP_NUMBER:-}" \
   pnpm --filter valet-guest build
 
 sudo tee /etc/systemd/system/communitygate-valet-guest.service > /dev/null <<EOF
