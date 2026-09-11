@@ -95,3 +95,51 @@ describe('POST /webhooks/whatsapp', () => {
     expect(sql).not.toMatch(/SET[\s\S]*phone_number\s*=\s*\$2/);
   });
 });
+
+describe('asking for the car from WhatsApp', () => {
+  // Already bound, so an inbound is a command rather than a first contact.
+  const bound = (status) => ({
+    id: 't1', claim_code: '4K7QP2', phone_number: '919876543210',
+    status, community_name: 'The Leela', display_id: 'DWR-0042',
+  });
+
+  it('requests the car when it is parked', async () => {
+    queryOne.mockResolvedValueOnce(null).mockResolvedValueOnce(bound('parked'));
+
+    await signedPost(inbound('4K7QP2 CAR'));
+
+    const sql = query.mock.calls.map((c) => c[0]).join(' ');
+    expect(sql).toMatch(/status\s*=\s*'requested'/);
+    expect(notifyGuest).toHaveBeenCalledWith(expect.anything(), 'accepted');
+  });
+
+  it('does not request a car that is already on its way', async () => {
+    queryOne.mockResolvedValueOnce(null).mockResolvedValueOnce(bound('en_route'));
+
+    await signedPost(inbound('4K7QP2 CAR'));
+
+    // Requesting twice sends a second valet for the same car.
+    const sql = query.mock.calls.map((c) => c[0]).join(' ');
+    expect(sql).not.toMatch(/status\s*=\s*'requested'/);
+    expect(notifyGuest).toHaveBeenCalledWith(expect.anything(), 'en_route');
+  });
+
+  it('replies with where things stand when the message is not a request', async () => {
+    queryOne.mockResolvedValueOnce(null).mockResolvedValueOnce(bound('parked'));
+
+    await signedPost(inbound('4K7QP2 thanks!'));
+
+    const sql = query.mock.calls.map((c) => c[0]).join(' ');
+    expect(sql).not.toMatch(/status\s*=\s*'requested'/);
+    // Silence reads as a broken channel to a guest who just typed something.
+    expect(notifyGuest).toHaveBeenCalled();
+  });
+
+  it('sends the link when the car is already at the pickup point', async () => {
+    queryOne.mockResolvedValueOnce(null).mockResolvedValueOnce(bound('arrived'));
+
+    await signedPost(inbound('4K7QP2 where is my car'));
+
+    expect(notifyGuest).toHaveBeenCalledWith(expect.anything(), 'arrived');
+  });
+});
