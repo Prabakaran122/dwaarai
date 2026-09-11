@@ -29,6 +29,7 @@ import pool, { query, queryOne, queryRows } from '../db.js';
 import { schedulePhotoDeletion, scheduleConditionMediaDeletion } from '../lib/expiry.js';
 import { sendClaimCode } from '../lib/sms.js';
 import { notifyGuest } from '../lib/whatsapp-guest.js';
+import { toDataUrl } from '../lib/qr.js';
 import guardRoutes from '../routes/guard.js';
 import {
   createApp, request, ticketRow, guardToken, adminToken,
@@ -1031,5 +1032,30 @@ describe('keeping the WhatsApp thread up to date', () => {
     });
 
     expect(notifyGuest).not.toHaveBeenCalled();
+  });
+});
+
+describe('what the intake QR points at', () => {
+  it('always opens the door page, so WhatsApp is the path a guest meets first', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({});
+
+    const res = await request(app, 'POST', '/guard/tickets', {
+      token,
+      body: {
+        plate: 'KA03NJ0435',
+        vehicleMake: 'Swift',
+        stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+      },
+    });
+
+    expect(toDataUrl).toHaveBeenCalledWith(expect.stringContaining(`/w/${res.body.claimCode}`));
+    // The ticket page stays reachable -- from the door, not from the QR.
+    expect(toDataUrl).not.toHaveBeenCalledWith(expect.stringContaining(`/v/${res.body.sessionToken}`));
   });
 });

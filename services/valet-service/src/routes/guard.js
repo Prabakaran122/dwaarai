@@ -288,6 +288,13 @@ router.post('/tickets', guard, async (req, res) => {
     const baseUrl = process.env.VALET_GUEST_BASE_URL || 'https://dwaarai.com/valet';
     const guestUrl = `${baseUrl}/v/${sessionToken}`;
 
+    // The QR opens the door page, always. It offers WhatsApp first and the
+    // browser second, and works whether or not the guest has WhatsApp -- which
+    // a raw wa.me QR would not. The claim code printed under it is unchanged,
+    // and guestUrl is still returned for the admin portal and the guard's own
+    // ticket screen.
+    const qrTarget = `${baseUrl}/w/${claimCode}`;
+
     // After COMMIT, deliberately. The car is in; a texting problem must not
     // roll back a ticket that already exists in the world. The status comes
     // back so the guard knows whether to read the code out instead.
@@ -317,7 +324,7 @@ router.post('/tickets', guard, async (req, res) => {
       // public URL is exactly the kind of thing that ships pointing at a dead
       // host.
       claimUrl: baseUrl,
-      qrDataUrl: await toDataUrl(guestUrl),
+      qrDataUrl: await toDataUrl(qrTarget),
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
