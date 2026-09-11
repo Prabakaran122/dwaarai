@@ -12,6 +12,10 @@
 
 ## Global Constraints
 
+- **WhatsApp is the default.** The intake QR always opens the door page, and
+  WhatsApp is the primary button on it. The browser is the second door, never
+  the first. The only thing gated on configuration is whether the WhatsApp
+  button is *shown* -- a door that cannot answer must not be offered.
 - **One DwaarAI business number serves every venue.** Messages name the venue in the body; there is no per-venue WhatsApp account.
 - **English only.** Templates are approved per language; Hindi and Kannada are out of scope for this plan.
 - **The session token never appears in a WhatsApp message.** Only the claim code, which stops resolving when the ticket closes.
@@ -1039,6 +1043,16 @@ describe('the door a scanned QR opens', () => {
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/v/tok-1'));
   });
 
+  it('hides the WhatsApp door when no number is configured, rather than promising one', async () => {
+    delete process.env.NEXT_PUBLIC_WHATSAPP_NUMBER;
+
+    render(<WhatsAppDoorPage />);
+
+    // Offering a channel that cannot answer is worse than not offering it.
+    expect(screen.queryByRole('link', { name: /whatsapp/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /browser/i })).toBeInTheDocument();
+  });
+
   it('says so when the code does not resolve, rather than dead-ending', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
 
@@ -1112,15 +1126,19 @@ export default function WhatsAppDoorPage() {
         <p className="mt-2 text-sm text-white/60">Ticket code</p>
         <p className="mt-1 font-mono text-3xl tracking-[0.3em] text-white">{code}</p>
 
-        <a
-          href={waUrl}
-          className="mt-8 block w-full py-4 rounded-xl bg-[#25D366] text-[#0D2535] font-semibold"
-        >
-          Continue on WhatsApp
-        </a>
-        <p className="mt-2 text-xs text-white/40">
-          Get updates and ask for your car from your own chat.
-        </p>
+        {number ? (
+          <>
+            <a
+              href={waUrl}
+              className="mt-8 block w-full py-4 rounded-xl bg-[#25D366] text-[#0D2535] font-semibold"
+            >
+              Continue on WhatsApp
+            </a>
+            <p className="mt-2 text-xs text-white/40">
+              Get updates and ask for your car from your own chat.
+            </p>
+          </>
+        ) : null}
 
         <button
           onClick={continueInBrowser}
@@ -1153,22 +1171,21 @@ git commit -m "feat(valet-guest): one QR, two doors — WhatsApp or the browser"
 
 ---
 
-### Task 9: Point the intake QR at the new door
+### Task 9: Point the intake QR at the door, always
 
 **Files:**
 - Modify: `services/valet-service/src/routes/guard.js` (the `POST /tickets` response)
 - Test: `services/valet-service/src/__tests__/guard.test.js`
 
 **Interfaces:**
-- Consumes: `isConfigured` from `lib/whatsapp.js`.
-- Produces: `qrDataUrl` encodes `<baseUrl>/w/<claimCode>` when WhatsApp is configured, and `<baseUrl>/v/<sessionToken>` otherwise.
+- Consumes: nothing new.
+- Produces: `qrDataUrl` always encodes `<baseUrl>/w/<claimCode>`. The response also carries `claimUrl`, unchanged.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the failing test**
 
 ```js
 describe('what the intake QR points at', () => {
-  it('opens the WhatsApp door when WhatsApp is configured', async () => {
-    vi.mocked(isConfigured).mockReturnValue(true);
+  it('always opens the door page, so WhatsApp is the path a guest meets first', async () => {
     mockCreateFlow('DWR-0004');
 
     const res = await request(app, 'POST', '/guard/tickets', {
@@ -1177,45 +1194,34 @@ describe('what the intake QR points at', () => {
     });
 
     expect(toDataUrl).toHaveBeenCalledWith(expect.stringContaining(`/w/${res.body.claimCode}`));
-  });
-
-  it('falls back to the ticket page when it is not', async () => {
-    vi.mocked(isConfigured).mockReturnValue(false);
-    mockCreateFlow('DWR-0004');
-
-    const res = await request(app, 'POST', '/guard/tickets', {
-      token,
-      body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: new Date(Date.now() + 86400000).toISOString() },
-    });
-
-    // A venue whose deployment has no WhatsApp must behave exactly as before.
-    expect(toDataUrl).toHaveBeenCalledWith(expect.stringContaining(`/v/${res.body.sessionToken}`));
+    // The ticket page is still reachable -- from the door, not from the QR.
+    expect(toDataUrl).not.toHaveBeenCalledWith(expect.stringContaining(`/v/${res.body.sessionToken}`));
   });
 });
 ```
 
-Add to the file's mocks: `vi.mock('../lib/whatsapp.js', () => ({ isConfigured: vi.fn(() => false) }));` and import `isConfigured` and `toDataUrl`.
+Import `toDataUrl` from `../lib/qr.js` in the test file if it is not already imported.
 
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `pnpm --filter valet-service exec vitest run src/__tests__/guard.test.js -t "intake QR"`
-Expected: FAIL — the QR always encodes the `/v/` URL.
+Expected: FAIL — the QR encodes the `/v/` URL.
 
 - [ ] **Step 3: Implement**
 
-In `guard.js`, import `isConfigured as whatsappConfigured` from `../lib/whatsapp.js`, then in the `POST /tickets` response replace the `qrDataUrl` line:
+In the `POST /tickets` response in `guard.js`:
 
 ```js
-    // One QR at intake. With WhatsApp live it opens the door page, which
-    // offers both channels; without it, the ticket page directly, exactly as
-    // before. The claim code printed underneath is unchanged either way.
-    const qrTarget = whatsappConfigured()
-      ? `${baseUrl}/w/${claimCode}`
-      : guestUrl;
+    // The door page, always. It offers WhatsApp first and the browser second,
+    // and works whether or not the guest has WhatsApp -- which a raw wa.me QR
+    // would not. The claim code printed under the QR is unchanged.
+    const qrTarget = `${baseUrl}/w/${claimCode}`;
 
     // ...
       qrDataUrl: await toDataUrl(qrTarget),
 ```
+
+`guestUrl` stays in the response: the admin portal and the guard's own ticket detail screen still link straight to it.
 
 - [ ] **Step 4: Run to verify it passes**
 
@@ -1226,7 +1232,7 @@ Expected: PASS, all suites.
 
 ```bash
 git add services/valet-service/src/routes/guard.js services/valet-service/src/__tests__/guard.test.js
-git commit -m "feat(valet): the intake QR opens the WhatsApp door when it is configured"
+git commit -m "feat(valet): the intake QR opens the WhatsApp door by default"
 ```
 
 ---
