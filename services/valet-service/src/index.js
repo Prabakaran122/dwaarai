@@ -9,7 +9,13 @@ import { startExpirySweep } from './lib/expiry.js';
 
 const app = express();
 
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({
+  limit: '2mb',
+  // Kept for the WhatsApp webhook: its signature is computed over the exact
+  // bytes sent, and re-serialising the parsed object reorders keys and changes
+  // whitespace, either of which changes the hash.
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 
 // The guest page is a separate origin from the service, and it is opened by a
 // stranger scanning a card, so it needs CORS. Restrict it in any real
