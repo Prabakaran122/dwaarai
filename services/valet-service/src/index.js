@@ -3,6 +3,7 @@ import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import guardRoutes from './routes/guard.js';
 import guestRoutes from './routes/guest.js';
+import webhookRoutes from './routes/webhooks.js';
 import adminRoutes from './routes/admin.js';
 import { initRealtime } from './lib/realtime.js';
 import { startExpirySweep } from './lib/expiry.js';
@@ -47,6 +48,7 @@ app.get('/health', (_req, res) => {
 app.use('/guard', guardRoutes);
 app.use('/guest', guestRoutes);
 app.use('/admin', adminRoutes);
+app.use('/webhooks', webhookRoutes);
 
 // Multer rejects an oversized upload with its own error code; surface it as a
 // 413 rather than letting it fall through as an opaque 500.

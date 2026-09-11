@@ -25,7 +25,10 @@ export function adminToken(overrides = {}) {
 
 export function createApp(routes, mountPath = '/') {
   const app = express();
-  app.use(express.json());
+  // Mirrors index.js: the WhatsApp webhook verifies its signature against the
+  // raw bytes, so the helper has to preserve them too or every signed request
+  // fails here and passes in production.
+  app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }));
   app.use(mountPath, routes);
   app.use((err, _req, res, _next) => {
     if (err?.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'file_too_large' });
