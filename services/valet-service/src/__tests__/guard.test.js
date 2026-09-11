@@ -17,6 +17,7 @@ vi.mock('../lib/storage.js', () => ({
   buildKey: vi.fn(() => 'valet/photo/t/key.jpg'),
   extensionFor: vi.fn(() => 'jpg'),
 }));
+vi.mock('../lib/whatsapp-guest.js', () => ({ notifyGuest: vi.fn(async () => ({ status: 'sent' })) }));
 vi.mock('../lib/sms.js', () => ({ sendClaimCode: vi.fn(async () => ({ status: 'sent' })) }));
 vi.mock('../lib/realtime.js', () => ({ emitTicketUpdate: vi.fn(), getIO: vi.fn(), initRealtime: vi.fn() }));
 vi.mock('../lib/expiry.js', () => ({
@@ -27,6 +28,7 @@ vi.mock('../lib/expiry.js', () => ({
 import pool, { query, queryOne, queryRows } from '../db.js';
 import { schedulePhotoDeletion, scheduleConditionMediaDeletion } from '../lib/expiry.js';
 import { sendClaimCode } from '../lib/sms.js';
+import { notifyGuest } from '../lib/whatsapp-guest.js';
 import guardRoutes from '../routes/guard.js';
 import {
   createApp, request, ticketRow, guardToken, adminToken,
@@ -990,5 +992,44 @@ describe('POST /guard/tickets — texting the guest the code', () => {
     expect(res.status).toBe(201);
     expect(res.body.smsStatus).toBe('failed');
     expect(res.body.claimCode).toBeTruthy();
+  });
+});
+
+describe('keeping the WhatsApp thread up to date', () => {
+  it('tells the guest when a valet is on the way', async () => {
+    queryOne
+      .mockResolvedValueOnce(ticketRow({ status: 'requested', phone_number: '919876543210' }))
+      .mockResolvedValueOnce(ticketRow({ status: 'en_route', phone_number: '919876543210' }));
+    query.mockResolvedValue({});
+
+    await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/accept`, {
+      token, body: { etaMinutes: 4 },
+    });
+
+    expect(notifyGuest).toHaveBeenCalledWith(expect.anything(), 'en_route');
+  });
+
+  it('tells the guest the moment the car reaches the pickup point', async () => {
+    queryOne
+      .mockResolvedValueOnce(ticketRow({ status: 'en_route', phone_number: '919876543210' }))
+      .mockResolvedValueOnce(ticketRow({ status: 'arrived', phone_number: '919876543210' }));
+    query.mockResolvedValue({});
+
+    await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/arrived`, { token });
+
+    expect(notifyGuest).toHaveBeenCalledWith(expect.anything(), 'arrived');
+  });
+
+  it('says nothing to a ticket that was never bound to WhatsApp', async () => {
+    queryOne
+      .mockResolvedValueOnce(ticketRow({ status: 'requested', phone_number: null }))
+      .mockResolvedValueOnce(ticketRow({ status: 'en_route', phone_number: null }));
+    query.mockResolvedValue({});
+
+    await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/accept`, {
+      token, body: { etaMinutes: 4 },
+    });
+
+    expect(notifyGuest).not.toHaveBeenCalled();
   });
 });

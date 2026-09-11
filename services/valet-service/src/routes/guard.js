@@ -12,6 +12,7 @@ import { storage, buildKey, extensionFor } from '../lib/storage.js';
 import { emitTicketUpdate } from '../lib/realtime.js';
 import { lastArrivalAt, usedTokenSince } from '../lib/handover.js';
 import { sendClaimCode } from '../lib/sms.js';
+import { notifyGuest } from '../lib/whatsapp-guest.js';
 import { authenticateJWT } from '../middleware/auth.js';
 
 const router = asyncRouter();
@@ -42,8 +43,10 @@ const guard = authenticateJWT(['guard', 'admin']);
  */
 function findTicket(sessionToken, communityId) {
   return queryOne(
-    `SELECT t.*, cg.name AS created_guard_name, ug.name AS current_guard_name
+    `SELECT t.*, c.name AS community_name,
+            cg.name AS created_guard_name, ug.name AS current_guard_name
        FROM valet_tickets t
+       JOIN communities c ON c.id = t.community_id
        JOIN residents cg ON cg.id = t.created_by_guard_id
        LEFT JOIN residents ug ON ug.id = t.current_guard_id
       WHERE t.session_token = $1 AND t.community_id = $2`,
@@ -638,6 +641,9 @@ router.post('/tickets/:token/accept', guard, async (req, res) => {
 
   const updated = await findTicket(req.params.token, req.user.community_id);
   emitTicketUpdate(updated);
+  // After the response is decided and never able to fail it: the car is
+  // already moving whether or not the message lands.
+  if (updated?.phone_number) await notifyGuest(updated, 'en_route');
   res.json(ticketView(updated));
 });
 
@@ -653,6 +659,7 @@ router.post('/tickets/:token/arrived', guard, async (req, res) => {
 
   const updated = await findTicket(req.params.token, req.user.community_id);
   emitTicketUpdate(updated);
+  if (updated?.phone_number) await notifyGuest(updated, 'arrived');
   res.json(ticketView(updated));
 });
 
@@ -784,6 +791,11 @@ router.post('/tickets/:token/confirm-pickup', guard, async (req, res) => {
 
   const updated = await findTicket(req.params.token, req.user.community_id);
   emitTicketUpdate(updated);
+  // Only a final close says goodbye. A multi-day ticket parking again is not
+  // the end of anything.
+  if (updated?.phone_number && updated.status === 'final_closed') {
+    await notifyGuest(updated, 'closed');
+  }
   res.json(ticketView(updated));
 });
 
