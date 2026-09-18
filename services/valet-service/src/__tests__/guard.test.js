@@ -1059,3 +1059,34 @@ describe('what the intake QR points at', () => {
     expect(toDataUrl).not.toHaveBeenCalledWith(expect.stringContaining(`/v/${res.body.sessionToken}`));
   });
 });
+
+describe('a number the guest left on the card before intake finished', () => {
+  it('moves onto the ticket and gets the real welcome once the car is in', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({})                                                   // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A047', pending_wa_phone: '919876543210' }] })
+      .mockResolvedValueOnce({ rows: [] })                                         // card not in use
+      .mockResolvedValueOnce({})                                                   // advisory lock
+      .mockResolvedValueOnce({ rows: [] })                                         // last display id
+      .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })                        // INSERT ticket
+      .mockResolvedValueOnce({})                                                   // clear the card hold
+      .mockResolvedValueOnce({})                                                   // logEvent
+      .mockResolvedValueOnce({});                                                  // COMMIT
+    queryOne.mockResolvedValue({ name: 'The Leela' });
+
+    const res = await request(app, 'POST', '/guard/tickets', {
+      token,
+      body: {
+        plate: 'KA03NJ0435', vehicleMake: 'Swift', cardCode: 'A047',
+        stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+      },
+    });
+
+    expect(res.status).toBe(201);
+    // The guest scanned before the car was checked in; this is the moment the
+    // promise made to them ("we will message you when it is parked") is kept.
+    expect(notifyGuest).toHaveBeenCalledWith(
+      expect.objectContaining({ phone_number: '919876543210' }), 'bound'
+    );
+  });
+});

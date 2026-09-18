@@ -1,7 +1,7 @@
 import { asyncRouter } from '../lib/async-router.js';
 import { query, queryOne } from '../db.js';
 import { verifySignature } from '../lib/whatsapp.js';
-import { notifyGuest } from '../lib/whatsapp-guest.js';
+import { notifyGuest, notifyCardHeld } from '../lib/whatsapp-guest.js';
 import { normalizeClaimCode } from '../lib/claim-code.js';
 import { logEvent } from '../lib/events.js';
 
@@ -73,7 +73,7 @@ router.post('/whatsapp', async (req, res) => {
     return res.status(200).json({ ok: true, unmatched: true });
   }
 
-  const ticket = await queryOne(
+  let ticket = await queryOne(
     `SELECT t.*, c.name AS community_name
        FROM valet_tickets t
        JOIN communities c ON c.id = t.community_id
@@ -82,7 +82,40 @@ router.post('/whatsapp', async (req, res) => {
     [code]
   );
 
-  await recordInbound(message.id, ticket?.id || null);
+  // Same alphabet and length as a claim code, so a six-character token may be
+  // either. Claim code first; failing that, a card's own reference -- which is
+  // what the guest carries when the guard has only started intake.
+  const card = ticket ? null : await queryOne(
+    `SELECT c.id, c.pending_wa_phone, cm.name AS community_name,
+            t.id AS ticket_id, t.session_token, t.claim_code, t.phone_number,
+            t.status, t.display_id, t.plate, t.vehicle_make,
+            t.whatsapp_last_inbound_at
+       FROM valet_cards c
+       JOIN communities cm ON cm.id = c.community_id
+       LEFT JOIN valet_tickets t
+         ON t.card_id = c.id AND t.status NOT IN ('final_closed', 'expired')
+      WHERE c.wa_ref = $1 AND c.is_active = true
+      LIMIT 1`,
+    [code]
+  );
+
+  await recordInbound(message.id, ticket?.id || card?.ticket_id || null);
+
+  // The card is known but its car is not checked in yet. Hold the number on
+  // the card; intake will claim it and send the real welcome.
+  if (!ticket && card && !card.ticket_id) {
+    await query(
+      `UPDATE valet_cards SET pending_wa_phone = $2, pending_wa_at = NOW() WHERE id = $1`,
+      [card.id, message.from]
+    );
+    await notifyCardHeld(message.from, card.community_name);
+    return res.status(200).json({ ok: true, held: true });
+  }
+
+  if (!ticket && card?.ticket_id) {
+    ticket = { ...card, id: card.ticket_id };
+  }
+
   if (!ticket) return res.status(200).json({ ok: true, unmatched: true });
 
   if (ticket.phone_number && ticket.phone_number !== message.from) {

@@ -8,6 +8,7 @@ vi.mock('../lib/events.js', () => ({ logEvent: vi.fn() }));
 vi.mock('../lib/realtime.js', () => ({ emitTicketUpdate: vi.fn() }));
 vi.mock('../lib/whatsapp-guest.js', () => ({
   notifyGuest: vi.fn(async () => ({ status: 'sent' })),
+  notifyCardHeld: vi.fn(async () => ({ status: 'sent' })),
 }));
 
 import { query, queryOne } from '../db.js';
@@ -141,5 +142,35 @@ describe('asking for the car from WhatsApp', () => {
     await signedPost(inbound('4K7QP2 where is my car'));
 
     expect(notifyGuest).toHaveBeenCalledWith(expect.anything(), 'arrived');
+  });
+});
+
+describe('a guest who was faster than the guard', () => {
+  it('holds the number on the card when no ticket exists yet', async () => {
+    queryOne
+      .mockResolvedValueOnce(null)                                      // not a duplicate
+      .mockResolvedValueOnce(null)                                      // no ticket on that claim code
+      .mockResolvedValueOnce({ id: 'card-1', community_name: 'The Leela', ticket_id: null });
+
+    const res = await signedPost(inbound('H7M2QP'));
+
+    expect(res.status).toBe(200);
+    const sql = query.mock.calls.map((c) => c[0]).join(' ');
+    // Held on the card, because the ticket it will belong to does not exist.
+    expect(sql).toMatch(/pending_wa_phone/);
+  });
+
+  it('binds immediately when the card already has a ticket', async () => {
+    queryOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'card-1', community_name: 'The Leela', ticket_id: 't1',
+        session_token: 'tok', claim_code: '4K7QP2', phone_number: null, status: 'parked',
+      });
+
+    await signedPost(inbound('H7M2QP'));
+
+    expect(notifyGuest).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }), 'bound');
   });
 });

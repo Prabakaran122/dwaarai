@@ -60,6 +60,21 @@ function withinWindow(t) {
   return Date.now() - new Date(t.whatsapp_last_inbound_at).getTime() < WINDOW_MS;
 }
 
+/**
+ * For a guest who scanned the card before the guard finished intake.
+ *
+ * There is no ticket to describe yet, so this says only that we have them --
+ * and the welcome with the vehicle in it follows the moment intake completes.
+ * Silence here would read as a card that does not work.
+ */
+export function notifyCardHeld(waId, venueName) {
+  return sendText(
+    waId,
+    `${venueName || 'The valet desk'}: got it — we're checking your car in now.\n`
+    + `We'll message you here the moment it's parked.`
+  );
+}
+
 export async function notifyGuest(ticket, kind) {
   if (!ticket?.phone_number) return { status: 'skipped' };
 

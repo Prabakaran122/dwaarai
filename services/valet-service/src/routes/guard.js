@@ -147,7 +147,8 @@ const createTicketSchema = z.object({
  */
 async function resolveCard(client, communityId, code) {
   const card = await client.query(
-    'SELECT id, code FROM valet_cards WHERE community_id = $1 AND UPPER(code) = UPPER($2) AND is_active = true',
+    `SELECT id, code, pending_wa_phone FROM valet_cards
+      WHERE community_id = $1 AND UPPER(code) = UPPER($2) AND is_active = true`,
     [communityId, code]
   );
   if (!card.rows.length) return { error: 'unknown_card' };
@@ -277,6 +278,25 @@ router.post('/tickets', guard, async (req, res) => {
     );
     const ticketId = inserted.rows[0].id;
 
+    // A guest who scanned the card while intake was still being typed left
+    // their number on it. This is where the promise made to them then --
+    // "we'll message you the moment it's parked" -- is kept.
+    const heldPhone = card?.pending_wa_phone || null;
+    if (heldPhone) {
+      await client.query(
+        `UPDATE valet_tickets
+            SET phone_number = COALESCE(phone_number, $2),
+                phone_consent_at = COALESCE(phone_consent_at, NOW()),
+                whatsapp_last_inbound_at = COALESCE(whatsapp_last_inbound_at, NOW())
+          WHERE id = $1`,
+        [ticketId, heldPhone]
+      );
+      await client.query(
+        `UPDATE valet_cards SET pending_wa_phone = NULL, pending_wa_at = NULL WHERE id = $1`,
+        [card.id]
+      );
+    }
+
     await logEvent(ticketId, 'created', {
       guardId: req.user.sub,
       metadata: { plate, vehicleMake },
@@ -298,6 +318,18 @@ router.post('/tickets', guard, async (req, res) => {
     // After COMMIT, deliberately. The car is in; a texting problem must not
     // roll back a ticket that already exists in the world. The status comes
     // back so the guard knows whether to read the code out instead.
+    if (heldPhone) {
+      await notifyGuest(
+        {
+          id: ticketId, display_id: displayId, plate, vehicle_make: vehicleMake,
+          community_name: (await queryOne('SELECT name FROM communities WHERE id = $1', [communityId]))?.name,
+          claim_code: claimCode, phone_number: heldPhone,
+          whatsapp_last_inbound_at: new Date().toISOString(),
+        },
+        'bound'
+      );
+    }
+
     let smsStatus = null;
     if (phoneNumber) {
       let venueName = 'DwaarAI Valet';
