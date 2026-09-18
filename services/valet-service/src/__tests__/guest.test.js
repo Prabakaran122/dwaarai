@@ -588,3 +588,34 @@ describe('GET /guest/tickets/:token/venue-logo', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('a card scanned before the guard has finished intake', () => {
+  it('still answers, with the reference the guest carries into WhatsApp', async () => {
+    queryOne.mockResolvedValueOnce({ wa_ref: 'H7M2QP', session_token: null });
+
+    const res = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A047`);
+
+    // The old behaviour was 404 until a ticket existed, which in this flow is
+    // the common case: the guard scans to *start* intake and shows the card
+    // immediately, long before plate and photos are done.
+    expect(res.status).toBe(200);
+    expect(res.body.waRef).toBe('H7M2QP');
+    expect(res.body.sessionToken).toBeNull();
+  });
+
+  it('hands back the ticket too once there is one', async () => {
+    queryOne.mockResolvedValueOnce({ wa_ref: 'H7M2QP', session_token: SESSION_TOKEN });
+
+    const res = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A047`);
+
+    expect(res.body.sessionToken).toBe(SESSION_TOKEN);
+  });
+
+  it('still says nothing about a card that was never registered', async () => {
+    queryOne.mockResolvedValueOnce(null);
+
+    const res = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/ZZZZ`);
+
+    expect(res.status).toBe(404);
+  });
+});

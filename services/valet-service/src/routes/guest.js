@@ -113,10 +113,23 @@ router.get('/cards/:communityId/:code', async (req, res) => {
   const communityId = String(req.params.communityId || '').trim();
   if (!code || !UUID.test(communityId)) return notFound(res);
 
+  // LEFT JOIN, not JOIN, and this is a deliberate change of behaviour.
+  //
+  // This used to 404 unless the card was on an open ticket, so that probing
+  // codes revealed neither which were real nor which were in use. The second
+  // half of that is now visible: a registered card answers whether or not a
+  // car is on it.
+  //
+  // It is traded knowingly. The guard scans the card to *start* intake and
+  // shows it to the guest straight away -- plate, make and four condition
+  // photos still to come -- so "no ticket yet" is the normal case in this
+  // flow, not an error. Refusing to answer would send the guest who scanned
+  // promptly to a dead end. What is disclosed is that a card code is
+  // registered stock at a venue, to someone already holding the card.
   const row = await queryOne(
-    `SELECT t.session_token
+    `SELECT c.wa_ref, t.session_token
        FROM valet_cards c
-       JOIN valet_tickets t
+       LEFT JOIN valet_tickets t
          ON t.card_id = c.id
         AND t.status NOT IN ('final_closed', 'expired')
       WHERE c.community_id = $1 AND UPPER(c.code) = UPPER($2) AND c.is_active = true
@@ -125,7 +138,7 @@ router.get('/cards/:communityId/:code', async (req, res) => {
   );
   if (!row) return notFound(res);
 
-  res.json({ sessionToken: row.session_token });
+  res.json({ waRef: row.wa_ref, sessionToken: row.session_token ?? null });
 });
 
 /**

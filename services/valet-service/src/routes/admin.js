@@ -3,6 +3,7 @@ import { asyncRouter } from '../lib/async-router.js';
 import { query, queryOne, queryRows } from '../db.js';
 import { normalizePlate } from '../lib/plate.js';
 import { storage, extensionFor } from '../lib/storage.js';
+import { newClaimCode } from '../lib/claim-code.js';
 import { authenticateJWT } from '../middleware/auth.js';
 
 const router = asyncRouter();
@@ -260,11 +261,21 @@ router.post('/cards', authenticateJWT(['admin']), async (req, res) => {
   const toAdd = cleaned.filter((c) => !already.has(c));
 
   if (toAdd.length) {
-    const values = toAdd.map((_, i) => `($1, $${i + 2})`).join(',');
+    // Each card also gets a reference it can carry into WhatsApp on its own.
+    // The printed code is unique per venue only -- every box starts at A001 --
+    // and a WhatsApp message arrives with no venue context to disambiguate it.
+    // Same confusable-free alphabet as claim codes, so it survives being read
+    // aloud or retyped.
+    const params = [communityId];
+    const values = toAdd.map((code) => {
+      params.push(code, newClaimCode());
+      return `($1, $${params.length - 1}, $${params.length})`;
+    }).join(',');
+
     await queryRows(
-      `INSERT INTO valet_cards (community_id, code) VALUES ${values}
+      `INSERT INTO valet_cards (community_id, code, wa_ref) VALUES ${values}
        ON CONFLICT (community_id, code) DO NOTHING`,
-      [communityId, ...toAdd]
+      params
     );
   }
 

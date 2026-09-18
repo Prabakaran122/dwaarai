@@ -607,3 +607,21 @@ describe('GET /admin/branding/logo', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('a card that can start a conversation', () => {
+  it('mints a globally unique WhatsApp reference for every card registered', async () => {
+    queryRows.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+    const res = await request(app, 'POST', '/admin/cards', {
+      token: adminToken(), body: { codes: ['A047', 'A048'] },
+    });
+
+    expect(res.status).toBe(201);
+    const insert = queryRows.mock.calls[1];
+    // The printed code is unique per venue only; a WhatsApp message carries no
+    // venue, so the reference in it has to stand on its own.
+    expect(insert[0]).toMatch(/wa_ref/);
+    // community_id + (code, wa_ref) per card
+    expect(insert[1]).toHaveLength(5);
+  });
+});
