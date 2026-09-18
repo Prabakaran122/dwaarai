@@ -1090,3 +1090,81 @@ describe('a number the guest left on the card before intake finished', () => {
     );
   });
 });
+
+const SLOT_ID = '44444444-4444-4444-4444-444444444444';
+
+describe('slots, at the stand', () => {
+  it('offers only the free ones, grouped by floor and zone', async () => {
+    queryOne.mockResolvedValueOnce({ slots_enabled: true });
+    queryRows.mockResolvedValueOnce([
+      { id: 's1', floor: 'B1', zone: 'A', number: '01' },
+      { id: 's2', floor: 'B1', zone: 'A', number: '02' },
+      { id: 's3', floor: 'G', zone: 'PORCH', number: '01' },
+    ]);
+
+    const res = await request(app, 'GET', '/guard/slots', { token });
+
+    expect(res.status).toBe(200);
+    expect(res.body.enabled).toBe(true);
+    expect(res.body.floors).toEqual([
+      { floor: 'B1', zones: [{ zone: 'A', slots: [
+        { id: 's1', number: '01' }, { id: 's2', number: '02' },
+      ] }] },
+      { floor: 'G', zones: [{ zone: 'PORCH', slots: [{ id: 's3', number: '01' }] }] },
+    ]);
+  });
+
+  it('says the feature is off rather than returning an empty garage', async () => {
+    queryOne.mockResolvedValueOnce({ slots_enabled: null });
+
+    const res = await request(app, 'GET', '/guard/slots', { token });
+
+    // An empty list and a disabled feature mean very different things to the
+    // app: one hides the step, the other says "no space left".
+    expect(res.body.enabled).toBe(false);
+    expect(queryRows).not.toHaveBeenCalled();
+  });
+
+  it('records the slot the attendant picked', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: SLOT_ID }] })       // slot is real and free
+      .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({});
+
+    const res = await request(app, 'POST', '/guard/tickets', {
+      token,
+      body: {
+        plate: 'KA03NJ0435', vehicleMake: 'Swift', slotId: SLOT_ID,
+        stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+      },
+    });
+
+    expect(res.status).toBe(201);
+  });
+
+  it('takes the car in anyway when no slot was given', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({});
+
+    const res = await request(app, 'POST', '/guard/tickets', {
+      token,
+      body: {
+        plate: 'KA03NJ0435', vehicleMake: 'Swift',
+        stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+      },
+    });
+
+    // A full garage at 9pm on a Saturday must never be the reason a car
+    // cannot be taken in. Valets double-park; the app must not argue.
+    expect(res.status).toBe(201);
+  });
+});

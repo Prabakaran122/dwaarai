@@ -625,3 +625,67 @@ describe('a card that can start a conversation', () => {
     expect(insert[1]).toHaveLength(5);
   });
 });
+
+describe('parking inventory', () => {
+  it('reports the flag off for a venue that has not enabled slots', async () => {
+    queryOne.mockResolvedValueOnce({ slots_enabled: null });
+    queryRows.mockResolvedValueOnce([]);
+
+    const res = await request(app, 'GET', '/admin/slots', { token: adminToken() });
+
+    expect(res.status).toBe(200);
+    // A restaurant forecourt has no floors and zones; the feature simply is
+    // not on, and everything else about valet works unchanged.
+    expect(res.body.enabled).toBe(false);
+  });
+
+  it('derives occupancy from live tickets rather than a stored flag', async () => {
+    queryOne.mockResolvedValueOnce({ slots_enabled: true });
+    queryRows.mockResolvedValueOnce([
+      { id: 's1', floor: 'B1', zone: 'A', number: '01', display_id: null, plate: null },
+      { id: 's2', floor: 'B1', zone: 'A', number: '02', display_id: 'DWR-0009', plate: 'KA03NJ0435' },
+    ]);
+
+    const res = await request(app, 'GET', '/admin/slots', { token: adminToken() });
+
+    expect(res.body.enabled).toBe(true);
+    expect(res.body.slots[0].occupiedBy).toBeNull();
+    expect(res.body.slots[1].occupiedBy).toEqual(
+      expect.objectContaining({ displayId: 'DWR-0009' })
+    );
+    // The join is what makes it true, not a column that can drift.
+    expect(queryRows.mock.calls[0][0]).toMatch(/LEFT JOIN valet_tickets/i);
+  });
+
+  it('registers a range of slots the way card stock is registered', async () => {
+    queryRows.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+    const res = await request(app, 'POST', '/admin/slots', {
+      token: adminToken(),
+      body: { floor: 'B1', zone: 'A', from: 1, to: 3 },
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.added).toEqual(['01', '02', '03']);
+  });
+
+  it('refuses to retire a slot with a car standing in it', async () => {
+    queryOne.mockResolvedValueOnce({ display_id: 'DWR-0009' });
+
+    const res = await request(app, 'DELETE', '/admin/slots/s2', { token: adminToken() });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('slot_in_use');
+  });
+
+  it('turns the flag on for a venue', async () => {
+    query.mockResolvedValueOnce({});
+
+    const res = await request(app, 'PATCH', '/admin/slots/enabled', {
+      token: adminToken(), body: { enabled: true },
+    });
+
+    expect(res.status).toBe(200);
+    expect(query.mock.calls[0][0]).toMatch(/valetSlotsEnabled/);
+  });
+});

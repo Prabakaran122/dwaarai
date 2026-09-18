@@ -436,3 +436,144 @@ router.delete('/branding/logo', admin, async (req, res) => {
 
   res.json({ hasLogo: false });
 });
+
+// --- parking inventory -----------------------------------------------------
+
+/** Open statuses: a car standing in a slot, by any of the names that means. */
+const HOLDING_A_SLOT = ['parked', 'requested', 'en_route', 'arrived', 'parked_again'];
+
+function slotsEnabledFor(communityId) {
+  return queryOne(
+    `SELECT (config->>'valetSlotsEnabled')::boolean AS slots_enabled
+       FROM communities WHERE id = $1`,
+    [communityId]
+  );
+}
+
+/**
+ * The venue's Floor -> Zone -> Slot grid, with occupancy.
+ *
+ * Occupancy is a LEFT JOIN against live tickets, computed on every read and
+ * never stored. A stored is_occupied column drifts the first time a ticket
+ * closes by a path nobody remembered to update, and the grid is exactly the
+ * screen where that lie would be believed.
+ */
+router.get('/slots', admin, async (req, res) => {
+  const communityId = req.user.community_id;
+  const flag = await slotsEnabledFor(communityId);
+
+  const rows = await queryRows(
+    `SELECT s.id, s.floor, s.zone, s.number, t.display_id, t.plate, t.session_token
+       FROM valet_slots s
+       LEFT JOIN valet_tickets t
+         ON t.slot_id = s.id AND t.status = ANY($2)
+      WHERE s.community_id = $1 AND s.is_active = true
+      ORDER BY s.floor, s.zone, s.number`,
+    [communityId, HOLDING_A_SLOT]
+  );
+
+  res.json({
+    enabled: !!flag?.slots_enabled,
+    slots: rows.map((r) => ({
+      id: r.id,
+      floor: r.floor,
+      zone: r.zone,
+      number: r.number,
+      occupiedBy: r.display_id
+        ? { displayId: r.display_id, plate: r.plate, sessionToken: r.session_token }
+        : null,
+    })),
+  });
+});
+
+/**
+ * Adds inventory, by range or explicit list — the same shape card stock uses,
+ * because a garage level is numbered in a run exactly like a box of cards and
+ * typing 120 slots one at a time guarantees gaps.
+ */
+router.post('/slots', admin, async (req, res) => {
+  const communityId = req.user.community_id;
+  const floor = String(req.body.floor ?? '').trim().toUpperCase();
+  const zone = String(req.body.zone ?? '').trim().toUpperCase();
+  if (!floor || !zone) {
+    return res.status(400).json({ error: 'floor_and_zone_required' });
+  }
+
+  let numbers = [];
+  if (Array.isArray(req.body.numbers)) {
+    numbers = req.body.numbers.map((n) => String(n ?? '').trim()).filter(Boolean);
+  } else {
+    const from = Number(req.body.from);
+    const to = Number(req.body.to);
+    const width = Number(req.body.width ?? 2);
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from) {
+      return res.status(400).json({ error: 'invalid_range' });
+    }
+    if (to - from + 1 > 500) return res.status(400).json({ error: 'range_too_large' });
+    for (let n = from; n <= to; n += 1) numbers.push(String(n).padStart(width, '0'));
+  }
+  if (!numbers.length) return res.status(400).json({ error: 'numbers_required' });
+
+  const existing = await queryRows(
+    `SELECT number FROM valet_slots
+      WHERE community_id = $1 AND floor = $2 AND zone = $3 AND number = ANY($4)`,
+    [communityId, floor, zone, numbers]
+  );
+  const already = new Set(existing.map((r) => r.number));
+  const toAdd = numbers.filter((n) => !already.has(n));
+
+  if (toAdd.length) {
+    const params = [communityId, floor, zone];
+    const values = toAdd.map((n) => {
+      params.push(n);
+      return `($1, $2, $3, $${params.length})`;
+    }).join(',');
+    await queryRows(
+      `INSERT INTO valet_slots (community_id, floor, zone, number) VALUES ${values}
+       ON CONFLICT (community_id, floor, zone, number) DO NOTHING`,
+      params
+    );
+  }
+
+  res.status(201).json({ added: toAdd, skipped: [...already] });
+});
+
+/**
+ * Retires a slot. Deactivated rather than deleted: tickets reference it and
+ * that history is the point of the audit trail.
+ */
+router.delete('/slots/:id', admin, async (req, res) => {
+  const inUse = await queryOne(
+    `SELECT display_id FROM valet_tickets
+      WHERE slot_id = $1 AND status = ANY($2) LIMIT 1`,
+    [req.params.id, HOLDING_A_SLOT]
+  );
+  if (inUse) {
+    return res.status(409).json({
+      error: 'slot_in_use',
+      message: `${inUse.display_id} is standing in this slot`,
+    });
+  }
+
+  await query(
+    `UPDATE valet_slots SET is_active = false WHERE id = $1 AND community_id = $2`,
+    [req.params.id, req.user.community_id]
+  );
+  res.json({ retired: true });
+});
+
+/**
+ * The per-venue switch. Kept in communities.config beside valetLogoKey rather
+ * than a column, because it is one optional boolean per venue and most venues
+ * will never set it.
+ */
+router.patch('/slots/enabled', admin, async (req, res) => {
+  const enabled = req.body.enabled === true;
+  await query(
+    `UPDATE communities
+        SET config = jsonb_set(COALESCE(config, '{}'::jsonb), '{valetSlotsEnabled}', to_jsonb($2::boolean))
+      WHERE id = $1`,
+    [req.user.community_id, enabled]
+  );
+  res.json({ enabled });
+});

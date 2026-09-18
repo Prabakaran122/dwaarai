@@ -123,6 +123,46 @@ router.post('/profile', guard, photoUpload.single('idPhoto'), async (req, res) =
 
 // --- ticket creation -------------------------------------------------------
 
+/** Open statuses: a car standing in a slot, by any of the names that means. */
+const HOLDING_A_SLOT = ['parked', 'requested', 'en_route', 'arrived', 'parked_again'];
+
+/**
+ * Free slots, grouped the way the attendant picks them: floor, then zone.
+ *
+ * `enabled: false` is not the same answer as an empty list. One tells the app
+ * to hide the step entirely; the other says the garage is full, which is a
+ * thing the attendant has to act on.
+ */
+router.get('/slots', guard, async (req, res) => {
+  const flag = await queryOne(
+    `SELECT (config->>'valetSlotsEnabled')::boolean AS slots_enabled
+       FROM communities WHERE id = $1`,
+    [req.user.community_id]
+  );
+  if (!flag?.slots_enabled) return res.json({ enabled: false, floors: [] });
+
+  const rows = await queryRows(
+    `SELECT s.id, s.floor, s.zone, s.number
+       FROM valet_slots s
+       LEFT JOIN valet_tickets t
+         ON t.slot_id = s.id AND t.status = ANY($2)
+      WHERE s.community_id = $1 AND s.is_active = true AND t.id IS NULL
+      ORDER BY s.floor, s.zone, s.number`,
+    [req.user.community_id, HOLDING_A_SLOT]
+  );
+
+  const floors = [];
+  for (const r of rows) {
+    let floor = floors.find((f) => f.floor === r.floor);
+    if (!floor) floors.push((floor = { floor: r.floor, zones: [] }));
+    let zone = floor.zones.find((z) => z.zone === r.zone);
+    if (!zone) floor.zones.push((zone = { zone: r.zone, slots: [] }));
+    zone.slots.push({ id: r.id, number: r.number });
+  }
+
+  res.json({ enabled: true, floors });
+});
+
 const createTicketSchema = z.object({
   plate: z.string().trim().min(1).max(20),
   vehicleMake: z.string().trim().min(1).max(100),
@@ -133,6 +173,9 @@ const createTicketSchema = z.object({
   // Optional: the guest may decline, and a valet stand must work for a guest
   // who gives nothing but a car.
   phoneNumber: z.string().trim().max(20).optional(),
+  // Optional even where slots are enabled. A full garage must never be the
+  // reason a car cannot be taken in.
+  slotId: z.string().uuid().optional(),
 });
 
 /**
@@ -265,16 +308,30 @@ router.post('/tickets', guard, async (req, res) => {
     // million combinations is rare enough to retry rather than design around.
     const claimCode = newClaimCode();
 
+    // Checked inside the transaction, and only to avoid recording a slot that
+    // is wrong -- never to refuse the car. A slot that has vanished or filled
+    // since the attendant picked it simply is not recorded.
+    let slotId = null;
+    if (parsed.data.slotId) {
+      const slot = await client.query(
+        `SELECT s.id FROM valet_slots s
+          LEFT JOIN valet_tickets t ON t.slot_id = s.id AND t.status = ANY($3)
+         WHERE s.id = $1 AND s.community_id = $2 AND s.is_active = true AND t.id IS NULL`,
+        [parsed.data.slotId, communityId, HOLDING_A_SLOT]
+      );
+      slotId = slot.rows[0]?.id || null;
+    }
+
     const inserted = await client.query(
       `INSERT INTO valet_tickets
          (community_id, display_id, session_token, plate, plate_normalized,
           vehicle_make, stay_end_at, status, created_by_guard_id, card_id, card_code, claim_code,
-          phone_number, phone_consent_at)
+          phone_number, phone_consent_at, slot_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'parked', $8, $9, $10, $11,
-               $12, CASE WHEN $12 IS NULL THEN NULL ELSE NOW() END)
+               $12, CASE WHEN $12 IS NULL THEN NULL ELSE NOW() END, $13)
        RETURNING id`,
       [communityId, displayId, sessionToken, plate, normalizePlate(plate), vehicleMake, stayEnd.toISOString(), req.user.sub,
-       card ? card.id : null, card ? card.code : null, claimCode, phoneNumber]
+       card ? card.id : null, card ? card.code : null, claimCode, phoneNumber, slotId]
     );
     const ticketId = inserted.rows[0].id;
 
