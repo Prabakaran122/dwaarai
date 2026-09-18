@@ -30,6 +30,7 @@ function ticket(overrides: Partial<ValetTicket> = {}): ValetTicket {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  (api.listSlots as jest.Mock).mockResolvedValue({ data: { enabled: false, floors: [] } });
   (api.listTickets as jest.Mock).mockResolvedValue({ data: { tickets: [] } });
   // The handover screen loads the ticket to learn whether an intake photo
   // exists — without it, it cannot tell "compare this face" from "there is no

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { valetFetch, valetPost, ValetError, STATUS_LABEL, NEEDS_ACTION, ValetStatus, formatStay,
-  previewRange, listCards, registerCards, setCardActive, searchPlates } from './valet';
+  previewRange, listCards, registerCards, setCardActive, searchPlates,
+  groupSlots } from './valet';
 
 const originalFetch = global.fetch;
 
@@ -242,5 +243,30 @@ describe('plate search client', () => {
     await searchPlates('KA 03 NJ');
 
     expect(vi.mocked(global.fetch).mock.calls[0][0]).toContain('plate=KA%2003%20NJ');
+  });
+});
+
+describe('groupSlots', () => {
+  const slot = (floor: string, zone: string, number: string) =>
+    ({ id: `${floor}-${zone}-${number}`, floor, zone, number, occupiedBy: null });
+
+  it('orders basements below ground, deepest first', () => {
+    const grouped = groupSlots([
+      slot('1', 'A', '01'), slot('B1', 'A', '01'), slot('G', 'A', '01'), slot('B3', 'A', '01'),
+    ]);
+
+    // A plain string sort puts B1 above B3 and G after 9 — neither is how a
+    // garage is signposted, and the grid is read as a physical building.
+    expect(grouped.map((f) => f.floor)).toEqual(['B3', 'B1', 'G', '1']);
+  });
+
+  it('nests zones under their floor', () => {
+    const grouped = groupSlots([
+      slot('B1', 'A', '01'), slot('B1', 'B', '01'), slot('B1', 'A', '02'),
+    ]);
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0].zones.map((z) => z.zone)).toEqual(['A', 'B']);
+    expect(grouped[0].zones[0].slots).toHaveLength(2);
   });
 });

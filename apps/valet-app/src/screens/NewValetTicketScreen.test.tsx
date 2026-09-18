@@ -38,6 +38,7 @@ beforeEach(() => {
   (useCameraPermissions as jest.Mock).mockReturnValue([{ granted: true, canAskAgain: true }, jest.fn()]);
   (api.lookupPlate as jest.Mock).mockResolvedValue({ data: { isReturning: false } });
   (api.createTicket as jest.Mock).mockResolvedValue({ data: createdTicket });
+  (api.listSlots as jest.Mock).mockResolvedValue({ data: { enabled: false, floors: [] } });
   (api.uploadGuestPhoto as jest.Mock).mockResolvedValue({});
   (api.uploadCondition as jest.Mock).mockResolvedValue({});
   (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockResolvedValue({ granted: true });
@@ -230,7 +231,7 @@ describe('binding a printed card at intake', () => {
     await fillDetails(screen);
 
     expect(api.createTicket).toHaveBeenCalledWith(
-      'KA03NJ0435', 'Maruti Swift', expect.any(String), undefined, undefined
+      'KA03NJ0435', 'Maruti Swift', expect.any(String), undefined, undefined, undefined
     );
   });
 
@@ -266,7 +267,7 @@ describe('binding a printed card at intake', () => {
     await fillDetails(screen);
 
     expect(api.createTicket).toHaveBeenCalledWith(
-      'KA03NJ0435', 'Maruti Swift', expect.any(String), 'A047', undefined
+      'KA03NJ0435', 'Maruti Swift', expect.any(String), 'A047', undefined, undefined
     );
   });
 
@@ -592,7 +593,7 @@ describe('texting the guest their claim code', () => {
     await fillAndSubmit('9876543210');
 
     expect(api.createTicket).toHaveBeenCalledWith(
-      'KA03NJ0435', 'Maruti Swift', expect.any(String), undefined, '9876543210'
+      'KA03NJ0435', 'Maruti Swift', expect.any(String), undefined, '9876543210', undefined
     );
   });
 
@@ -600,7 +601,7 @@ describe('texting the guest their claim code', () => {
     await fillAndSubmit();
 
     expect(api.createTicket).toHaveBeenCalledWith(
-      'KA03NJ0435', 'Maruti Swift', expect.any(String), undefined, undefined
+      'KA03NJ0435', 'Maruti Swift', expect.any(String), undefined, undefined, undefined
     );
   });
 
@@ -624,5 +625,54 @@ describe('texting the guest their claim code', () => {
     const screen = await fillAndSubmit();
 
     expect(screen.queryByTestId('valet-sms-status')).toBeNull();
+  });
+});
+
+describe('parking slots, where the venue uses them', () => {
+  const garage = {
+    enabled: true,
+    floors: [
+      { floor: 'B1', zones: [{ zone: 'A', slots: [{ id: 'slot-1', number: '01' }] }] },
+    ],
+  };
+
+  it('shows nothing about slots at a venue that does not use them', async () => {
+    const screen = render(<NewValetTicketScreen onClose={jest.fn()} />);
+
+    await waitFor(() => expect(api.listSlots).toHaveBeenCalled());
+    // A forecourt restaurant should never see a floor picker.
+    expect(screen.queryByTestId('valet-slot-section')).toBeNull();
+  });
+
+  it('records the slot the attendant picked', async () => {
+    (api.listSlots as jest.Mock).mockResolvedValue({ data: garage });
+    const screen = render(<NewValetTicketScreen onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('valet-slot-section')).toBeTruthy());
+
+    fireEvent.changeText(screen.getByTestId('valet-plate-input'), 'KA03NJ0435');
+    fireEvent.changeText(screen.getByTestId('valet-make-input'), 'Swift');
+    fireEvent.press(screen.getByTestId('valet-slot-B1'));
+    fireEvent.press(screen.getByTestId('valet-slot-B1-A'));
+    fireEvent.press(screen.getByTestId('valet-slot-slot-1'));
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-create')); });
+
+    expect(api.createTicket).toHaveBeenCalledWith(
+      'KA03NJ0435', 'Swift', expect.any(String), undefined, undefined, 'slot-1'
+    );
+  });
+
+  it('takes the car in with no slot when the garage is full', async () => {
+    (api.listSlots as jest.Mock).mockResolvedValue({ data: { enabled: true, floors: [] } });
+    const screen = render(<NewValetTicketScreen onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('valet-slot-section')).toBeTruthy());
+
+    fireEvent.changeText(screen.getByTestId('valet-plate-input'), 'KA03NJ0435');
+    fireEvent.changeText(screen.getByTestId('valet-make-input'), 'Swift');
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-create')); });
+
+    // A full garage is never a reason to refuse a car.
+    expect(api.createTicket).toHaveBeenCalledWith(
+      'KA03NJ0435', 'Swift', expect.any(String), undefined, undefined, undefined
+    );
   });
 });

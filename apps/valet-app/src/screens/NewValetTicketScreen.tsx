@@ -106,6 +106,15 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
   const [vehicleMake, setVehicleMake] = useState('');
   const [days, setDays] = useState(1);
   const [phone, setPhone] = useState('');
+
+  // Slots exist at some venues and not others. `enabled: false` hides the step
+  // entirely; an enabled venue with no free slots still shows it, saying so —
+  // those are different facts and the attendant acts on them differently.
+  const [slotsEnabled, setSlotsEnabled] = useState(false);
+  const [floors, setFloors] = useState<api.SlotFloor[]>([]);
+  const [floor, setFloor] = useState<string | null>(null);
+  const [zone, setZone] = useState<string | null>(null);
+  const [slotId, setSlotId] = useState<string | null>(null);
   const [cardCode, setCardCode] = useState<string | null>(null);
   const [typedCard, setTypedCard] = useState('');
   // Latched in a ref for the same reason as the handover scanner: a real
@@ -210,6 +219,23 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
     acceptCard(code);
   }
 
+  useEffect(() => {
+    let cancelled = false;
+    // Wrapped, and every failure swallowed. This screen is the one thing a
+    // valet cannot work without; a slot lookup that throws — or a client that
+    // returns something unexpected — must never be what stops a car being
+    // taken in. A venue we cannot ask is treated as not using slots.
+    Promise.resolve()
+      .then(() => api.listSlots())
+      .then((res) => {
+        if (cancelled) return;
+        setSlotsEnabled(!!res?.data?.enabled);
+        setFloors(res?.data?.floors ?? []);
+      })
+      .catch(() => { if (!cancelled) setSlotsEnabled(false); });
+    return () => { cancelled = true; };
+  }, []);
+
   async function submitDetails() {
     if (!plate.trim() || !vehicleMake.trim()) return;
     setBusy(true);
@@ -219,7 +245,8 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
       stayEnd.setDate(stayEnd.getDate() + days);
       const res = await api.createTicket(
         plate.trim(), vehicleMake.trim(), stayEnd.toISOString(), cardCode ?? undefined,
-        phone.trim() ? phone.replace(/\s+/g, '') : undefined
+        phone.trim() ? phone.replace(/\s+/g, '') : undefined,
+        slotId ?? undefined
       );
       setCreated(res.data);
       setStep('photo');
@@ -336,6 +363,72 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
                 </Pressable>
               ))}
             </View>
+
+            {slotsEnabled && (
+              <View testID="valet-slot-section">
+                <Text style={styles.label}>{t('valetSlot')}</Text>
+                {floors.length === 0 ? (
+                  <Text style={styles.hint}>{t('valetSlotFull')}</Text>
+                ) : (
+                  <>
+                    <View style={styles.dayRow}>
+                      {floors.map((f) => (
+                        <Pressable
+                          key={f.floor}
+                          testID={`valet-slot-${f.floor}`}
+                          onPress={() => { setFloor(f.floor); setZone(null); setSlotId(null); }}
+                          style={[styles.dayChip, floor === f.floor && styles.dayChipActive]}
+                        >
+                          <Text style={[styles.dayChipText, floor === f.floor && styles.dayChipTextActive]}>
+                            {f.floor}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+
+                    {floor && (
+                      <View style={styles.dayRow}>
+                        {(floors.find((f) => f.floor === floor)?.zones ?? []).map((z) => (
+                          <Pressable
+                            key={z.zone}
+                            testID={`valet-slot-${floor}-${z.zone}`}
+                            onPress={() => { setZone(z.zone); setSlotId(null); }}
+                            style={[styles.dayChip, zone === z.zone && styles.dayChipActive]}
+                          >
+                            <Text style={[styles.dayChipText, zone === z.zone && styles.dayChipTextActive]}>
+                              {z.zone}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    )}
+
+                    {floor && zone && (
+                      <View style={styles.dayRow}>
+                        {(floors
+                          .find((f) => f.floor === floor)?.zones
+                          .find((z) => z.zone === zone)?.slots ?? []
+                        ).map((sl) => (
+                          <Pressable
+                            key={sl.id}
+                            testID={`valet-slot-${sl.id}`}
+                            onPress={() => setSlotId(sl.id)}
+                            style={[styles.dayChip, slotId === sl.id && styles.dayChipActive]}
+                          >
+                            <Text style={[styles.dayChipText, slotId === sl.id && styles.dayChipTextActive]}>
+                              {sl.number}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    )}
+                  </>
+                )}
+                {/* Never a blocker. A full garage or a hurried attendant still
+                    gets the car in; the slot is bookkeeping, not a gate. */}
+                <Text style={styles.hint}>{t('valetSlotSkip')}</Text>
+              </View>
+            )}
 
             <Text style={styles.label}>{t('valetPhone')}</Text>
             <TextInput

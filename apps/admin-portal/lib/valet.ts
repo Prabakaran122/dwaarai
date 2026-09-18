@@ -304,3 +304,66 @@ export async function fetchVenueLogo(): Promise<string | null> {
   if (!res.ok) return null;
   return URL.createObjectURL(await res.blob());
 }
+
+// --- parking inventory ------------------------------------------------------
+
+export interface ValetSlot {
+  id: string;
+  floor: string;
+  zone: string;
+  number: string;
+  /** Null when free. Derived from live tickets on every read, never stored. */
+  occupiedBy: { displayId: string; plate: string; sessionToken: string } | null;
+}
+
+export const listSlots = () =>
+  valetFetch<{ enabled: boolean; slots: ValetSlot[] }>('/admin/slots');
+
+export const addSlots = (
+  body: { floor: string; zone: string } & (
+    | { numbers: string[] }
+    | { from: number; to: number; width?: number }
+  )
+) => valetPost<{ added: string[]; skipped: string[] }>('/admin/slots', body);
+
+export const retireSlot = (id: string) =>
+  valetFetch<{ retired: boolean }>(`/admin/slots/${id}`, { method: 'DELETE' });
+
+export const setSlotsEnabled = (enabled: boolean) =>
+  valetFetch<{ enabled: boolean }>('/admin/slots/enabled', {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
+  });
+
+/**
+ * Groups a flat slot list into the Floor > Zone shape the grid renders.
+ *
+ * Floors sort with basements descending below ground — B3, B2, B1, G, 1, 2 —
+ * because that is how a garage is signposted, and a plain string sort would
+ * put B1 above B3 and G after 9.
+ */
+export function groupSlots(slots: ValetSlot[]): {
+  floor: string;
+  zones: { zone: string; slots: ValetSlot[] }[];
+}[] {
+  const floors: { floor: string; zones: { zone: string; slots: ValetSlot[] }[] }[] = [];
+
+  for (const slot of slots) {
+    let floor = floors.find((f) => f.floor === slot.floor);
+    if (!floor) floors.push((floor = { floor: slot.floor, zones: [] }));
+    let zone = floor.zones.find((z) => z.zone === slot.zone);
+    if (!zone) floor.zones.push((zone = { zone: slot.zone, slots: [] }));
+    zone.slots.push(slot);
+  }
+
+  return floors.sort((a, b) => floorRank(a.floor) - floorRank(b.floor));
+}
+
+function floorRank(floor: string): number {
+  const f = floor.toUpperCase();
+  const basement = f.match(/^B(\d+)$/);
+  if (basement) return -Number(basement[1]);
+  if (f === 'G' || f === 'GF') return 0;
+  const n = Number(f);
+  return Number.isFinite(n) ? n : 999;
+}

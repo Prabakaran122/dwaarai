@@ -120,11 +120,24 @@ export const getTicket = (token: string) =>
   valet.get<TicketDetail>(`/guard/tickets/${token}`);
 
 export const createTicket = (
-  plate: string, vehicleMake: string, stayEndAt: string, cardCode?: string, phoneNumber?: string
+  plate: string, vehicleMake: string, stayEndAt: string,
+  cardCode?: string, phoneNumber?: string, slotId?: string
 ) =>
   valet.post<CreatedTicket>('/guard/tickets', {
-    plate, vehicleMake, stayEndAt, cardCode, phoneNumber,
+    plate, vehicleMake, stayEndAt, cardCode, phoneNumber, slotId,
   });
+
+export interface SlotZone { zone: string; slots: { id: string; number: string }[] }
+export interface SlotFloor { floor: string; zones: SlotZone[] }
+
+/**
+ * Free slots, grouped floor then zone.
+ *
+ * `enabled: false` is not an empty garage — it means this venue does not use
+ * slots at all, and the step is hidden rather than shown with nothing in it.
+ */
+export const listSlots = () =>
+  valet.get<{ enabled: boolean; floors: SlotFloor[] }>('/guard/slots');
 
 /** Searches beyond the open queue — a closed ticket, or a queue too big to hold. */
 export const searchTickets = (plate: string) =>
