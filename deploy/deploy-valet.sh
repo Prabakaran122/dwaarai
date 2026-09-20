@@ -62,6 +62,26 @@ if [ "$AVAIL_MB" -lt 900 ]; then
 fi
 
 # --------------------------------------------------------------------------
+say "Parsing every source file before anything is touched"
+# --------------------------------------------------------------------------
+# The test runner transforms modules before running them, and its transform
+# quietly tolerates things Node will not -- a duplicated import among them.
+# A suite can therefore be entirely green over a file that cannot be loaded
+# in production, which is exactly how a release once took the service down.
+# node --check is the same parser that will run it, so this catches that
+# class. Deliberately before the migrations: a file that cannot parse should
+# stop the deploy while the database is still untouched.
+BAD=0
+while IFS= read -r -d "" f; do
+  node --check "$f" || BAD=1
+done < <(find "$APP_DIR/services/valet-service/src" -name '*.js' -not -path '*/__tests__/*' -print0)
+if [ "$BAD" -ne 0 ]; then
+  echo "A source file does not parse. Nothing has been changed; fix it and re-run." >&2
+  exit 1
+fi
+echo "all valet-service sources parse"
+
+# --------------------------------------------------------------------------
 say "Applying database migrations"
 # --------------------------------------------------------------------------
 # The runner records what it has applied, so this only runs what the box is

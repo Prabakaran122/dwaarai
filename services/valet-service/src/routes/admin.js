@@ -5,7 +5,6 @@ import { normalizePlate } from '../lib/plate.js';
 import { storage, extensionFor } from '../lib/storage.js';
 import { newClaimCode } from '../lib/claim-code.js';
 import { newSessionToken, nextDisplayId } from '../lib/tokens.js';
-import { normalizePlate } from '../lib/plate.js';
 import bcrypt from 'bcryptjs';
 import { logEvent } from '../lib/events.js';
 import { vectorize } from '../lib/face.js';
