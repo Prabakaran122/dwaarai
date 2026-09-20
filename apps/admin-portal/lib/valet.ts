@@ -386,3 +386,37 @@ export const REASON_LABEL: Record<string, string> = {
 
 export const getFeedback = (days = 30) =>
   valetFetch<FeedbackRollup>(`/admin/feedback?days=${days}`);
+
+// --- promotions, leads and subscription -------------------------------------
+
+export interface Promotion {
+  enabled: boolean;
+  label: string | null;
+  link: string | null;
+}
+
+export const getPromotion = () => valetFetch<Promotion>('/admin/promotion');
+
+export const savePromotion = (label: string, link: string) =>
+  valetFetch<Promotion>('/admin/promotion', {
+    method: 'PATCH',
+    body: JSON.stringify({ label, link }),
+  });
+
+export const requestAdvertising = (message: string) =>
+  valetPost<{ logged: boolean }>('/admin/promotion/request', { message });
+
+export const submitLead = (body: {
+  product: string; contactName?: string; contactPhone?: string;
+  contactEmail?: string; message?: string;
+}) => valetPost<{ logged: boolean }>('/admin/leads', body);
+
+export interface Subscription {
+  plan: 'basic' | 'enterprise';
+  quota: number | null;
+  used: number;
+  renewalDate: string | null;
+  pooled: boolean;
+}
+
+export const getSubscription = () => valetFetch<Subscription>('/admin/subscription');

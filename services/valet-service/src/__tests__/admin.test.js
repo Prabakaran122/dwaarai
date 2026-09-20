@@ -715,3 +715,118 @@ describe('GET /admin/feedback', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('promotions', () => {
+  it('reports the slot locked for a venue that has not been given advertising', async () => {
+    queryOne.mockResolvedValueOnce({ enabled: null, label: null, link: null });
+
+    const res = await request(app, 'GET', '/admin/promotion', { token: adminToken() });
+
+    expect(res.status).toBe(200);
+    expect(res.body.enabled).toBe(false);
+  });
+
+  it('refuses to let a venue turn its own advertising on', async () => {
+    queryOne.mockResolvedValueOnce({ enabled: null, label: null, link: null });
+
+    const res = await request(app, 'PATCH', '/admin/promotion', {
+      token: adminToken(), body: { label: 'Spa offer', link: 'https://example.com' },
+    });
+
+    // The flag is commercial. A hotel editing its own promo is fine; a hotel
+    // granting itself the slot is not, and the only safe place for that
+    // decision is outside this app.
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('advertising_not_enabled');
+  });
+
+  it('saves the promo once the venue has been given the slot', async () => {
+    queryOne.mockResolvedValueOnce({ enabled: true, label: null, link: null });
+    query.mockResolvedValueOnce({});
+
+    const res = await request(app, 'PATCH', '/admin/promotion', {
+      token: adminToken(), body: { label: 'Spa offer', link: 'https://example.com/spa' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(query.mock.calls[0][0]).toMatch(/valetPromo/);
+  });
+
+  it('refuses a link that is not http', async () => {
+    queryOne.mockResolvedValueOnce({ enabled: true, label: null, link: null });
+
+    const res = await request(app, 'PATCH', '/admin/promotion', {
+      token: adminToken(), body: { label: 'Spa', link: 'javascript:alert(1)' },
+    });
+
+    // This link is rendered on a guest's phone. A javascript: URL there is a
+    // venue admin handing every guest an injection.
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_link');
+  });
+
+  it('logs a lead when a locked venue asks to be enabled', async () => {
+    query.mockResolvedValueOnce({});
+
+    const res = await request(app, 'POST', '/admin/promotion/request', {
+      token: adminToken(), body: { message: 'We would like the ad slot' },
+    });
+
+    expect(res.status).toBe(201);
+    expect(query.mock.calls[0][0]).toMatch(/valet_leads/);
+    // It logs interest. It does not flip the flag.
+    expect(query.mock.calls.map((c) => c[0]).join(' ')).not.toMatch(/valetAdvertisingEnabled/);
+  });
+
+  it('logs a cross-sell inquiry against the product asked about', async () => {
+    query.mockResolvedValueOnce({});
+
+    const res = await request(app, 'POST', '/admin/leads', {
+      token: adminToken(),
+      body: { product: 'Gate Management', contactName: 'Asha', message: 'Tell me more' },
+    });
+
+    expect(res.status).toBe(201);
+    expect(query.mock.calls[0][1]).toEqual(
+      expect.arrayContaining(['cross_sell', 'Gate Management', 'Asha'])
+    );
+  });
+});
+
+describe('GET /admin/subscription', () => {
+  it('shows the month so far against this property own quota', async () => {
+    queryOne
+      .mockResolvedValueOnce({ plan: 'basic', renewal_date: '2027-04-01' })
+      .mockResolvedValueOnce({ used: 418 });
+
+    const res = await request(app, 'GET', '/admin/subscription', { token: adminToken() });
+
+    expect(res.status).toBe(200);
+    expect(res.body.plan).toBe('basic');
+    expect(res.body.quota).toBe(2000);
+    expect(res.body.used).toBe(418);
+    // Per property, never pooled: a four-property group tracks four quotas.
+    expect(res.body.pooled).toBe(false);
+  });
+
+  it('shows no quota bar at all on enterprise', async () => {
+    queryOne
+      .mockResolvedValueOnce({ plan: 'enterprise', renewal_date: null })
+      .mockResolvedValueOnce({ used: 9120 });
+
+    const res = await request(app, 'GET', '/admin/subscription', { token: adminToken() });
+
+    expect(res.body.plan).toBe('enterprise');
+    expect(res.body.quota).toBeNull();
+  });
+
+  it('counts the current billing month, not all time', async () => {
+    queryOne
+      .mockResolvedValueOnce({ plan: 'basic', renewal_date: null })
+      .mockResolvedValueOnce({ used: 12 });
+
+    await request(app, 'GET', '/admin/subscription', { token: adminToken() });
+
+    expect(queryOne.mock.calls[1][0]).toMatch(/date_trunc\('month'/i);
+  });
+});

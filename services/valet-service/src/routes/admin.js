@@ -617,3 +617,152 @@ router.get('/feedback', admin, async (req, res) => {
     reasons,
   });
 });
+
+// --- promotions and leads --------------------------------------------------
+
+function promotionFor(communityId) {
+  return queryOne(
+    `SELECT (config->>'valetAdvertisingEnabled')::boolean AS enabled,
+            config->>'valetPromoLabel' AS label,
+            config->>'valetPromoLink'  AS link
+       FROM communities WHERE id = $1`,
+    [communityId]
+  );
+}
+
+/**
+ * The guest receipt's ad slot, from the venue's side.
+ *
+ * Visible whether or not the venue has it, which is deliberate: hiding the
+ * feature entirely means only the hotels who already know to ask ever ask,
+ * which throws away exactly the demand signal it exists to capture.
+ */
+router.get('/promotion', admin, async (req, res) => {
+  const row = await promotionFor(req.user.community_id);
+  res.json({
+    enabled: !!row?.enabled,
+    label: row?.label ?? null,
+    link: row?.link ?? null,
+  });
+});
+
+router.patch('/promotion', admin, async (req, res) => {
+  const row = await promotionFor(req.user.community_id);
+
+  // A venue editing its own promo copy is fine. A venue granting itself the
+  // slot is a commercial decision, and the only safe place for it is outside
+  // this app.
+  if (!row?.enabled) {
+    return res.status(403).json({
+      error: 'advertising_not_enabled',
+      message: 'Advertising is not enabled for this property',
+    });
+  }
+
+  const label = String(req.body.label ?? '').trim().slice(0, 120);
+  const link = String(req.body.link ?? '').trim();
+
+  // Rendered on a guest's phone. A javascript: or data: URL here is a venue
+  // admin handing every guest an injection.
+  if (link && !/^https?:\/\//i.test(link)) {
+    return res.status(400).json({ error: 'invalid_link', message: 'Use a full http(s) link' });
+  }
+
+  await query(
+    `UPDATE communities
+        SET config = jsonb_set(
+              jsonb_set(COALESCE(config, '{}'::jsonb), '{valetPromoLabel}', to_jsonb($2::text)),
+              '{valetPromoLink}', to_jsonb($3::text))
+      WHERE id = $1`,
+    [req.user.community_id, label, link]
+  );
+
+  res.json({ enabled: true, label, link });
+});
+
+function logLead({ communityId, source, product, body, raisedBy }) {
+  return query(
+    `INSERT INTO valet_leads
+       (community_id, source, product, contact_name, contact_phone, contact_email, message, raised_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      communityId, source, product ?? null,
+      String(body.contactName ?? '').trim().slice(0, 120) || null,
+      String(body.contactPhone ?? '').trim().slice(0, 20) || null,
+      String(body.contactEmail ?? '').trim().slice(0, 160) || null,
+      String(body.message ?? '').trim().slice(0, 2000) || null,
+      raisedBy ?? null,
+    ]
+  );
+}
+
+/**
+ * A locked venue asking for the slot.
+ *
+ * Logs interest and nothing else — it does not flip the flag. That is the
+ * whole point of the locked state: the ask is captured, the decision is not
+ * made here.
+ */
+router.post('/promotion/request', admin, async (req, res) => {
+  await logLead({
+    communityId: req.user.community_id,
+    source: 'advertising',
+    body: req.body,
+    raisedBy: req.user.sub,
+  });
+  res.status(201).json({ logged: true });
+});
+
+/** The sidebar's other-products inquiry. Same table, different source. */
+router.post('/leads', admin, async (req, res) => {
+  await logLead({
+    communityId: req.user.community_id,
+    source: 'cross_sell',
+    product: String(req.body.product ?? '').trim().slice(0, 60) || null,
+    body: req.body,
+    raisedBy: req.user.sub,
+  });
+  res.status(201).json({ logged: true });
+});
+
+// --- subscription ----------------------------------------------------------
+
+/** Included vehicles per property per month on the basic plan. */
+const BASIC_MONTHLY_QUOTA = 2000;
+
+/**
+ * Plan and usage. Display only — there is no self-serve billing here, and
+ * deliberately no money on this screen: a usage figure a manager can read is
+ * useful, a price they cannot change is just a thing to argue about.
+ *
+ * The quota is per property and never pooled. A four-property group tracks
+ * four separate quotas, so this counts only the caller's own community.
+ */
+router.get('/subscription', admin, async (req, res) => {
+  const communityId = req.user.community_id;
+
+  const plan = await queryOne(
+    `SELECT COALESCE(config->>'valetPlan', 'basic') AS plan,
+            config->>'valetRenewalDate' AS renewal_date
+       FROM communities WHERE id = $1`,
+    [communityId]
+  );
+
+  // Billing is yearly; this is a running count within the current calendar
+  // month of that contract, not a monthly renewal.
+  const usage = await queryOne(
+    `SELECT COUNT(*)::int AS used
+       FROM valet_tickets
+      WHERE community_id = $1 AND created_at >= date_trunc('month', NOW())`,
+    [communityId]
+  );
+
+  const isEnterprise = plan?.plan === 'enterprise';
+  res.json({
+    plan: isEnterprise ? 'enterprise' : 'basic',
+    quota: isEnterprise ? null : BASIC_MONTHLY_QUOTA,
+    used: usage?.used ?? 0,
+    renewalDate: plan?.renewal_date ?? null,
+    pooled: false,
+  });
+});

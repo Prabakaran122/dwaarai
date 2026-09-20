@@ -35,6 +35,8 @@ export interface GuestTicket {
   hasVenueLogo: boolean;
   /** A printed card is in the guest's hand and should be handed back. */
   hasCard: boolean;
+  /** The venue's own promo, when it has advertising. Null decides the slot. */
+  promo: { label: string; link: string | null } | null;
 }
 
 export interface RotatingQr {

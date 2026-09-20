@@ -682,3 +682,38 @@ describe('POST /guest/tickets/:token/feedback', () => {
     expect(res.status).toBe(409);
   });
 });
+
+describe('the promo slot on the receipt', () => {
+  it('carries the venue promo when the venue has advertising', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({
+      status: 'final_closed',
+      promo_enabled: true, promo_label: 'Spa offer', promo_link: 'https://example.com/spa',
+    }));
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+
+    expect(res.body.promo).toEqual({ label: 'Spa offer', link: 'https://example.com/spa' });
+  });
+
+  it('sends nothing for a venue without it, rather than an empty slot', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({
+      status: 'final_closed',
+      promo_enabled: null, promo_label: 'Leftover', promo_link: 'https://example.com',
+    }));
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+
+    // Copy can outlive the flag being switched off; the flag is what decides.
+    expect(res.body.promo).toBeNull();
+  });
+
+  it('sends nothing when the venue has the slot but has written nothing in it', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({
+      status: 'final_closed', promo_enabled: true, promo_label: null, promo_link: null,
+    }));
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+
+    expect(res.body.promo).toBeNull();
+  });
+});

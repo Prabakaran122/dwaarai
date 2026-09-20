@@ -39,6 +39,7 @@ const baseTicket: GuestTicket = {
   handedOver: false,
   hasVenueLogo: false,
   hasCard: false,
+  promo: null,
 };
 
 const mockGetTicket = vi.mocked(getTicket);
@@ -427,5 +428,40 @@ describe('how the trip went', () => {
     await waitFor(() =>
       expect(submitFeedback).toHaveBeenCalledWith('test-token', false, ['long_wait'])
     );
+  });
+});
+
+describe('the venue promo on the receipt', () => {
+  const done = { ...baseTicket, status: 'final_closed' as const };
+
+  it('shows it, linked, when the venue has one', async () => {
+    mockGetTicket.mockResolvedValue({
+      ...done, promo: { label: 'Spa offer — 20% off', link: 'https://example.com/spa' },
+    });
+
+    render(<GuestPage />);
+
+    const link = await screen.findByRole('link', { name: /spa offer/i });
+    expect(link).toHaveAttribute('href', 'https://example.com/spa');
+    // Someone else's site: never handed the referrer or window.opener.
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+  });
+
+  it('renders it as plain text when there is no link', async () => {
+    mockGetTicket.mockResolvedValue({ ...done, promo: { label: 'Ask about our spa', link: null } });
+
+    render(<GuestPage />);
+
+    expect(await screen.findByText(/ask about our spa/i)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /ask about our spa/i })).not.toBeInTheDocument();
+  });
+
+  it('shows nothing at all for a venue without advertising', async () => {
+    mockGetTicket.mockResolvedValue(done);
+
+    render(<GuestPage />);
+    await screen.findByText(/thank you for visiting/i);
+
+    expect(screen.queryByTestId('venue-promo')).not.toBeInTheDocument();
   });
 });

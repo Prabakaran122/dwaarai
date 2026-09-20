@@ -25,6 +25,9 @@ function findTicket(sessionToken) {
   return queryOne(
     `SELECT t.*, c.name AS community_name,
             c.config->>'valetLogoKey' AS venue_logo_key,
+            (c.config->>'valetAdvertisingEnabled')::boolean AS promo_enabled,
+            c.config->>'valetPromoLabel' AS promo_label,
+            c.config->>'valetPromoLink'  AS promo_link,
             cg.name AS created_guard_name, ug.name AS current_guard_name
        FROM valet_tickets t
        JOIN communities c ON c.id = t.community_id
@@ -76,6 +79,11 @@ function guestView(t, isHandedOver = false) {
     // Only a guest actually holding a printed card should be asked to hand it
     // back; a screen-QR guest never had one.
     hasCard: !!t.card_code,
+    // The flag decides, not the copy. Promo text outlives advertising being
+    // switched off, and a venue that stopped paying should stop showing.
+    promo: t.promo_enabled && t.promo_label
+      ? { label: t.promo_label, link: t.promo_link || null }
+      : null,
   };
 }
 

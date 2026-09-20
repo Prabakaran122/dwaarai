@@ -544,6 +544,30 @@ export default function GuestPage() {
               </a>
             </p>
           </section>
+          {ticket.promo && (
+            /* The venue's own promo, not an ad marketplace. One line, under
+               the goodbye, never above it. */
+            <section
+              data-testid="venue-promo"
+              className="mt-5 rounded-2xl bg-[#1B3A4B] p-5 text-center ring-1 ring-white/10"
+            >
+              {ticket.promo.link ? (
+                <a
+                  href={ticket.promo.link}
+                  target="_blank"
+                  // Someone else's site: never handed the referrer or a handle
+                  // on the window that opened it.
+                  rel="noopener noreferrer"
+                  className="text-sm font-semibold text-amber-400 underline underline-offset-2"
+                >
+                  {ticket.promo.label}
+                </a>
+              ) : (
+                <p className="text-sm font-semibold text-amber-400">{ticket.promo.label}</p>
+              )}
+            </section>
+          )}
+
           {ticket.status === 'final_closed' && <Feedback token={token} />}
           <DiscountOffer token={token} />
         </>

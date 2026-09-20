@@ -122,6 +122,18 @@ export default function ValetDashboard() {
             Vehicles in →
           </Link>
           <Link
+            href="/valet/promotions"
+            className="text-sm font-medium text-teal-700 hover:text-teal-800"
+          >
+            Promotions →
+          </Link>
+          <Link
+            href="/valet/subscription"
+            className="text-sm font-medium text-teal-700 hover:text-teal-800"
+          >
+            Plan →
+          </Link>
+          <Link
             href="/valet/feedback"
             className="text-sm font-medium text-teal-700 hover:text-teal-800"
           >
