@@ -222,7 +222,7 @@ export default function ValetCardsPage() {
             data-testid="register-cards"
             onClick={register}
             disabled={busy === 'register' || preview.length === 0}
-            className="px-4 py-2 rounded-lg text-sm font-semibold bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50"
+            className="px-4 py-2 rounded-lg text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
           >
             {busy === 'register' ? 'Registering…' : `Register ${preview.length || ''} cards`}
           </button>

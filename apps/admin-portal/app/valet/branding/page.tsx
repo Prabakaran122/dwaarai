@@ -105,7 +105,7 @@ export default function ValetBrandingPage() {
             )}
 
             <div className="mt-5 flex items-center gap-3">
-              <label className="px-4 py-2 rounded-lg text-sm font-semibold bg-teal-600 text-white hover:bg-teal-700 cursor-pointer">
+              <label className="px-4 py-2 rounded-lg text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600 cursor-pointer">
                 {hasLogo ? 'Replace logo' : 'Upload logo'}
                 <input
                   ref={fileInput}

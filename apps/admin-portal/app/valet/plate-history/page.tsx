@@ -60,7 +60,7 @@ export default function PlateHistoryPage() {
         <button
           type="submit"
           disabled={loading || !plate.trim()}
-          className="px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 disabled:opacity-50"
+          className="px-4 py-2 rounded-lg bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-50"
         >
           {loading ? 'Searching…' : 'Search'}
         </button>

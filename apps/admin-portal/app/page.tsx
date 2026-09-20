@@ -192,7 +192,7 @@ export default function DashboardPage() {
         <div className="glass-panel p-10 text-center">
           <p className="text-gray-900 font-semibold">Couldn&apos;t load the dashboard</p>
           <p className="text-sm text-gray-500 mt-1">The API didn&apos;t respond. Check that the gateway is running.</p>
-          <button onClick={load} className="mt-4 px-4 py-2 rounded-xl bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 transition-colors">
+          <button onClick={load} className="mt-4 px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 transition-colors">
             Try again
           </button>
         </div>

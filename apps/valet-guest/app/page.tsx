@@ -99,7 +99,7 @@ export default function ClaimPage() {
           <button
             type="submit"
             disabled={!ready || state === 'checking'}
-            className="mt-4 w-full py-4 rounded-xl bg-teal-500 text-slate-900 font-semibold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-teal-400 transition-colors"
+            className="mt-4 w-full py-4 rounded-xl bg-amber-500 text-[#0D2535] font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-amber-600 transition-colors"
           >
             {state === 'checking' ? 'Checking…' : 'Request my car'}
           </button>

@@ -155,7 +155,7 @@ export default function ValetDashboard() {
                             key={m}
                             onClick={() => act(t.sessionToken, '/accept', { etaMinutes: m })}
                             disabled={busy === t.sessionToken}
-                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50"
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
                           >
                             {m}m
                           </button>
@@ -184,7 +184,7 @@ export default function ValetDashboard() {
                     <button
                       onClick={() => act(t.sessionToken, '/arrived')}
                       disabled={busy === t.sessionToken}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50"
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
                     >
                       Arrived at pickup
                     </button>

@@ -149,7 +149,7 @@ export default function ValetSlotsPage() {
           className={`px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 ${
             enabled
               ? 'text-gray-600 ring-1 ring-gray-300 hover:bg-gray-50'
-              : 'bg-teal-600 text-white hover:bg-teal-700'
+              : 'bg-amber-500 text-white hover:bg-amber-600'
           }`}
         >
           {enabled ? 'Turn off' : 'Turn on slot assignment'}
@@ -215,7 +215,7 @@ export default function ValetSlotsPage() {
               <button
                 onClick={onAdd}
                 disabled={busy}
-                className="px-4 py-2 rounded-lg text-sm font-semibold bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40"
+                className="px-4 py-2 rounded-lg text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-40"
               >
                 Add
               </button>

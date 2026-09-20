@@ -119,7 +119,7 @@ export default function ValetPromotionsPage() {
           <button
             onClick={onSave}
             disabled={busy}
-            className="mt-6 px-4 py-2 rounded-lg text-sm font-semibold bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40"
+            className="mt-6 px-4 py-2 rounded-lg text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-40"
           >
             Save
           </button>
