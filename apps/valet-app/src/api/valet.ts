@@ -119,13 +119,23 @@ export interface TicketDetail extends ValetTicket {
 export const getTicket = (token: string) =>
   valet.get<TicketDetail>(`/guard/tickets/${token}`);
 
+export interface TicketExtras {
+  cardCode?: string;
+  phoneNumber?: string;
+  slotId?: string;
+  guestName?: string;
+  carType?: 'hatchback' | 'sedan' | 'suv';
+  isPremium?: boolean;
+}
+
+/**
+ * Extras arrive as an object rather than more positional arguments. Six
+ * optionals in a row is a call nobody can read and everybody mis-orders.
+ */
 export const createTicket = (
-  plate: string, vehicleMake: string, stayEndAt: string,
-  cardCode?: string, phoneNumber?: string, slotId?: string
+  plate: string, vehicleMake: string, stayEndAt: string, extras: TicketExtras = {}
 ) =>
-  valet.post<CreatedTicket>('/guard/tickets', {
-    plate, vehicleMake, stayEndAt, cardCode, phoneNumber, slotId,
-  });
+  valet.post<CreatedTicket>('/guard/tickets', { plate, vehicleMake, stayEndAt, ...extras });
 
 export interface SlotZone { zone: string; slots: { id: string; number: string }[] }
 export interface SlotFloor { floor: string; zones: SlotZone[] }

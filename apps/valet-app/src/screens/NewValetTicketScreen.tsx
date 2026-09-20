@@ -106,6 +106,9 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
   const [vehicleMake, setVehicleMake] = useState('');
   const [days, setDays] = useState(1);
   const [phone, setPhone] = useState('');
+  const [guestName, setGuestName] = useState('');
+  const [carType, setCarType] = useState<'hatchback' | 'sedan' | 'suv' | null>(null);
+  const [isPremium, setIsPremium] = useState(false);
 
   // Slots exist at some venues and not others. `enabled: false` hides the step
   // entirely; an enabled venue with no free slots still shows it, saying so —
@@ -244,9 +247,15 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
       const stayEnd = new Date();
       stayEnd.setDate(stayEnd.getDate() + days);
       const res = await api.createTicket(
-        plate.trim(), vehicleMake.trim(), stayEnd.toISOString(), cardCode ?? undefined,
-        phone.trim() ? phone.replace(/\s+/g, '') : undefined,
-        slotId ?? undefined
+        plate.trim(), vehicleMake.trim(), stayEnd.toISOString(),
+        {
+          cardCode: cardCode ?? undefined,
+          phoneNumber: phone.trim() ? phone.replace(/\s+/g, '') : undefined,
+          slotId: slotId ?? undefined,
+          guestName: guestName.trim() || undefined,
+          carType: carType ?? undefined,
+          isPremium: isPremium || undefined,
+        }
       );
       setCreated(res.data);
       setStep('photo');
@@ -347,6 +356,41 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
               placeholderTextColor={colors.textTertiary}
               style={styles.input}
             />
+
+            <Text style={styles.label}>{t('valetGuestName')}</Text>
+            <TextInput
+              testID="valet-guest-name"
+              value={guestName}
+              onChangeText={setGuestName}
+              placeholder="A. Mehta"
+              placeholderTextColor={colors.textTertiary}
+              style={styles.input}
+            />
+
+            <Text style={styles.label}>{t('valetCarType')}</Text>
+            <View style={styles.dayRow}>
+              {(['hatchback', 'sedan', 'suv'] as const).map((ct) => (
+                <Pressable
+                  key={ct}
+                  testID={`valet-cartype-${ct}`}
+                  onPress={() => setCarType(carType === ct ? null : ct)}
+                  style={[styles.dayChip, carType === ct && styles.dayChipActive]}
+                >
+                  <Text style={[styles.dayChipText, carType === ct && styles.dayChipTextActive]}>
+                    {t(ct === 'suv' ? 'valetSuv' : ct === 'sedan' ? 'valetSedan' : 'valetHatchback')}
+                  </Text>
+                </Pressable>
+              ))}
+              <Pressable
+                testID="valet-premium"
+                onPress={() => setIsPremium((p) => !p)}
+                style={[styles.dayChip, isPremium && styles.dayChipActive]}
+              >
+                <Text style={[styles.dayChipText, isPremium && styles.dayChipTextActive]}>
+                  {t('valetPremium')}
+                </Text>
+              </Pressable>
+            </View>
 
             <Text style={styles.label}>{t('valetStayEnd')}</Text>
             <View style={styles.dayRow}>

@@ -176,6 +176,14 @@ const createTicketSchema = z.object({
   // Optional even where slots are enabled. A full garage must never be the
   // reason a car cannot be taken in.
   slotId: z.string().uuid().optional(),
+
+  // A plate identifies a car; a name identifies a person, and the desk often
+  // needs the second. Optional -- a guest who declines still gets parked.
+  guestName: z.string().trim().max(120).optional(),
+  // Constrained because the entire point of the field is counting them, and
+  // free text is a category nobody can count or remove.
+  carType: z.enum(['hatchback', 'sedan', 'suv']).optional(),
+  isPremium: z.boolean().optional(),
 });
 
 /**
@@ -326,12 +334,13 @@ router.post('/tickets', guard, async (req, res) => {
       `INSERT INTO valet_tickets
          (community_id, display_id, session_token, plate, plate_normalized,
           vehicle_make, stay_end_at, status, created_by_guard_id, card_id, card_code, claim_code,
-          phone_number, phone_consent_at, slot_id)
+          phone_number, phone_consent_at, slot_id, guest_name, car_type, is_premium)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'parked', $8, $9, $10, $11,
-               $12, CASE WHEN $12 IS NULL THEN NULL ELSE NOW() END, $13)
+               $12, CASE WHEN $12 IS NULL THEN NULL ELSE NOW() END, $13, $14, $15, $16)
        RETURNING id`,
       [communityId, displayId, sessionToken, plate, normalizePlate(plate), vehicleMake, stayEnd.toISOString(), req.user.sub,
-       card ? card.id : null, card ? card.code : null, claimCode, phoneNumber, slotId]
+       card ? card.id : null, card ? card.code : null, claimCode, phoneNumber, slotId,
+       parsed.data.guestName || null, parsed.data.carType || null, parsed.data.isPremium === true]
     );
     const ticketId = inserted.rows[0].id;
 

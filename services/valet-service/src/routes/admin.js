@@ -88,6 +88,7 @@ router.get('/visits', authenticateJWT(['admin']), async (req, res) => {
 
   const rows = await queryRows(
     `SELECT t.id, t.display_id, t.plate, t.plate_normalized, t.vehicle_make,
+            t.guest_name, t.car_type, t.is_premium,
             t.status, t.created_at, t.closed_at, t.disputed,
             cg.name AS created_guard_name,
             EXTRACT(EPOCH FROM (COALESCE(t.closed_at, NOW()) - t.created_at))::bigint AS stay_seconds
@@ -794,8 +795,8 @@ router.get('/visits.csv', admin, async (req, res) => {
   const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
 
   const rows = await queryRows(
-    `SELECT t.display_id, t.plate, t.vehicle_make, t.status,
-            t.created_at, t.closed_at, t.disputed,
+    `SELECT t.display_id, t.plate, t.vehicle_make, t.guest_name, t.car_type, t.is_premium,
+            t.status, t.created_at, t.closed_at, t.disputed,
             cg.name AS created_guard_name,
             EXTRACT(EPOCH FROM (COALESCE(t.closed_at, NOW()) - t.created_at))::bigint AS stay_seconds
        FROM valet_tickets t
@@ -807,13 +808,14 @@ router.get('/visits.csv', admin, async (req, res) => {
   );
 
   const header = [
-    'Ticket', 'Plate', 'Make', 'Status', 'Checked in', 'Checked out',
-    'Stay (minutes)', 'Attendant', 'Disputed',
+    'Ticket', 'Plate', 'Make', 'Guest', 'Type', 'Premium', 'Status',
+    'Checked in', 'Checked out', 'Stay (minutes)', 'Attendant', 'Disputed',
   ];
   const lines = [header.join(',')];
   for (const r of rows) {
     lines.push([
-      r.display_id, r.plate, r.vehicle_make, r.status,
+      r.display_id, r.plate, r.vehicle_make, r.guest_name, r.car_type,
+      r.is_premium ? 'yes' : 'no', r.status,
       r.created_at ? new Date(r.created_at).toISOString() : '',
       r.closed_at ? new Date(r.closed_at).toISOString() : '',
       Math.round((Number(r.stay_seconds) || 0) / 60),

@@ -1168,3 +1168,56 @@ describe('slots, at the stand', () => {
     expect(res.status).toBe(201);
   });
 });
+
+describe('who the guest is and what they drive', () => {
+  const future = () => new Date(Date.now() + 86400000).toISOString();
+  function flow() {
+    mockClient.query
+      .mockResolvedValueOnce({}).mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })
+      .mockResolvedValueOnce({}).mockResolvedValueOnce({});
+  }
+
+  it('records the guest name, car type and premium flag', async () => {
+    flow();
+
+    const res = await request(app, 'POST', '/guard/tickets', {
+      token,
+      body: {
+        plate: 'KA03NJ0435', vehicleMake: 'Fortuner', stayEndAt: future(),
+        guestName: 'A. Mehta', carType: 'suv', isPremium: true,
+      },
+    });
+
+    expect(res.status).toBe(201);
+    const insert = mockClient.query.mock.calls.find((c) => /INSERT INTO valet_tickets/.test(c[0]));
+    expect(insert[1]).toEqual(expect.arrayContaining(['A. Mehta', 'suv', true]));
+  });
+
+  it('takes the car in with none of them given', async () => {
+    flow();
+
+    const res = await request(app, 'POST', '/guard/tickets', {
+      token, body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future() },
+    });
+
+    // A guest who declines a name still gets their car parked. An intake that
+    // insists is one guards learn to type "x" into.
+    expect(res.status).toBe(201);
+  });
+
+  it('refuses a car type that is not one of the three', async () => {
+    const res = await request(app, 'POST', '/guard/tickets', {
+      token,
+      body: {
+        plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future(),
+        carType: 'spaceship',
+      },
+    });
+
+    // The point of the field is counting them, and a free-text value is a
+    // category nobody can count or remove.
+    expect(res.status).toBe(400);
+  });
+});

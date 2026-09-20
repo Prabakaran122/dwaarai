@@ -231,7 +231,7 @@ describe('binding a printed card at intake', () => {
     await fillDetails(screen);
 
     expect(api.createTicket).toHaveBeenCalledWith(
-      'KA03NJ0435', 'Maruti Swift', expect.any(String), undefined, undefined, undefined
+      'KA03NJ0435', 'Maruti Swift', expect.any(String), expect.objectContaining({ cardCode: undefined })
     );
   });
 
@@ -267,7 +267,7 @@ describe('binding a printed card at intake', () => {
     await fillDetails(screen);
 
     expect(api.createTicket).toHaveBeenCalledWith(
-      'KA03NJ0435', 'Maruti Swift', expect.any(String), 'A047', undefined, undefined
+      'KA03NJ0435', 'Maruti Swift', expect.any(String), expect.objectContaining({ cardCode: 'A047' })
     );
   });
 
@@ -593,7 +593,7 @@ describe('texting the guest their claim code', () => {
     await fillAndSubmit('9876543210');
 
     expect(api.createTicket).toHaveBeenCalledWith(
-      'KA03NJ0435', 'Maruti Swift', expect.any(String), undefined, '9876543210', undefined
+      'KA03NJ0435', 'Maruti Swift', expect.any(String), expect.objectContaining({ phoneNumber: '9876543210' })
     );
   });
 
@@ -601,7 +601,7 @@ describe('texting the guest their claim code', () => {
     await fillAndSubmit();
 
     expect(api.createTicket).toHaveBeenCalledWith(
-      'KA03NJ0435', 'Maruti Swift', expect.any(String), undefined, undefined, undefined
+      'KA03NJ0435', 'Maruti Swift', expect.any(String), expect.objectContaining({ cardCode: undefined })
     );
   });
 
@@ -657,7 +657,7 @@ describe('parking slots, where the venue uses them', () => {
     await act(async () => { fireEvent.press(screen.getByTestId('valet-create')); });
 
     expect(api.createTicket).toHaveBeenCalledWith(
-      'KA03NJ0435', 'Swift', expect.any(String), undefined, undefined, 'slot-1'
+      'KA03NJ0435', 'Swift', expect.any(String), expect.objectContaining({ slotId: 'slot-1' })
     );
   });
 
@@ -672,7 +672,7 @@ describe('parking slots, where the venue uses them', () => {
 
     // A full garage is never a reason to refuse a car.
     expect(api.createTicket).toHaveBeenCalledWith(
-      'KA03NJ0435', 'Swift', expect.any(String), undefined, undefined, undefined
+      'KA03NJ0435', 'Swift', expect.any(String), expect.objectContaining({ slotId: undefined })
     );
   });
 });
