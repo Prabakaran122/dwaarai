@@ -717,3 +717,39 @@ describe('the promo slot on the receipt', () => {
     expect(res.body.promo).toBeNull();
   });
 });
+
+describe('the collection window on the guest page', () => {
+  it('counts down from the arrival, not from when the page was opened', async () => {
+    const arrivedAt = new Date(Date.now() - 60000).toISOString();
+    queryOne
+      .mockResolvedValueOnce(ticketRow({ status: 'arrived' }))
+      .mockResolvedValueOnce({ created_at: arrivedAt })   // last arrival
+      .mockResolvedValueOnce(null);                        // no scan yet
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+
+    // Reopening the page must not restart the window: the car has been at the
+    // door for a minute either way.
+    expect(res.body.collectBySeconds).toBeLessThanOrEqual(240);
+    expect(res.body.collectBySeconds).toBeGreaterThan(200);
+  });
+
+  it('floors at zero rather than counting negative', async () => {
+    queryOne
+      .mockResolvedValueOnce(ticketRow({ status: 'arrived' }))
+      .mockResolvedValueOnce({ created_at: new Date(Date.now() - 3600000).toISOString() })
+      .mockResolvedValueOnce(null);
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+
+    expect(res.body.collectBySeconds).toBe(0);
+  });
+
+  it('says nothing about a window for a car that has not arrived', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ status: 'parked' }));
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+
+    expect(res.body.collectBySeconds).toBeNull();
+  });
+});

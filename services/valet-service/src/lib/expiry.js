@@ -133,12 +133,59 @@ export async function forgetClosedGuestPhones() {
   return cleared.length;
 }
 
+/** How long a car may stand at the pickup point before it is flagged. */
+function collectionWindow() {
+  const minutes = Number(process.env.COLLECTION_WINDOW_MINUTES || 5);
+  return `${minutes} minutes`;
+}
+
+/**
+ * Cars still standing at the pickup point past the collection window.
+ *
+ * The guest page shows a countdown, but that is a comfort and nothing more:
+ * it runs only while somebody has the page open, and the car blocking a hotel
+ * porch does not care whether anyone is watching a timer. This is the
+ * enforcement -- measured from the arrival event, on a schedule, whether or
+ * not a client exists.
+ *
+ * It flags rather than re-parks. Moving the ticket back to 'parked' would say
+ * the car is in a bay when it is demonstrably at the door, and a record that
+ * lies is worse than one that is merely late. The event is what the queue and
+ * the duty manager act on.
+ */
+export async function sweepOverdueCollections() {
+  const overdue = await queryRows(
+    `SELECT t.id
+       FROM valet_tickets t
+       JOIN valet_ticket_events a
+         ON a.ticket_id = t.id AND a.event_type = 'arrived'
+      WHERE t.status = 'arrived'
+        AND a.created_at < NOW() - ($1)::interval
+        AND NOT EXISTS (
+          SELECT 1 FROM valet_ticket_events o
+           WHERE o.ticket_id = t.id
+             AND o.event_type = 'collection_overdue'
+             AND o.created_at > a.created_at
+        )
+      GROUP BY t.id`,
+    [collectionWindow()]
+  );
+
+  for (const { id } of overdue) {
+    await logEvent(id, 'collection_overdue', {
+      metadata: { window: collectionWindow() },
+    });
+  }
+  return overdue.length;
+}
+
 export async function runSweep() {
   const tickets = await sweepExpiredTickets();
   const photos = await sweepExpiredPhotos();
   const condition = await sweepExpiredConditionMedia();
   const phones = await forgetClosedGuestPhones();
-  return { tickets, photos, condition, phones };
+  const overdue = await sweepOverdueCollections();
+  return { tickets, photos, condition, phones, overdue };
 }
 
 /**

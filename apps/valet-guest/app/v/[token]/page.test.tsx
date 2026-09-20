@@ -40,6 +40,7 @@ const baseTicket: GuestTicket = {
   hasVenueLogo: false,
   hasCard: false,
   promo: null,
+  collectBySeconds: null,
 };
 
 const mockGetTicket = vi.mocked(getTicket);
@@ -463,5 +464,36 @@ describe('the venue promo on the receipt', () => {
     await screen.findByText(/thank you for visiting/i);
 
     expect(screen.queryByTestId('venue-promo')).not.toBeInTheDocument();
+  });
+});
+
+describe('the collection window', () => {
+  const atDoor = {
+    ...baseTicket, status: 'arrived' as const, guardName: 'Suresh', handedOver: false,
+  };
+
+  it('warns while the window is still running', async () => {
+    mockGetTicket.mockResolvedValue({ ...atDoor, collectBySeconds: 180 });
+
+    render(<GuestPage />);
+
+    expect(await screen.findByTestId('collect-window')).toHaveTextContent(/3:00/);
+  });
+
+  it('says the window has passed rather than showing 0:00 forever', async () => {
+    mockGetTicket.mockResolvedValue({ ...atDoor, collectBySeconds: 0 });
+
+    render(<GuestPage />);
+
+    expect(await screen.findByTestId('collect-window')).toHaveTextContent(/re-?park/i);
+  });
+
+  it('shows nothing before the car has arrived', async () => {
+    mockGetTicket.mockResolvedValue(baseTicket);
+
+    render(<GuestPage />);
+    await screen.findByRole('button', { name: /request my car/i });
+
+    expect(screen.queryByTestId('collect-window')).not.toBeInTheDocument();
   });
 });

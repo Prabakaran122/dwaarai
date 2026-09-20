@@ -24,6 +24,7 @@ import {
   scheduleConditionMediaDeletion,
   runSweep,
   forgetClosedGuestPhones,
+  sweepOverdueCollections,
 } from '../lib/expiry.js';
 
 beforeEach(() => {
@@ -171,12 +172,13 @@ describe('runSweep', () => {
       .mockResolvedValueOnce([{ id: 't1' }])   // tickets
       .mockResolvedValueOnce([])               // photos
       .mockResolvedValueOnce([{ id: 'c1', storage_key: 'k' }])  // condition
-      .mockResolvedValueOnce([]);                               // guest phones
+      .mockResolvedValueOnce([])                                // guest phones
+      .mockResolvedValueOnce([]);                               // overdue collections
     query.mockResolvedValue({});
 
     const result = await runSweep();
 
-    expect(result).toEqual({ tickets: 1, photos: 0, condition: 1, phones: 0 });
+    expect(result).toEqual({ tickets: 1, photos: 0, condition: 1, phones: 0, overdue: 0 });
   });
 });
 
@@ -207,11 +209,50 @@ describe('forgetting a guest phone number once the stay is over', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ id: 't9' }]);
+      .mockResolvedValueOnce([{ id: 't9' }])
+      .mockResolvedValueOnce([]);
     query.mockResolvedValue({});
 
     const result = await runSweep();
 
     expect(result.phones).toBe(1);
+  });
+});
+
+describe('a car left standing at the pickup point', () => {
+  it('flags one past the collection window', async () => {
+    queryRows.mockResolvedValueOnce([{ id: 't1' }]);
+    query.mockResolvedValue({});
+
+    expect(await sweepOverdueCollections()).toBe(1);
+
+    const sql = queryRows.mock.calls[0][0];
+    // Measured from the arrival event, not from a client timer: the guest
+    // page may have been closed the whole time, and a countdown nobody is
+    // watching enforces nothing.
+    expect(sql).toMatch(/valet_ticket_events/);
+    expect(sql).toMatch(/'arrived'/);
+    expect(sql).toMatch(/status = 'arrived'/);
+  });
+
+  it('flags a ticket once and not on every later sweep', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    expect(await sweepOverdueCollections()).toBe(0);
+    // The query excludes anything already flagged, so a car standing for an
+    // hour raises one alert rather than twelve.
+    expect(queryRows.mock.calls[0][0]).toMatch(/collection_overdue/);
+  });
+
+  it('runs as part of the sweep, not as something to remember', async () => {
+    queryRows
+      .mockResolvedValueOnce([]).mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]).mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 't9' }]);
+    query.mockResolvedValue({});
+
+    const result = await runSweep();
+
+    expect(result.overdue).toBe(1);
   });
 });

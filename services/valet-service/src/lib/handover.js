@@ -42,9 +42,12 @@ export function usedTokenSince(ticketId, since) {
  * photograph the car — and by then the guest has driven off, which is why
  * nothing the guest needs to see can wait for it.
  */
-export async function handedOver(ticket) {
+export async function handedOver(ticket, knownArrival = undefined) {
   if (ticket.status !== 'arrived') return false;
-  const arrival = await lastArrivalAt(ticket.id);
+  // The caller often needs the arrival itself — for the collection countdown —
+  // and looking it up twice per poll, every four seconds, per guest, is a
+  // query nobody should be paying for.
+  const arrival = knownArrival !== undefined ? knownArrival : await lastArrivalAt(ticket.id);
   if (!arrival) return false;
   return !!(await usedTokenSince(ticket.id, arrival.created_at));
 }

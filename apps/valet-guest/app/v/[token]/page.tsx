@@ -463,6 +463,34 @@ export default function GuestPage() {
         </section>
       )}
 
+      {ticket.status === 'arrived' && !ticket.handedOver && ticket.collectBySeconds !== null && (
+        /* The venue needs its porch back, and a guest who knows the window
+           exists tends to come. Counted server-side from the arrival, so
+           reopening this page does not quietly restart it. */
+        <section
+          data-testid="collect-window"
+          className={`mt-5 rounded-2xl p-4 text-center ring-1 ${
+            ticket.collectBySeconds > 0
+              ? 'bg-amber-500/10 ring-amber-500/30 text-amber-300'
+              : 'bg-red-500/10 ring-red-500/30 text-red-300'
+          }`}
+        >
+          {ticket.collectBySeconds > 0 ? (
+            <p className="text-sm">
+              Please collect within{' '}
+              <span className="font-mono font-bold">
+                {Math.floor(ticket.collectBySeconds / 60)}:
+                {String(ticket.collectBySeconds % 60).padStart(2, '0')}
+              </span>
+            </p>
+          ) : (
+            <p className="text-sm">
+              Your car may be re-parked — please see the valet desk.
+            </p>
+          )}
+        </section>
+      )}
+
       {ticket.status === 'arrived' && !ticket.handedOver && (
         <section className="mt-5 rounded-2xl bg-white p-5 text-center">
           <p className="text-[#0D2535] font-bold">Your car is here</p>

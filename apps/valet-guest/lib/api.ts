@@ -37,6 +37,8 @@ export interface GuestTicket {
   hasCard: boolean;
   /** The venue's own promo, when it has advertising. Null decides the slot. */
   promo: { label: string; link: string | null } | null;
+  /** Seconds left to collect before the car is flagged. Null unless arrived. */
+  collectBySeconds: number | null;
 }
 
 export interface RotatingQr {

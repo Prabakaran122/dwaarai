@@ -4,7 +4,7 @@ import { newRotatingToken } from '../lib/tokens.js';
 import { toDataUrl } from '../lib/qr.js';
 import { logEvent } from '../lib/events.js';
 import { normalizeClaimCode } from '../lib/claim-code.js';
-import { handedOver } from '../lib/handover.js';
+import { handedOver, lastArrivalAt } from '../lib/handover.js';
 import { issueDiscountCode } from '../lib/discount.js';
 import { storage } from '../lib/storage.js';
 import { emitTicketUpdate } from '../lib/realtime.js';
@@ -46,7 +46,10 @@ function notFound(res) {
   return res.status(404).json({ error: 'not_found', message: 'This valet link is invalid or has expired.' });
 }
 
-function guestView(t, isHandedOver = false) {
+/** Minutes a car may stand at the pickup point before it is flagged. */
+const COLLECTION_WINDOW_MS = Number(process.env.COLLECTION_WINDOW_MINUTES || 5) * 60000;
+
+function guestView(t, isHandedOver = false, arrivedAt = null) {
   // Counts down from the guard's estimate, and floors at 0 rather than going
   // negative, so a guard running slightly behind shows "any moment now"
   // instead of a confusing negative number.
@@ -81,6 +84,15 @@ function guestView(t, isHandedOver = false) {
     hasCard: !!t.card_code,
     // The flag decides, not the copy. Promo text outlives advertising being
     // switched off, and a venue that stopped paying should stop showing.
+    // Counted from the arrival event, not from when the page was opened:
+    // reopening it must not restart the window, because the car has been at
+    // the door either way. The server-side sweep is the real enforcement;
+    // this is what the guest sees.
+    collectBySeconds: t.status === 'arrived' && arrivedAt
+      ? Math.max(0, Math.round(
+          (new Date(arrivedAt).getTime() + COLLECTION_WINDOW_MS - Date.now()) / 1000
+        ))
+      : null,
     promo: t.promo_enabled && t.promo_label
       ? { label: t.promo_label, link: t.promo_link || null }
       : null,
@@ -90,7 +102,13 @@ function guestView(t, isHandedOver = false) {
 router.get('/tickets/:token', async (req, res) => {
   const ticket = await findTicket(req.params.token);
   if (!ticket) return notFound(res);
-  res.json(guestView(ticket, await handedOver(ticket)));
+
+  const arrival = ticket.status === 'arrived' ? await lastArrivalAt(ticket.id) : null;
+  res.json(guestView(
+    ticket,
+    await handedOver(ticket, arrival),
+    arrival?.created_at ?? null
+  ));
 });
 
 /**
