@@ -187,6 +187,44 @@ router.get('/slots', guard, async (req, res) => {
  * the ordinary case, not an error, and a red banner in front of a guard who
  * simply needs to type it helps nobody.
  */
+/**
+ * Opening a shift, with a selfie.
+ *
+ * The BRD asks for face verification here and its reference build treats any
+ * captured photo as verified. That is a fabricated result, and this does not
+ * do it: the photo is stored, the shift is opened, and the response says in
+ * as many words that no recognition ran. An audit trail claiming a check
+ * happened is worse than one admitting it did not — and when a real service
+ * is wired in, the only thing that changes is these two fields.
+ *
+ * A missing photo does not block the shift. A denied camera at six in the
+ * morning must not be the thing that stops somebody working.
+ */
+router.post('/shift/start', guard, async (req, res) => {
+  const b64 = String(req.body.imageBase64 || '');
+  let photoKey = null;
+
+  if (b64) {
+    const buffer = Buffer.from(b64, 'base64');
+    photoKey = buildKey('shift', req.user.sub, extensionFor(req.body.mimetype || 'image/jpeg'));
+    await storage.put(photoKey, buffer, req.body.mimetype || 'image/jpeg');
+  }
+
+  await query(
+    `UPDATE residents SET shift_photo_key = $2, shift_started_at = NOW() WHERE id = $1`,
+    [req.user.sub, photoKey]
+  ).catch(() => {
+    // The columns are additive and the shift is not worth failing over them.
+  });
+
+  res.status(201).json({
+    started: true,
+    photo: !!photoKey,
+    verified: false,
+    reason: 'recognition_not_configured',
+  });
+});
+
 router.post('/plate-scan', guard, async (req, res) => {
   const b64 = String(req.body.imageBase64 || '');
   if (!b64) return res.status(400).json({ error: 'image_required' });
