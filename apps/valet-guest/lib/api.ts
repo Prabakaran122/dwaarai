@@ -12,6 +12,7 @@ export const VALET_BASE =
   process.env.NEXT_PUBLIC_VALET_API_URL || 'http://localhost:3060';
 
 export type ValetStatus =
+  | 'requested' | 'accepted' | 'parking_in_progress'
   | 'parked' | 'retrieval_requested' | 'en_route' | 'arrived'
   | 'parked_again' | 'final_closed' | 'expired';
 

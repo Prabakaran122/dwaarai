@@ -21,7 +21,12 @@ const ETA_CHOICES = [2, 5, 10, 15];
 const POLL_MS = 5000;
 
 const STATUS_COLOR: Record<ValetStatus, string> = {
+  // Amber is "act on me" — a job waiting to be parked and a guest waiting for
+  // their car are both that, from opposite ends of the stay.
   requested: colors.actionPrimary,
+  retrieval_requested: colors.actionPrimary,
+  accepted: colors.info,
+  parking_in_progress: colors.info,
   arrived: colors.teal,
   en_route: colors.info,
   parked: colors.textTertiary,

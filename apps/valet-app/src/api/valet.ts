@@ -52,6 +52,7 @@ export function installAuthRefresh() {
 }
 
 export type ValetStatus =
+  | 'requested' | 'accepted' | 'parking_in_progress'
   | 'parked' | 'retrieval_requested' | 'en_route' | 'arrived'
   | 'parked_again' | 'final_closed' | 'expired';
 

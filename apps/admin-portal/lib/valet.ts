@@ -78,6 +78,7 @@ export const valetPost = <T = unknown>(path: string, body?: unknown) =>
 // --- shapes -----------------------------------------------------------------
 
 export type ValetStatus =
+  | 'requested' | 'accepted' | 'parking_in_progress'
   | 'parked' | 'retrieval_requested' | 'en_route' | 'arrived'
   | 'parked_again' | 'final_closed' | 'expired';
 
@@ -137,6 +138,9 @@ export interface PlateHistory {
 
 /** Human labels for the flow's states, since the raw values read as jargon. */
 export const STATUS_LABEL: Record<ValetStatus, string> = {
+  requested: 'Waiting to park',
+  accepted: 'Attendant assigned',
+  parking_in_progress: 'Parking',
   parked: 'Parked',
   retrieval_requested: 'Car requested',
   en_route: 'On its way',

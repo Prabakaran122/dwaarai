@@ -1,6 +1,9 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
+    // toBeDisabled and friends come from RNTL's extend-expect, which the
+    // jest setup loads at runtime but tsc does not find on its own.
+    "types": ["jest", "@testing-library/react-native/extend-expect"],
     "strict": true,
     "baseUrl": ".",
     "paths": { "@/*": ["src/*"] },

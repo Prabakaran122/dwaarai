@@ -18,7 +18,11 @@ import {
 const ETA_CHOICES = [2, 5, 10, 15];
 
 const STATUS_STYLE: Record<ValetStatus, string> = {
+  // Waiting on a person: amber, the colour this product uses for "act on me".
   requested: 'bg-amber-50 text-amber-700 ring-amber-200',
+  accepted: 'bg-blue-50 text-blue-700 ring-blue-200',
+  parking_in_progress: 'bg-blue-50 text-blue-700 ring-blue-200',
+  retrieval_requested: 'bg-amber-50 text-amber-700 ring-amber-200',
   en_route: 'bg-blue-50 text-blue-700 ring-blue-200',
   arrived: 'bg-teal-50 text-teal-700 ring-teal-200',
   parked: 'bg-gray-50 text-gray-600 ring-gray-200',
