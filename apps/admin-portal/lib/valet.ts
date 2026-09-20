@@ -453,3 +453,41 @@ export async function downloadVisitsCsv(days = 30): Promise<void> {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+// --- locations and staff ----------------------------------------------------
+
+export interface Location {
+  id: string;
+  name: string;
+  address: string | null;
+  plan: 'basic' | 'enterprise';
+}
+
+export const listLocations = () =>
+  valetFetch<{ locations: Location[] }>('/admin/locations');
+
+export type StaffRole = 'valet_manager' | 'temporary_driver';
+
+export interface StaffMember {
+  id: string;
+  name: string;
+  mobile: string;
+  role: StaffRole;
+  until: string | null;
+  /** A temp whose end date has passed, still on the list and needing attention. */
+  expired: boolean;
+}
+
+export const STAFF_ROLE_LABEL: Record<StaffRole, string> = {
+  valet_manager: 'Valet manager',
+  temporary_driver: 'Temporary driver',
+};
+
+export const listStaff = () => valetFetch<{ staff: StaffMember[] }>('/admin/staff');
+
+export const addStaff = (body: {
+  name: string; mobile: string; password: string; role: StaffRole; until?: string;
+}) => valetPost<{ added: boolean }>('/admin/staff', body);
+
+export const retireStaff = (id: string) =>
+  valetFetch<{ retired: boolean }>(`/admin/staff/${id}`, { method: 'DELETE' });

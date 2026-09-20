@@ -1,0 +1,177 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ValetError, StaffMember, StaffRole, STAFF_ROLE_LABEL,
+  listStaff, addStaff, retireStaff,
+} from '@/lib/valet';
+
+/**
+ * Who works the valet stand.
+ *
+ * One list rather than a permanent roster and a separate temps tab: surge
+ * staff brought in for a banquet are the same kind of record with an end date,
+ * and splitting them would mean asking "who is on shift" twice.
+ */
+export default function ValetStaffPage() {
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [name, setName] = useState('');
+  const [mobile, setMobile] = useState('');
+  const [pin, setPin] = useState('');
+  const [role, setRole] = useState<StaffRole>('valet_manager');
+  const [until, setUntil] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      setStaff((await listStaff()).staff);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ValetError ? err.message : 'Could not reach the valet service');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function onAdd() {
+    setBusy(true);
+    setError(null);
+    try {
+      await addStaff({
+        name: name.trim(), mobile: mobile.trim(), password: pin.trim(), role,
+        until: role === 'temporary_driver' && until ? new Date(until).toISOString() : undefined,
+      });
+      setName(''); setMobile(''); setPin(''); setUntil('');
+      await load();
+    } catch (err) {
+      setError(err instanceof ValetError ? err.message : 'Could not add them');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onRetire(m: StaffMember) {
+    setBusy(true);
+    try {
+      await retireStaff(m.id);
+      await load();
+    } catch (err) {
+      setError(err instanceof ValetError ? err.message : 'Could not retire them');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const expired = staff.filter((m) => m.expired);
+
+  return (
+    <div className="p-8 max-w-4xl">
+      <h1 className="text-2xl font-bold text-gray-900 mb-1">Staff</h1>
+      <p className="text-sm text-gray-500 mb-6">
+        Everyone who can sign into the valet app at this property.
+      </p>
+
+      {error && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 text-red-700 text-sm ring-1 ring-red-200">
+          {error}
+        </div>
+      )}
+
+      {expired.length > 0 && (
+        /* Shown rather than filtered away: a temp still on the list after the
+           event is exactly the thing somebody needs to notice. */
+        <div className="mb-4 px-4 py-3 rounded-lg bg-amber-50 text-amber-800 text-sm ring-1 ring-amber-200">
+          {expired.length} temporary {expired.length === 1 ? 'driver is' : 'drivers are'} past
+          their end date and can still sign in.
+        </div>
+      )}
+
+      <div className="rounded-xl border border-gray-200 bg-white p-5 mb-6">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Add someone</p>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-xs text-gray-500">
+            Name
+            <input value={name} onChange={(e) => setName(e.target.value)}
+              className="mt-1 block w-44 rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
+          </label>
+          <label className="text-xs text-gray-500">
+            Mobile
+            <input value={mobile} onChange={(e) => setMobile(e.target.value)} inputMode="numeric"
+              placeholder="9876543210"
+              className="mt-1 block w-36 rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm font-mono" />
+          </label>
+          <label className="text-xs text-gray-500">
+            PIN
+            <input value={pin} onChange={(e) => setPin(e.target.value)} inputMode="numeric"
+              className="mt-1 block w-24 rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm font-mono" />
+          </label>
+          <label className="text-xs text-gray-500">
+            Role
+            <select value={role} onChange={(e) => setRole(e.target.value as StaffRole)}
+              className="mt-1 block w-44 rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm">
+              <option value="valet_manager">Valet manager</option>
+              <option value="temporary_driver">Temporary driver</option>
+            </select>
+          </label>
+          {role === 'temporary_driver' && (
+            <label className="text-xs text-gray-500">
+              Until
+              <input type="date" value={until} onChange={(e) => setUntil(e.target.value)}
+                className="mt-1 block rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
+            </label>
+          )}
+          <button onClick={onAdd} disabled={busy}
+            className="px-4 py-2 rounded-lg text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-40">
+            Add
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-gray-500">Loading…</p>
+      ) : staff.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center">
+          <p className="text-sm text-gray-500">Nobody can sign into the valet app yet.</p>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-gray-500">
+              <tr>
+                <th className="text-left font-semibold px-4 py-2.5">Name</th>
+                <th className="text-left font-semibold px-4 py-2.5">Mobile</th>
+                <th className="text-left font-semibold px-4 py-2.5">Role</th>
+                <th className="text-left font-semibold px-4 py-2.5">Until</th>
+                <th className="px-4 py-2.5" />
+              </tr>
+            </thead>
+            <tbody>
+              {staff.map((m) => (
+                <tr key={m.id} className="border-t border-gray-100">
+                  <td className="px-4 py-2.5 font-medium text-gray-900">{m.name}</td>
+                  <td className="px-4 py-2.5 font-mono text-gray-600">{m.mobile}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{STAFF_ROLE_LABEL[m.role]}</td>
+                  <td className={`px-4 py-2.5 ${m.expired ? 'text-amber-700 font-semibold' : 'text-gray-500'}`}>
+                    {m.until ? new Date(m.until).toISOString().slice(0, 10) : '—'}
+                    {m.expired ? ' (past)' : ''}
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <button onClick={() => onRetire(m)} disabled={busy}
+                      className="text-xs font-semibold text-gray-500 hover:text-gray-900 disabled:opacity-40">
+                      Retire
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -77,6 +77,8 @@ const valetNav = [
   { href: '/valet/feedback', label: 'Feedback' },
   { href: '/valet/promotions', label: 'Promotions' },
   { href: '/valet/branding', label: 'Branding' },
+  { href: '/valet/staff', label: 'Staff' },
+  { href: '/valet/locations', label: 'Locations' },
   { href: '/valet/subscription', label: 'Plan' },
 ];
 
