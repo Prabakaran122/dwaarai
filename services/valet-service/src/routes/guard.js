@@ -238,6 +238,31 @@ router.post('/plate-scan', guard, async (req, res) => {
   });
 });
 
+/**
+ * Taking a job the desk logged.
+ *
+ * Refused unless it is still waiting: two attendants walking to the same car
+ * is the failure this exists to prevent, and it is the kind that only shows up
+ * on the busiest evening of the year.
+ */
+router.post('/tickets/:token/accept-intake', guard, async (req, res) => {
+  const ticket = await findTicket(req.params.token, req.user.community_id);
+  if (!ticket) return notFound(res);
+  if (ticket.status !== 'requested') {
+    return res.status(409).json({ error: 'wrong_status', status: ticket.status });
+  }
+
+  await query(
+    `UPDATE valet_tickets SET status = 'accepted', created_by_guard_id = $2 WHERE id = $1`,
+    [ticket.id, req.user.sub]
+  );
+  await logEvent(ticket.id, 'accepted_for_parking', { guardId: req.user.sub });
+
+  const updated = await findTicket(req.params.token, req.user.community_id);
+  emitTicketUpdate(updated);
+  res.json(ticketView(updated));
+});
+
 router.post('/tickets/start', guard, async (req, res) => {
   const communityId = req.user.community_id;
   const cardCode = String(req.body.cardCode ?? '').trim();
@@ -338,7 +363,11 @@ const completeIntakeSchema = z.object({
 router.post('/tickets/:token/complete', guard, async (req, res) => {
   const ticket = await findTicket(req.params.token, req.user.community_id);
   if (!ticket) return notFound(res);
-  if (ticket.status !== 'parking_in_progress') {
+  // Either route in: a card scanned at the kerb (parking_in_progress) or a job
+  // the desk logged and an attendant took (accepted). Insisting the second
+  // pass through the first would be a transition for its own sake, with
+  // somebody standing at a car waiting for it.
+  if (!['parking_in_progress', 'accepted'].includes(ticket.status)) {
     return res.status(409).json({ error: 'wrong_status', status: ticket.status });
   }
 

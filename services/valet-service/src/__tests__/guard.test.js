@@ -1361,3 +1361,50 @@ describe('POST /guard/plate-scan', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('accepting a job from the queue', () => {
+  it('takes a waiting job and puts the attendant on it', async () => {
+    queryOne
+      .mockResolvedValueOnce(ticketRow({ status: 'requested' }))
+      .mockResolvedValueOnce(ticketRow({ status: 'accepted' }));
+    query.mockResolvedValue({});
+
+    const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/accept-intake`, { token });
+
+    expect(res.status).toBe(200);
+    const sql = query.mock.calls.map((c) => c[0]).join(' ');
+    expect(sql).toMatch(/status = 'accepted'/);
+    expect(sql).toMatch(/created_by_guard_id/);
+  });
+
+  it('refuses a job somebody has already taken', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ status: 'accepted' }));
+
+    const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/accept-intake`, { token });
+
+    // Two attendants walking to the same car is the failure this prevents.
+    expect(res.status).toBe(409);
+  });
+});
+
+describe('finishing a job the desk logged', () => {
+  it('completes straight from accepted', async () => {
+    queryOne
+      .mockResolvedValueOnce(ticketRow({ status: 'accepted' }))
+      .mockResolvedValueOnce(ticketRow({ status: 'parked' }));
+    query.mockResolvedValue({});
+
+    const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/complete`, {
+      token,
+      body: {
+        plate: 'KA03NJ0435', vehicleMake: 'Swift',
+        stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+      },
+    });
+
+    // A desk-logged job is accepted and then parked. Insisting it pass
+    // through parking_in_progress would be a state transition for its own
+    // sake, with an attendant standing at a car waiting for it.
+    expect(res.status).toBe(200);
+  });
+});

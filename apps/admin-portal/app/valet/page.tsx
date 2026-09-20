@@ -4,8 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   valetFetch, valetPost, ValetError,
-  ValetTicket, ValetStatus, STATUS_LABEL, NEEDS_ACTION,
-} from '@/lib/valet';
+  ValetTicket, ValetStatus, STATUS_LABEL, NEEDS_ACTION, logArrival } from '@/lib/valet';
 
 /**
  * The valet ops dashboard: the live queue a valet stand works from.
@@ -44,6 +43,23 @@ function StatusPill({ status }: { status: ValetStatus }) {
 }
 
 export default function ValetDashboard() {
+  const [arrivalPlate, setArrivalPlate] = useState('');
+  const [logging, setLogging] = useState(false);
+
+  async function onLogArrival() {
+    setLogging(true);
+    try {
+      await logArrival(arrivalPlate.trim() || undefined);
+      setArrivalPlate('');
+      await load();
+    } catch {
+      /* the queue is still correct on screen; a failed log is not worth
+         replacing it with an error banner */
+    } finally {
+      setLogging(false);
+    }
+  }
+
   const [tickets, setTickets] = useState<ValetTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +121,24 @@ export default function ValetDashboard() {
               ? `${waiting} ${waiting === 1 ? 'guest is' : 'guests are'} waiting on a valet`
               : 'Nobody is waiting'}
           </p>
+        </div>
+        <div className="flex items-end gap-2">
+          <label className="text-xs text-gray-500">
+            Car just arrived
+            <input
+              value={arrivalPlate}
+              onChange={(e) => setArrivalPlate(e.target.value.toUpperCase())}
+              placeholder="Plate (optional)"
+              className="mt-1 block w-44 rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm font-mono"
+            />
+          </label>
+          <button
+            onClick={onLogArrival}
+            disabled={logging}
+            className="px-4 py-2 rounded-lg text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-40"
+          >
+            {logging ? 'Logging…' : 'Log arrival'}
+          </button>
         </div>
       </header>
 

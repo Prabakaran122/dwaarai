@@ -943,3 +943,31 @@ describe('the staff directory', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('logging a car that has just pulled up', () => {
+  it('creates a job waiting for an attendant', async () => {
+    queryOne.mockResolvedValueOnce({ display_id: null }).mockResolvedValueOnce({ id: 'new-id' });
+    query.mockResolvedValue({});
+
+    const res = await request(app, 'POST', '/admin/tickets/request', {
+      token: adminToken(), body: { plate: 'KA03NJ0435' },
+    });
+
+    expect(res.status).toBe(201);
+    const sql = queryOne.mock.calls.map((c) => c[0]).join(' ');
+    // A desk that logs cars as they arrive is what puts anything in the
+    // parking queue; without it those three states have no producer.
+    expect(sql).toMatch(/'requested'/);
+  });
+
+  it('logs one with no plate, since the desk may only have a car', async () => {
+    queryOne.mockResolvedValueOnce({ display_id: 'DWR-0004' }).mockResolvedValueOnce({ id: 'new-id' });
+    query.mockResolvedValue({});
+
+    const res = await request(app, 'POST', '/admin/tickets/request', {
+      token: adminToken(), body: {},
+    });
+
+    expect(res.status).toBe(201);
+  });
+});

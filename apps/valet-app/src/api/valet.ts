@@ -147,6 +147,10 @@ export interface TicketExtras {
  * The ticket now lives from this point, which is what lets a guest who scans
  * the same card seconds later find something to attach themselves to.
  */
+/** Takes a job the desk logged, before anyone else walks to the same car. */
+export const acceptIntake = (token: string) =>
+  valet.post<ValetTicket>(`/guard/tickets/${token}/accept-intake`);
+
 export const startIntake = (cardCode?: string) =>
   valet.post<CreatedTicket>('/guard/tickets/start', { cardCode });
 

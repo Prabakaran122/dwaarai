@@ -43,6 +43,7 @@ export const translations: Dict = {
   valetPlate: { en: 'Vehicle number', hi: 'वाहन नंबर', kn: 'ವಾಹನ ಸಂಖ್ಯೆ' },
   valetMake: { en: 'Make / model', hi: 'मेक / मॉडल', kn: 'ಮೇಕ್ / ಮಾಡೆಲ್' },
   valetStayEnd: { en: 'Leaving on', hi: 'प्रस्थान', kn: 'ನಿರ್ಗಮನ' },
+  valetTakeJob: { en: 'Take this car', hi: 'यह कार लें', kn: 'ಈ ಕಾರನ್ನು ತೆಗೆದುಕೊಳ್ಳಿ' },
   valetTabParking: { en: 'To park', hi: 'पार्क करने के लिए', kn: 'ಪಾರ್ಕ್ ಮಾಡಲು' },
   valetTabDelivery: { en: 'On the lot', hi: 'लॉट में', kn: 'ಲಾಟ್‌ನಲ್ಲಿ' },
   valetGuestName: { en: 'Guest name (optional)', hi: 'अतिथि का नाम (वैकल्पिक)', kn: 'ಅತಿಥಿ ಹೆಸರು (ಐಚ್ಛಿಕ)' },

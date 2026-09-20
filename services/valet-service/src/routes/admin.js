@@ -4,7 +4,10 @@ import { query, queryOne, queryRows } from '../db.js';
 import { normalizePlate } from '../lib/plate.js';
 import { storage, extensionFor } from '../lib/storage.js';
 import { newClaimCode } from '../lib/claim-code.js';
+import { newSessionToken, nextDisplayId } from '../lib/tokens.js';
+import { normalizePlate } from '../lib/plate.js';
 import bcrypt from 'bcryptjs';
+import { logEvent } from '../lib/events.js';
 import { authenticateJWT } from '../middleware/auth.js';
 
 const router = asyncRouter();
@@ -942,4 +945,45 @@ router.delete('/staff/:id', admin, async (req, res) => {
     [req.params.id, req.user.community_id]
   );
   res.json({ retired: true });
+});
+
+/**
+ * A car that has pulled up, logged from the desk before a valet reaches it.
+ *
+ * This is what the three intake states were missing: a producer. At a busy
+ * porch cars arrive faster than attendants return, and the desk logging them
+ * is how anything reaches the parking queue at all.
+ *
+ * The plate is optional. The desk often has a car in front of them and no
+ * chance to read a registration before the guest is out of it -- and a form
+ * that insists is a form nobody fills in at the moment it would help.
+ */
+router.post('/tickets/request', admin, async (req, res) => {
+  const communityId = req.user.community_id;
+  const plate = String(req.body.plate ?? '').trim().toUpperCase();
+
+  const last = await queryOne(
+    `SELECT display_id FROM valet_tickets
+      WHERE community_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    [communityId]
+  );
+
+  const created = await queryOne(
+    `INSERT INTO valet_tickets
+       (community_id, display_id, session_token, claim_code, status,
+        created_by_guard_id, plate, plate_normalized)
+     VALUES ($1, $2, $3, $4, 'requested', $5, $6, $7)
+     RETURNING id, display_id, session_token, claim_code`,
+    [communityId, nextDisplayId(last?.display_id), newSessionToken(), newClaimCode(),
+     req.user.sub, plate || null, plate ? normalizePlate(plate) : null]
+  );
+
+  await logEvent(created.id, 'logged_at_desk', { metadata: plate ? { plate } : null });
+
+  res.status(201).json({
+    id: created.id,
+    displayId: created.display_id,
+    sessionToken: created.session_token,
+    claimCode: created.claim_code,
+  });
 });

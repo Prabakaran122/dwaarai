@@ -94,6 +94,7 @@ interface ValetState {
   visibleTickets: () => ValetTicket[];
   accept: (token: string, etaMinutes: number | null) => Promise<void>;
   arrived: (token: string) => Promise<void>;
+  acceptIntake: (token: string) => Promise<void>;
   waitingCount: () => number;
 }
 
@@ -130,6 +131,21 @@ export const useValetStore = create<ValetState>((set, get) => ({
   accept: async (token, etaMinutes) => {
     try {
       await api.acceptTicket(token, etaMinutes);
+      await get().fetch();
+    } catch (err) {
+      set({ error: codeOf(err) });
+    }
+  },
+
+  /**
+   * Takes a job the desk logged.
+   *
+   * Refetches immediately: two attendants reading a stale queue is exactly
+   * how they both walk to the same car.
+   */
+  acceptIntake: async (token) => {
+    try {
+      await api.acceptIntake(token);
       await get().fetch();
     } catch (err) {
       set({ error: codeOf(err) });

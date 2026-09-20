@@ -47,7 +47,7 @@ export default function ValetQueueScreen({
 }) {
   const insets = useSafeAreaInsets();
   const t = useT();
-  const { loading, search, fetch, setSearch, visibleTickets, accept, arrived, waitingCount } = useValetStore();
+  const { loading, search, fetch, setSearch, visibleTickets, accept, arrived, acceptIntake, waitingCount } = useValetStore();
   const [etaFor, setEtaFor] = useState<string | null>(null);
   const all = visibleTickets();
 
@@ -68,6 +68,19 @@ export default function ValetQueueScreen({
   const waiting = waitingCount();
 
   const renderActions = (item: ValetTicket) => {
+    // A job the desk logged, still waiting for somebody to walk to it.
+    if (item.status === 'requested') {
+      return (
+        <Pressable
+          testID={`valet-accept-intake-${item.id}`}
+          style={styles.primaryBtn}
+          onPress={() => acceptIntake(item.sessionToken)}
+        >
+          <Text style={styles.primaryBtnText}>{t('valetTakeJob')}</Text>
+        </Pressable>
+      );
+    }
+
     if (item.status === 'retrieval_requested') {
       if (etaFor !== item.sessionToken) {
         return (

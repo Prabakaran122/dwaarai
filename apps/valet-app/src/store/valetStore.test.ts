@@ -288,3 +288,17 @@ describe('the two sides of a valet shift', () => {
     expect(forDelivery(all)).toHaveLength(2);
   });
 });
+
+describe('taking a job the desk logged', () => {
+  it('accepts it and refreshes the queue', async () => {
+    (api.acceptIntake as jest.Mock).mockResolvedValue({ data: {} });
+    (api.listTickets as jest.Mock).mockResolvedValue({ data: { tickets: [] } });
+
+    await useValetStore.getState().acceptIntake('tok-1');
+
+    expect(api.acceptIntake).toHaveBeenCalledWith('tok-1');
+    // Refreshed straight after: two attendants looking at a stale queue is
+    // how they both walk to the same car.
+    expect(api.listTickets).toHaveBeenCalled();
+  });
+});

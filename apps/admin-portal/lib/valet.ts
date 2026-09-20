@@ -491,3 +491,12 @@ export const addStaff = (body: {
 
 export const retireStaff = (id: string) =>
   valetFetch<{ retired: boolean }>(`/admin/staff/${id}`, { method: 'DELETE' });
+
+/**
+ * Logs a car that has pulled up, before a valet reaches it.
+ *
+ * The plate is optional: the desk often has a car in front of them and no
+ * chance to read a registration before the guest is out of it.
+ */
+export const logArrival = (plate?: string) =>
+  valetPost<{ displayId: string }>('/admin/tickets/request', { plate });
