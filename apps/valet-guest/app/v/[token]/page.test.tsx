@@ -497,3 +497,50 @@ describe('the collection window', () => {
     expect(screen.queryByTestId('collect-window')).not.toBeInTheDocument();
   });
 });
+
+describe('a guest who scanned while the guard was still typing', () => {
+  // The ticket exists from the card scan now, so the guest can land here
+  // before plate, make or anything else has been entered.
+  const midIntake = {
+    ...baseTicket,
+    status: 'parking_in_progress' as const,
+    plate: null as unknown as string,
+    vehicleMake: null as unknown as string,
+    guardName: null,
+  };
+
+  it('says the car is being checked in rather than showing an empty card', async () => {
+    mockGetTicket.mockResolvedValue(midIntake);
+
+    render(<GuestPage />);
+
+    expect(await screen.findByText(/parking your car/i)).toBeInTheDocument();
+    // An empty plate line reads as a broken page, not a pending one.
+    expect(screen.queryByText('KA03NJ0435')).not.toBeInTheDocument();
+  });
+
+  it('still shows the venue, so the page is clearly theirs', async () => {
+    mockGetTicket.mockResolvedValue(midIntake);
+
+    render(<GuestPage />);
+
+    expect(await screen.findByText(/Prestige Lakeside/i)).toBeInTheDocument();
+  });
+
+  it('offers nothing to request yet', async () => {
+    mockGetTicket.mockResolvedValue(midIntake);
+
+    render(<GuestPage />);
+    await screen.findByText(/parking your car/i);
+
+    expect(screen.queryByRole('button', { name: /request my car/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the vehicle as soon as intake finishes', async () => {
+    mockGetTicket.mockResolvedValue(baseTicket);
+
+    render(<GuestPage />);
+
+    expect(await screen.findByText('KA03NJ0435')).toBeInTheDocument();
+  });
+});

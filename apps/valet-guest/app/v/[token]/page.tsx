@@ -402,6 +402,30 @@ export default function GuestPage() {
 
   const canRequest = ticket.status === 'parked' || ticket.status === 'parked_again';
 
+  // The job now exists from the moment the guard scans the card, so a prompt
+  // guest lands here while plate and make are still being typed. Showing the
+  // vehicle card with nothing in it reads as a broken page rather than a
+  // pending one.
+  const midIntake = ['requested', 'accepted', 'parking_in_progress'].includes(ticket.status);
+
+  if (midIntake) {
+    return (
+      <Shell>
+        <section className="rounded-2xl bg-[#1B3A4B] p-6 text-center ring-1 ring-white/10">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-teal-400 font-bold">
+            {ticket.venueName}
+          </p>
+          <div className="mx-auto my-6 h-10 w-10 rounded-full border-2 border-white/15 border-t-teal-400 animate-spin" />
+          <p className="text-white font-semibold">We&apos;re parking your car</p>
+          <p className="mt-2 text-sm text-white/50">
+            This page will fill in as soon as the valet has finished checking it in.
+          </p>
+          <p className="mt-6 text-xs text-white/40">Ticket {ticket.displayId}</p>
+        </section>
+      </Shell>
+    );
+  }
+
   return (
     <Shell>
       <VehicleCard ticket={ticket} onViewBadge={setBadgeFor} />
