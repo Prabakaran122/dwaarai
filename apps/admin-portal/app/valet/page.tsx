@@ -102,62 +102,6 @@ export default function ValetDashboard() {
               : 'Nobody is waiting'}
           </p>
         </div>
-        <div className="flex items-center gap-4">
-          <Link
-            href="/valet/search"
-            className="text-sm font-medium text-teal-700 hover:text-teal-800"
-          >
-            Find a vehicle →
-          </Link>
-          <Link
-            href="/valet/cards"
-            className="text-sm font-medium text-teal-700 hover:text-teal-800"
-          >
-            Cards →
-          </Link>
-          <Link
-            href="/valet/visits"
-            className="text-sm font-medium text-teal-700 hover:text-teal-800"
-          >
-            Vehicles in →
-          </Link>
-          <Link
-            href="/valet/promotions"
-            className="text-sm font-medium text-teal-700 hover:text-teal-800"
-          >
-            Promotions →
-          </Link>
-          <Link
-            href="/valet/subscription"
-            className="text-sm font-medium text-teal-700 hover:text-teal-800"
-          >
-            Plan →
-          </Link>
-          <Link
-            href="/valet/feedback"
-            className="text-sm font-medium text-teal-700 hover:text-teal-800"
-          >
-            Feedback →
-          </Link>
-          <Link
-            href="/valet/slots"
-            className="text-sm font-medium text-teal-700 hover:text-teal-800"
-          >
-            Inventory →
-          </Link>
-          <Link
-            href="/valet/branding"
-            className="text-sm font-medium text-teal-700 hover:text-teal-800"
-          >
-            Branding →
-          </Link>
-          <Link
-            href="/valet/plate-history"
-            className="text-sm font-medium text-teal-700 hover:text-teal-800"
-          >
-            Plate history →
-          </Link>
-        </div>
       </header>
 
       {error && (

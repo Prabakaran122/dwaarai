@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { ValetError, Subscription, getSubscription } from '@/lib/valet';
 
 /**
@@ -29,7 +28,6 @@ export default function ValetSubscriptionPage() {
 
   return (
     <div className="p-8 max-w-2xl">
-      <Link href="/valet" className="text-sm text-teal-700 hover:text-teal-800">← Valet queue</Link>
       <h1 className="text-2xl font-bold text-gray-900 mt-3 mb-6">Plan &amp; usage</h1>
 
       {error && (

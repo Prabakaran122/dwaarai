@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { ValetError, FeedbackRollup, REASON_LABEL, getFeedback } from '@/lib/valet';
 
 /**
@@ -35,7 +34,6 @@ export default function ValetFeedbackPage() {
 
   return (
     <div className="p-8 max-w-3xl">
-      <Link href="/valet" className="text-sm text-teal-700 hover:text-teal-800">← Valet queue</Link>
       <div className="flex items-start justify-between mt-3 mb-6 gap-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Guest feedback</h1>

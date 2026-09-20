@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
 import {
   valetFetch, ValetError, VisitsReport, STATUS_LABEL, formatStay,
 } from '@/lib/valet';
@@ -56,7 +55,6 @@ export default function ValetVisitsPage() {
 
   return (
     <div className="p-8 max-w-6xl">
-      <Link href="/valet" className="text-sm text-teal-700 hover:text-teal-800">← Valet queue</Link>
 
       <div className="mt-3 mb-6 flex items-end justify-between gap-4 flex-wrap">
         <div>

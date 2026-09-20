@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
 import { valetFetch, ValetError, PlateHistory, STATUS_LABEL } from '@/lib/valet';
 
 /**
@@ -44,7 +43,6 @@ export default function PlateHistoryPage() {
 
   return (
     <div className="p-8 max-w-4xl">
-      <Link href="/valet" className="text-sm text-teal-700 hover:text-teal-800">← Valet queue</Link>
 
       <h1 className="text-2xl font-bold text-gray-900 mt-3 mb-1">Plate history</h1>
       <p className="text-sm text-gray-500 mb-6">

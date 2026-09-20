@@ -58,6 +58,27 @@ const superAdminNav = [
   { href: '/entitlements', label: 'Entitlements', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
 ];
 
+/**
+ * Valet's own screens.
+ *
+ * These lived as nine arrow-links crammed into the queue page's header, which
+ * is a strip rather than navigation — and for a property that bought valet
+ * alone it left a sidebar holding exactly one item while every actual
+ * destination hid inside a page.
+ */
+const valetNav = [
+  { href: '/valet', label: 'Queue' },
+  { href: '/valet/search', label: 'Find a vehicle' },
+  { href: '/valet/slots', label: 'Inventory' },
+  { href: '/valet/cards', label: 'Cards' },
+  { href: '/valet/visits', label: 'Vehicles in' },
+  { href: '/valet/plate-history', label: 'Plate history' },
+  { href: '/valet/feedback', label: 'Feedback' },
+  { href: '/valet/promotions', label: 'Promotions' },
+  { href: '/valet/branding', label: 'Branding' },
+  { href: '/valet/subscription', label: 'Plan' },
+];
+
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout, selectedCommunityId } = useAuth();
@@ -104,6 +125,42 @@ export default function Sidebar() {
         )}
         {navItems.map((item) => {
           const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+
+          // Valet's own screens sit under it, opened when you are in valet —
+          // or always, for a property that has nothing else.
+          if (item.href === '/valet' && (isActive || valetOnly)) {
+            return (
+              <div key={item.href}>
+                <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold bg-teal-50 text-teal-700 border border-teal-100">
+                  <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d={item.icon} />
+                  </svg>
+                  {item.label}
+                </div>
+                <div className="mt-1 mb-1 ml-4 pl-4 border-l border-teal-100 space-y-0.5">
+                  {valetNav.map((sub) => {
+                    const subActive = sub.href === '/valet'
+                      ? pathname === '/valet'
+                      : pathname.startsWith(sub.href);
+                    return (
+                      <Link
+                        key={sub.href}
+                        href={sub.href}
+                        className={`block px-3 py-2 rounded-lg text-sm transition-colors ${
+                          subActive
+                            ? 'text-teal-700 font-semibold bg-teal-50/60'
+                            : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                        }`}
+                      >
+                        {sub.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
+
           return (
             <Link
               key={item.href}

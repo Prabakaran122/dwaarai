@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
   valetFetch, valetPost, ValetError,
@@ -112,7 +111,6 @@ export default function ValetTicketPage() {
 
   return (
     <div className="p-8 max-w-5xl">
-      <Link href="/valet" className="text-sm text-teal-700 hover:text-teal-800">← Valet queue</Link>
 
       <header className="mt-3 mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>

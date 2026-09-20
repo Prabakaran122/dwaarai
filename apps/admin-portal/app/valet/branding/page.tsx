@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import {
   ValetError, getBranding, uploadVenueLogo, removeVenueLogo, fetchVenueLogo,
 } from '@/lib/valet';
@@ -72,7 +71,6 @@ export default function ValetBrandingPage() {
 
   return (
     <div className="p-8 max-w-2xl">
-      <Link href="/valet" className="text-sm text-teal-700 hover:text-teal-800">← Valet queue</Link>
       <h1 className="text-2xl font-bold text-gray-900 mt-3 mb-1">Venue branding</h1>
       <p className="text-sm text-gray-500 mb-6">
         Your logo appears on the thank-you screen the guest sees when they collect their car.
