@@ -110,7 +110,7 @@ describe('asking for the car from WhatsApp', () => {
     await signedPost(inbound('4K7QP2 CAR'));
 
     const sql = query.mock.calls.map((c) => c[0]).join(' ');
-    expect(sql).toMatch(/status\s*=\s*'requested'/);
+    expect(sql).toMatch(/status\s*=\s*'retrieval_requested'/);
     expect(notifyGuest).toHaveBeenCalledWith(expect.anything(), 'accepted');
   });
 
@@ -121,7 +121,7 @@ describe('asking for the car from WhatsApp', () => {
 
     // Requesting twice sends a second valet for the same car.
     const sql = query.mock.calls.map((c) => c[0]).join(' ');
-    expect(sql).not.toMatch(/status\s*=\s*'requested'/);
+    expect(sql).not.toMatch(/status\s*=\s*'retrieval_requested'/);
     expect(notifyGuest).toHaveBeenCalledWith(expect.anything(), 'en_route');
   });
 
@@ -131,7 +131,7 @@ describe('asking for the car from WhatsApp', () => {
     await signedPost(inbound('4K7QP2 thanks!'));
 
     const sql = query.mock.calls.map((c) => c[0]).join(' ');
-    expect(sql).not.toMatch(/status\s*=\s*'requested'/);
+    expect(sql).not.toMatch(/status\s*=\s*'retrieval_requested'/);
     // Silence reads as a broken channel to a guest who just typed something.
     expect(notifyGuest).toHaveBeenCalled();
   });

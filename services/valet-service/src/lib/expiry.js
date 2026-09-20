@@ -2,7 +2,7 @@ import { query, queryRows } from '../db.js';
 import { logEvent } from './events.js';
 import { storage } from './storage.js';
 
-const OPEN_STATUSES = ['parked', 'requested', 'en_route', 'arrived', 'parked_again'];
+const OPEN_STATUSES = ['parked', 'retrieval_requested', 'en_route', 'arrived', 'parked_again'];
 
 function retentionInterval() {
   const hours = Number(process.env.PHOTO_RETENTION_HOURS || 24);

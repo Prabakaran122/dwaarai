@@ -157,7 +157,7 @@ router.get('/summary', authenticateJWT(['admin', 'guard']), async (req, res) => 
   );
 
   const byStatus = Object.fromEntries(rows.map((r) => [r.status, r.count]));
-  const open = ['parked', 'requested', 'en_route', 'arrived', 'parked_again']
+  const open = ['parked', 'retrieval_requested', 'en_route', 'arrived', 'parked_again']
     .reduce((sum, s) => sum + (byStatus[s] || 0), 0);
 
   res.json({ byStatus, open });
@@ -441,7 +441,7 @@ router.delete('/branding/logo', admin, async (req, res) => {
 // --- parking inventory -----------------------------------------------------
 
 /** Open statuses: a car standing in a slot, by any of the names that means. */
-const HOLDING_A_SLOT = ['parked', 'requested', 'en_route', 'arrived', 'parked_again'];
+const HOLDING_A_SLOT = ['parked', 'retrieval_requested', 'en_route', 'arrived', 'parked_again'];
 
 function slotsEnabledFor(communityId) {
   return queryOne(

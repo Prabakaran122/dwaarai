@@ -55,7 +55,7 @@ export default function ValetQueueScreen({
   const waiting = waitingCount();
 
   const renderActions = (item: ValetTicket) => {
-    if (item.status === 'requested') {
+    if (item.status === 'retrieval_requested') {
       if (etaFor !== item.sessionToken) {
         return (
           <Pressable

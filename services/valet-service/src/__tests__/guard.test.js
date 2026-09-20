@@ -298,7 +298,7 @@ describe('GET /guard/plate-lookup', () => {
 describe('POST /guard/tickets/:token/accept', () => {
   it('accepts a requested ticket and records the ETA', async () => {
     queryOne
-      .mockResolvedValueOnce(ticketRow({ status: 'requested' }))
+      .mockResolvedValueOnce(ticketRow({ status: 'retrieval_requested' }))
       .mockResolvedValueOnce(ticketRow({ status: 'en_route', eta_minutes: 5 }));
 
     const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/accept`, {
@@ -312,7 +312,7 @@ describe('POST /guard/tickets/:token/accept', () => {
 
   it('allows a guard to skip the ETA, leaving the guest without a countdown', async () => {
     queryOne
-      .mockResolvedValueOnce(ticketRow({ status: 'requested' }))
+      .mockResolvedValueOnce(ticketRow({ status: 'retrieval_requested' }))
       .mockResolvedValueOnce(ticketRow({ status: 'en_route' }));
 
     const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/accept`, {
@@ -324,7 +324,7 @@ describe('POST /guard/tickets/:token/accept', () => {
   });
 
   it.each([[0], [61], [2.5], ['soon']])('rejects an out-of-range ETA (%s)', async (etaMinutes) => {
-    queryOne.mockResolvedValueOnce(ticketRow({ status: 'requested' }));
+    queryOne.mockResolvedValueOnce(ticketRow({ status: 'retrieval_requested' }));
 
     const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/accept`, {
       token, body: { etaMinutes },
@@ -999,7 +999,7 @@ describe('POST /guard/tickets — texting the guest the code', () => {
 describe('keeping the WhatsApp thread up to date', () => {
   it('tells the guest when a valet is on the way', async () => {
     queryOne
-      .mockResolvedValueOnce(ticketRow({ status: 'requested', phone_number: '919876543210' }))
+      .mockResolvedValueOnce(ticketRow({ status: 'retrieval_requested', phone_number: '919876543210' }))
       .mockResolvedValueOnce(ticketRow({ status: 'en_route', phone_number: '919876543210' }));
     query.mockResolvedValue({});
 
@@ -1023,7 +1023,7 @@ describe('keeping the WhatsApp thread up to date', () => {
 
   it('says nothing to a ticket that was never bound to WhatsApp', async () => {
     queryOne
-      .mockResolvedValueOnce(ticketRow({ status: 'requested', phone_number: null }))
+      .mockResolvedValueOnce(ticketRow({ status: 'retrieval_requested', phone_number: null }))
       .mockResolvedValueOnce(ticketRow({ status: 'en_route', phone_number: null }));
     query.mockResolvedValue({});
 

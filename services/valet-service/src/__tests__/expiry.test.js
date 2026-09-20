@@ -65,7 +65,7 @@ describe('sweepExpiredTickets', () => {
     await sweepExpiredTickets();
 
     const [, params] = queryRows.mock.calls[0];
-    expect(params[0]).toEqual(['parked', 'requested', 'en_route', 'arrived', 'parked_again']);
+    expect(params[0]).toEqual(['parked', 'retrieval_requested', 'en_route', 'arrived', 'parked_again']);
   });
 
   it('does nothing and reports zero when no ticket is overdue', async () => {

@@ -146,7 +146,7 @@ export default function ValetDashboard() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {t.status === 'requested' && (
+                  {t.status === 'retrieval_requested' && (
                     etaFor === t.sessionToken ? (
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs text-gray-500 mr-1">ETA</span>

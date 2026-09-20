@@ -12,7 +12,7 @@ import type { ValetTicket, ValetStatus } from '../api/valet';
  */
 
 /** States where a guest is actively waiting on a valet to do something. */
-export const NEEDS_ACTION: ValetStatus[] = ['requested', 'arrived'];
+export const NEEDS_ACTION: ValetStatus[] = ['retrieval_requested', 'arrived'];
 
 /** States that no longer belong in a working queue. */
 const CLOSED: ValetStatus[] = ['final_closed', 'expired'];

@@ -436,7 +436,7 @@ export default function GuestPage() {
         </>
       )}
 
-      {ticket.status === 'requested' && (
+      {ticket.status === 'retrieval_requested' && (
         <section className="mt-5 rounded-2xl bg-[#1B3A4B] p-5 ring-1 ring-white/10 text-center">
           <p className="text-white font-semibold">Request received</p>
           <p className="text-sm text-white/50 mt-1">A valet will pick this up shortly.</p>

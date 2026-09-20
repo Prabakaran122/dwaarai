@@ -199,7 +199,7 @@ router.post('/tickets/:token/request', async (req, res) => {
     return res.status(409).json({ error: 'wrong_status', status: ticket.status });
   }
 
-  await query(`UPDATE valet_tickets SET status = 'requested' WHERE id = $1`, [ticket.id]);
+  await query(`UPDATE valet_tickets SET status = 'retrieval_requested' WHERE id = $1`, [ticket.id]);
   await logEvent(ticket.id, 'requested');
 
   const updated = await findTicket(req.params.token);

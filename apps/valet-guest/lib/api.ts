@@ -12,7 +12,7 @@ export const VALET_BASE =
   process.env.NEXT_PUBLIC_VALET_API_URL || 'http://localhost:3060';
 
 export type ValetStatus =
-  | 'parked' | 'requested' | 'en_route' | 'arrived'
+  | 'parked' | 'retrieval_requested' | 'en_route' | 'arrived'
   | 'parked_again' | 'final_closed' | 'expired';
 
 export interface GuestTicket {

@@ -120,7 +120,7 @@ suite('valet schema against a real database', () => {
   it('runs the whole flow: request, accept, arrive, scan, confirm', async () => {
     const ticket = await makeTicket();
 
-    await pool.query(`UPDATE valet_tickets SET status = 'requested' WHERE id = $1`, [ticket.id]);
+    await pool.query(`UPDATE valet_tickets SET status = 'retrieval_requested' WHERE id = $1`, [ticket.id]);
     await pool.query(
       `UPDATE valet_tickets SET status = 'en_route', current_guard_id = $1,
               eta_minutes = 5, en_route_started_at = NOW() WHERE id = $2`,
@@ -207,7 +207,7 @@ suite('valet schema against a real database', () => {
       `UPDATE valet_tickets SET status = 'expired', closed_at = NOW()
         WHERE status = ANY($1) AND stay_end_at < NOW() AND id = $2
         RETURNING id`,
-      [['parked', 'requested', 'en_route', 'arrived', 'parked_again'], ticket.id]
+      [['parked', 'retrieval_requested', 'en_route', 'arrived', 'parked_again'], ticket.id]
     );
 
     expect(swept.rowCount).toBe(1);

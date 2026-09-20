@@ -34,7 +34,7 @@ beforeEach(() => {
 describe('sortQueue', () => {
   it('puts a waiting guest ahead of a parked car regardless of age', () => {
     const parkedEarlier = ticket({ id: 'a', status: 'parked', createdAt: '2026-08-30T08:00:00Z' });
-    const requestedLater = ticket({ id: 'b', status: 'requested', createdAt: '2026-08-30T11:00:00Z' });
+    const requestedLater = ticket({ id: 'b', status: 'retrieval_requested', createdAt: '2026-08-30T11:00:00Z' });
 
     expect(sortQueue([parkedEarlier, requestedLater]).map((t) => t.id)).toEqual(['b', 'a']);
   });
@@ -48,20 +48,20 @@ describe('sortQueue', () => {
 
   it('does not treat an en-route car as needing action: a valet already has it', () => {
     const enRoute = ticket({ id: 'a', status: 'en_route', createdAt: '2026-08-30T09:00:00Z' });
-    const requested = ticket({ id: 'b', status: 'requested', createdAt: '2026-08-30T12:00:00Z' });
+    const requested = ticket({ id: 'b', status: 'retrieval_requested', createdAt: '2026-08-30T12:00:00Z' });
 
     expect(sortQueue([enRoute, requested]).map((t) => t.id)).toEqual(['b', 'a']);
   });
 
   it('orders longest wait first within the urgent group', () => {
-    const older = ticket({ id: 'a', status: 'requested', createdAt: '2026-08-30T09:00:00Z' });
-    const newer = ticket({ id: 'b', status: 'requested', createdAt: '2026-08-30T10:00:00Z' });
+    const older = ticket({ id: 'a', status: 'retrieval_requested', createdAt: '2026-08-30T09:00:00Z' });
+    const newer = ticket({ id: 'b', status: 'retrieval_requested', createdAt: '2026-08-30T10:00:00Z' });
 
     expect(sortQueue([newer, older]).map((t) => t.id)).toEqual(['a', 'b']);
   });
 
   it('does not mutate the array it is given', () => {
-    const input = [ticket({ id: 'a', status: 'parked' }), ticket({ id: 'b', status: 'requested' })];
+    const input = [ticket({ id: 'a', status: 'parked' }), ticket({ id: 'b', status: 'retrieval_requested' })];
     const before = input.map((t) => t.id);
 
     sortQueue(input);
@@ -76,7 +76,7 @@ describe('fetch', () => {
       data: {
         tickets: [
           ticket({ id: 'a', status: 'parked', createdAt: '2026-08-30T08:00:00Z' }),
-          ticket({ id: 'b', status: 'requested', createdAt: '2026-08-30T11:00:00Z' }),
+          ticket({ id: 'b', status: 'retrieval_requested', createdAt: '2026-08-30T11:00:00Z' }),
         ],
       },
     });
@@ -183,7 +183,7 @@ describe('waitingCount', () => {
   it('counts only guests actually waiting on a valet', () => {
     useValetStore.setState({
       tickets: [
-        ticket({ id: 'a', status: 'requested' }),
+        ticket({ id: 'a', status: 'retrieval_requested' }),
         ticket({ id: 'b', status: 'arrived' }),
         ticket({ id: 'c', status: 'en_route' }),
         ticket({ id: 'd', status: 'parked' }),
@@ -200,7 +200,7 @@ describe('waitingCount', () => {
 
 describe('NEEDS_ACTION', () => {
   it('is exactly the two states where a guest is standing and waiting', () => {
-    expect(NEEDS_ACTION).toEqual(['requested', 'arrived']);
+    expect(NEEDS_ACTION).toEqual(['retrieval_requested', 'arrived']);
   });
 });
 

@@ -123,7 +123,7 @@ describe('valetPost', () => {
 
 describe('status vocabulary', () => {
   const ALL: ValetStatus[] = [
-    'parked', 'requested', 'en_route', 'arrived',
+    'parked', 'retrieval_requested', 'en_route', 'arrived',
     'parked_again', 'final_closed', 'expired',
   ];
 
@@ -135,7 +135,7 @@ describe('status vocabulary', () => {
   });
 
   it('treats exactly the two waiting-on-a-valet states as needing action', () => {
-    expect(NEEDS_ACTION).toEqual(['requested', 'arrived']);
+    expect(NEEDS_ACTION).toEqual(['retrieval_requested', 'arrived']);
   });
 
   it('does not flag en_route as needing action: a valet already has the car', () => {

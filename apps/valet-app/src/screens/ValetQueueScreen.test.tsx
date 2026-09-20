@@ -49,7 +49,7 @@ describe('ValetQueueScreen', () => {
   it('tells the valet how many guests are actually waiting', () => {
     useValetStore.setState({
       tickets: [
-        ticket({ id: 'a', status: 'requested' }),
+        ticket({ id: 'a', status: 'retrieval_requested' }),
         ticket({ id: 'b', status: 'arrived' }),
         ticket({ id: 'c', status: 'parked' }),
       ],
@@ -86,7 +86,7 @@ describe('ValetQueueScreen', () => {
 
   it('offers Accept only on a requested ticket', () => {
     useValetStore.setState({
-      tickets: [ticket({ id: 'a', status: 'requested' }), ticket({ id: 'b', status: 'parked' })],
+      tickets: [ticket({ id: 'a', status: 'retrieval_requested' }), ticket({ id: 'b', status: 'parked' })],
     });
 
     const { getByTestId, queryByTestId } = render(<ValetQueueScreen />);
@@ -96,7 +96,7 @@ describe('ValetQueueScreen', () => {
   });
 
   it('asks for an ETA before accepting, rather than accepting blind', () => {
-    useValetStore.setState({ tickets: [ticket({ id: 'a', status: 'requested' })] });
+    useValetStore.setState({ tickets: [ticket({ id: 'a', status: 'retrieval_requested' })] });
 
     const { getByTestId } = render(<ValetQueueScreen />);
     fireEvent.press(getByTestId('accept-a'));
@@ -108,7 +108,7 @@ describe('ValetQueueScreen', () => {
   });
 
   it('sends the chosen ETA', async () => {
-    useValetStore.setState({ tickets: [ticket({ id: 'a', status: 'requested' })] });
+    useValetStore.setState({ tickets: [ticket({ id: 'a', status: 'retrieval_requested' })] });
 
     const { getByTestId } = render(<ValetQueueScreen />);
     fireEvent.press(getByTestId('accept-a'));
@@ -118,7 +118,7 @@ describe('ValetQueueScreen', () => {
   });
 
   it('lets a valet accept without guessing an ETA', async () => {
-    useValetStore.setState({ tickets: [ticket({ id: 'a', status: 'requested' })] });
+    useValetStore.setState({ tickets: [ticket({ id: 'a', status: 'retrieval_requested' })] });
 
     const { getByTestId } = render(<ValetQueueScreen />);
     fireEvent.press(getByTestId('accept-a'));

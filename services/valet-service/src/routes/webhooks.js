@@ -39,7 +39,7 @@ const REQUESTABLE = ['parked', 'parked_again'];
 function statusKind(status) {
   if (status === 'arrived') return 'arrived';
   if (status === 'en_route') return 'en_route';
-  if (status === 'requested') return 'accepted';
+  if (status === 'retrieval_requested') return 'accepted';
   return 'bound';
 }
 
@@ -153,9 +153,9 @@ router.post('/whatsapp', async (req, res) => {
   // Acted on by status, not by wording. A guest asking for a car already on
   // its way must not summon a second valet for it.
   if (REQUEST_PATTERN.test(message.text?.body || '') && REQUESTABLE.includes(ticket.status)) {
-    await query(`UPDATE valet_tickets SET status = 'requested' WHERE id = $1`, [ticket.id]);
+    await query(`UPDATE valet_tickets SET status = 'retrieval_requested' WHERE id = $1`, [ticket.id]);
     await logEvent(ticket.id, 'requested', { metadata: { via: 'whatsapp' } });
-    await notifyGuest({ ...fresh, status: 'requested' }, 'accepted');
+    await notifyGuest({ ...fresh, status: 'retrieval_requested' }, 'accepted');
     return res.status(200).json({ ok: true, requested: true });
   }
 

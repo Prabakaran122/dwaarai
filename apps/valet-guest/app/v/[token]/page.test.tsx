@@ -81,7 +81,7 @@ describe('guest page states', () => {
   });
 
   it('confirms the request instead of offering it again once requested', async () => {
-    mockGetTicket.mockResolvedValue({ ...baseTicket, status: 'requested' });
+    mockGetTicket.mockResolvedValue({ ...baseTicket, status: 'retrieval_requested' });
 
     render(<GuestPage />);
 
@@ -234,7 +234,7 @@ describe('arriving from the claim code with the request intent', () => {
   it('requests the car on its own once the cancel window closes', async () => {
     arriveAt('?request=1');
     mockGetTicket.mockResolvedValue(baseTicket);
-    mockRequestCar.mockResolvedValue({ ...baseTicket, status: 'requested' });
+    mockRequestCar.mockResolvedValue({ ...baseTicket, status: 'retrieval_requested' });
     vi.useFakeTimers();
 
     render(<GuestPage />);

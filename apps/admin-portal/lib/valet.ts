@@ -78,7 +78,7 @@ export const valetPost = <T = unknown>(path: string, body?: unknown) =>
 // --- shapes -----------------------------------------------------------------
 
 export type ValetStatus =
-  | 'parked' | 'requested' | 'en_route' | 'arrived'
+  | 'parked' | 'retrieval_requested' | 'en_route' | 'arrived'
   | 'parked_again' | 'final_closed' | 'expired';
 
 export interface ValetTicket {
@@ -138,7 +138,7 @@ export interface PlateHistory {
 /** Human labels for the flow's states, since the raw values read as jargon. */
 export const STATUS_LABEL: Record<ValetStatus, string> = {
   parked: 'Parked',
-  requested: 'Car requested',
+  retrieval_requested: 'Car requested',
   en_route: 'On its way',
   arrived: 'At pickup point',
   parked_again: 'Parked again',
@@ -147,7 +147,7 @@ export const STATUS_LABEL: Record<ValetStatus, string> = {
 };
 
 /** Which states need a guard to do something next. */
-export const NEEDS_ACTION: ValetStatus[] = ['requested', 'arrived'];
+export const NEEDS_ACTION: ValetStatus[] = ['retrieval_requested', 'arrived'];
 
 export interface VisitRow {
   id: string;

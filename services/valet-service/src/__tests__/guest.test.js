@@ -124,19 +124,19 @@ describe('POST /guest/tickets/:token/request', () => {
   it('moves a parked ticket to requested', async () => {
     queryOne
       .mockResolvedValueOnce(ticketRow({ status: 'parked' }))
-      .mockResolvedValueOnce(ticketRow({ status: 'requested' }));
+      .mockResolvedValueOnce(ticketRow({ status: 'retrieval_requested' }));
 
     const res = await request(app, 'POST', `/guest/tickets/${SESSION_TOKEN}/request`, { body: {} });
 
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('requested');
-    expect(query).toHaveBeenCalledWith(expect.stringContaining("status = 'requested'"), [TICKET_ID]);
+    expect(res.body.status).toBe('retrieval_requested');
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("status = 'retrieval_requested'"), [TICKET_ID]);
   });
 
   it('also accepts a re-request on a multi-day ticket parked again after a pickup', async () => {
     queryOne
       .mockResolvedValueOnce(ticketRow({ status: 'parked_again' }))
-      .mockResolvedValueOnce(ticketRow({ status: 'requested' }));
+      .mockResolvedValueOnce(ticketRow({ status: 'retrieval_requested' }));
 
     const res = await request(app, 'POST', `/guest/tickets/${SESSION_TOKEN}/request`, { body: {} });
 

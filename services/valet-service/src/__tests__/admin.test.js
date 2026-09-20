@@ -99,7 +99,7 @@ describe('GET /admin/summary', () => {
   it('counts open tickets across the live statuses', async () => {
     queryRows.mockResolvedValueOnce([
       { status: 'parked', count: 4 },
-      { status: 'requested', count: 2 },
+      { status: 'retrieval_requested', count: 2 },
       { status: 'final_closed', count: 30 },
     ]);
 

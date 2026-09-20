@@ -52,7 +52,7 @@ export function installAuthRefresh() {
 }
 
 export type ValetStatus =
-  | 'parked' | 'requested' | 'en_route' | 'arrived'
+  | 'parked' | 'retrieval_requested' | 'en_route' | 'arrived'
   | 'parked_again' | 'final_closed' | 'expired';
 
 export interface ValetTicket {

@@ -124,7 +124,7 @@ router.post('/profile', guard, photoUpload.single('idPhoto'), async (req, res) =
 // --- ticket creation -------------------------------------------------------
 
 /** Open statuses: a car standing in a slot, by any of the names that means. */
-const HOLDING_A_SLOT = ['parked', 'requested', 'en_route', 'arrived', 'parked_again'];
+const HOLDING_A_SLOT = ['parked', 'retrieval_requested', 'en_route', 'arrived', 'parked_again'];
 
 /**
  * Free slots, grouped the way the attendant picks them: floor, then zone.
@@ -718,7 +718,7 @@ router.get('/tickets/:token', guard, async (req, res) => {
 router.post('/tickets/:token/accept', guard, async (req, res) => {
   const ticket = await findTicket(req.params.token, req.user.community_id);
   if (!ticket) return notFound(res);
-  if (ticket.status !== 'requested') {
+  if (ticket.status !== 'retrieval_requested') {
     return res.status(409).json({ error: 'wrong_status', status: ticket.status });
   }
 
