@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useLang } from '@/lib/i18n';
 import { useParams } from 'next/navigation';
 import GuardBadgeModal from '@/components/GuardBadgeModal';
 import {
@@ -100,6 +101,7 @@ function VehicleCard({
  * nobody counts.
  */
 function Feedback({ token }: { token: string }) {
+  const [, , tr] = useLang();
   const [state, setState] = useState<'idle' | 'why' | 'done'>('idle');
   const [picked, setPicked] = useState<FeedbackReason[]>([]);
   const [busy, setBusy] = useState(false);
@@ -120,7 +122,7 @@ function Feedback({ token }: { token: string }) {
   if (state === 'done') {
     return (
       <section className="mt-5 rounded-2xl bg-[#1B3A4B] p-5 text-center ring-1 ring-white/10">
-        <p className="text-sm text-white/70">Thanks for letting us know.</p>
+        <p className="text-sm text-white/70">{tr('thanksForTelling')}</p>
       </section>
     );
   }
@@ -159,7 +161,7 @@ function Feedback({ token }: { token: string }) {
 
   return (
     <section className="mt-5 rounded-2xl bg-[#1B3A4B] p-5 text-center ring-1 ring-white/10">
-      <p className="text-sm text-white/70">How was your valet?</p>
+      <p className="text-sm text-white/70">{tr('howWasIt')}</p>
       <div className="mt-3 flex gap-3">
         <button
           data-testid="feedback-yes"
@@ -261,6 +263,7 @@ function DiscountOffer({ token }: { token: string }) {
 }
 
 export default function GuestPage() {
+  const [lang, setLang, tr] = useLang();
   const params = useParams();
   const token = String(params.token);
 
@@ -416,7 +419,7 @@ export default function GuestPage() {
             {ticket.venueName}
           </p>
           <div className="mx-auto my-6 h-10 w-10 rounded-full border-2 border-white/15 border-t-teal-400 animate-spin" />
-          <p className="text-white font-semibold">We&apos;re parking your car</p>
+          <p className="text-white font-semibold">{tr('parkingYourCar')}</p>
           <p className="mt-2 text-sm text-white/50">
             This page will fill in as soon as the valet has finished checking it in.
           </p>
@@ -631,6 +634,20 @@ export default function GuestPage() {
           <p className="text-sm text-white/50 mt-1">Please speak to the valet desk.</p>
         </section>
       )}
+
+      <div className="mt-8 flex justify-center gap-4">
+        {(['en', 'hi', 'kn'] as const).map((l) => (
+          <button
+            key={l}
+            onClick={() => setLang(l)}
+            className={`text-[11px] uppercase tracking-widest ${
+              lang === l ? 'text-teal-400 font-bold' : 'text-white/30'
+            }`}
+          >
+            {l === 'en' ? 'English' : l === 'hi' ? 'हिंदी' : 'ಕನ್ನಡ'}
+          </button>
+        ))}
+      </div>
 
       {badgeFor && (
         <GuardBadgeModal token={token} which={badgeFor} onClose={() => setBadgeFor(null)} />
