@@ -26,6 +26,11 @@ PUBLIC_HOST="${PUBLIC_HOST:-dwaarai.com}"
 API_UNIT=/etc/systemd/system/communitygate-api.service
 JWT_SECRET="${JWT_SECRET:-$(sudo sed -n 's/^Environment=JWT_SECRET=//p' "$API_UNIT" 2>/dev/null)}"
 DATABASE_URL="${DATABASE_URL:-$(sudo sed -n 's/^Environment=DATABASE_URL=//p' "$API_UNIT" 2>/dev/null)}"
+# Inherited rather than set here: the gateway already points at a recogniser,
+# and valet must match faces against the same one the vectors were made by.
+# Two URLs would mean two vector spaces and every comparison failing.
+FACE_RECOGNITION_URL="${FACE_RECOGNITION_URL:-$(sudo sed -n 's/^Environment=FACE_RECOGNITION_URL=//p' "$API_UNIT" 2>/dev/null)}"
+FACE_MATCH_THRESHOLD="${FACE_MATCH_THRESHOLD:-$(sudo sed -n 's/^Environment=FACE_MATCH_THRESHOLD=//p' "$API_UNIT" 2>/dev/null)}"
 [ -n "$JWT_SECRET" ]   || { echo "could not read JWT_SECRET from $API_UNIT"; exit 1; }
 [ -n "$DATABASE_URL" ] || { echo "could not read DATABASE_URL from $API_UNIT"; exit 1; }
 
@@ -120,6 +125,8 @@ Environment=WHATSAPP_WEBHOOK_SECRET=${WHATSAPP_WEBHOOK_SECRET:-}
 Environment=WHATSAPP_TEMPLATE_CAR_READY=${WHATSAPP_TEMPLATE_CAR_READY:-car_ready}
 Environment=COLLECTION_WINDOW_MINUTES=${COLLECTION_WINDOW_MINUTES:-5}
 Environment=ANPR_SERVICE_URL=${ANPR_SERVICE_URL:-}
+Environment=FACE_RECOGNITION_URL=$FACE_RECOGNITION_URL
+Environment=FACE_MATCH_THRESHOLD=${FACE_MATCH_THRESHOLD:-0.85}
 ExecStart=/usr/bin/node src/index.js
 Restart=always
 RestartSec=5
