@@ -476,6 +476,8 @@ export interface StaffMember {
   until: string | null;
   /** A temp whose end date has passed, still on the list and needing attention. */
   expired: boolean;
+  /** Whether their face is on file. Somebody unenrolled cannot start a shift. */
+  faceEnrolled: boolean;
 }
 
 export const STAFF_ROLE_LABEL: Record<StaffRole, string> = {
@@ -488,6 +490,16 @@ export const listStaff = () => valetFetch<{ staff: StaffMember[] }>('/admin/staf
 export const addStaff = (body: {
   name: string; mobile: string; password: string; role: StaffRole; until?: string;
 }) => valetPost<{ added: boolean }>('/admin/staff', body);
+
+/**
+ * Puts a member of staff's face on file for shift-start verification.
+ *
+ * The photo is sent once and is not kept -- what is stored is the vector the
+ * recogniser derives from it. Fails loudly when recognition is unavailable
+ * rather than recording somebody as enrolled who is not.
+ */
+export const enrolStaffFace = (id: string, imageBase64: string) =>
+  valetPost<{ enrolled: boolean }>(`/admin/staff/${id}/face`, { imageBase64 });
 
 export const retireStaff = (id: string) =>
   valetFetch<{ retired: boolean }>(`/admin/staff/${id}`, { method: 'DELETE' });

@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ValetError, StaffMember, StaffRole, STAFF_ROLE_LABEL,
-  listStaff, addStaff, retireStaff,
+  listStaff, addStaff, retireStaff, enrolStaffFace,
 } from '@/lib/valet';
 
 /**
@@ -24,6 +24,12 @@ export default function ValetStaffPage() {
   const [pin, setPin] = useState('');
   const [role, setRole] = useState<StaffRole>('valet_manager');
   const [until, setUntil] = useState('');
+
+  /* The picker is one hidden input reused by every row: which row is being
+     enrolled is held here, so a click lands on the person clicked rather than
+     whichever row rendered last. */
+  const filePicker = useRef<HTMLInputElement>(null);
+  const enrolling = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -55,6 +61,40 @@ export default function ValetStaffPage() {
     }
   }
 
+  function onEnrol(m: StaffMember) {
+    enrolling.current = m.id;
+    filePicker.current?.click();
+  }
+
+  async function onPhotoChosen(file: File | undefined) {
+    const id = enrolling.current;
+    enrolling.current = null;
+    if (filePicker.current) filePicker.current.value = '';
+    if (!file || !id) return;
+
+    setBusy(true);
+    setError(null);
+    try {
+      const b64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        // The data: prefix is metadata for the browser, not part of the image.
+        reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+        reader.onerror = () => reject(new Error('unreadable'));
+        reader.readAsDataURL(file);
+      });
+      await enrolStaffFace(id, b64);
+      await load();
+    } catch (err) {
+      setError(
+        err instanceof ValetError
+          ? err.message
+          : 'Could not read that photo'
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onRetire(m: StaffMember) {
     setBusy(true);
     try {
@@ -68,6 +108,7 @@ export default function ValetStaffPage() {
   }
 
   const expired = staff.filter((m) => m.expired);
+  const unenrolled = staff.filter((m) => !m.faceEnrolled);
 
   return (
     <div className="p-8 max-w-4xl">
@@ -90,6 +131,25 @@ export default function ValetStaffPage() {
           their end date and can still sign in.
         </div>
       )}
+
+      {unenrolled.length > 0 && (
+        /* Worth surfacing here rather than leaving to be discovered at 6am:
+           somebody without a face on file cannot start a shift. */
+        <div className="mb-4 px-4 py-3 rounded-lg bg-blue-50 text-blue-800 text-sm ring-1 ring-blue-200">
+          {unenrolled.length === 1
+            ? `${unenrolled[0].name} has no face on file and cannot start a shift.`
+            : `${unenrolled.length} people have no face on file and cannot start a shift.`}
+        </div>
+      )}
+
+      <input
+        ref={filePicker}
+        type="file"
+        accept="image/*"
+        capture="user"
+        className="hidden"
+        onChange={(e) => onPhotoChosen(e.target.files?.[0])}
+      />
 
       <div className="rounded-xl border border-gray-200 bg-white p-5 mb-6">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Add someone</p>
@@ -147,6 +207,7 @@ export default function ValetStaffPage() {
                 <th className="text-left font-semibold px-4 py-2.5">Mobile</th>
                 <th className="text-left font-semibold px-4 py-2.5">Role</th>
                 <th className="text-left font-semibold px-4 py-2.5">Until</th>
+                <th className="text-left font-semibold px-4 py-2.5">Face</th>
                 <th className="px-4 py-2.5" />
               </tr>
             </thead>
@@ -159,6 +220,16 @@ export default function ValetStaffPage() {
                   <td className={`px-4 py-2.5 ${m.expired ? 'text-amber-700 font-semibold' : 'text-gray-500'}`}>
                     {m.until ? new Date(m.until).toISOString().slice(0, 10) : '—'}
                     {m.expired ? ' (past)' : ''}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {m.faceEnrolled ? (
+                      <span className="text-gray-500">On file</span>
+                    ) : (
+                      <button onClick={() => onEnrol(m)} disabled={busy}
+                        className="text-xs font-semibold text-blue-600 hover:text-blue-800 disabled:opacity-40">
+                        Add photo
+                      </button>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <button onClick={() => onRetire(m)} disabled={busy}

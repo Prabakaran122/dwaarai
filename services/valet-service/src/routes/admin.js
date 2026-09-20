@@ -8,6 +8,7 @@ import { newSessionToken, nextDisplayId } from '../lib/tokens.js';
 import { normalizePlate } from '../lib/plate.js';
 import bcrypt from 'bcryptjs';
 import { logEvent } from '../lib/events.js';
+import { vectorize } from '../lib/face.js';
 import { authenticateJWT } from '../middleware/auth.js';
 
 const router = asyncRouter();
@@ -871,10 +872,13 @@ router.get('/locations', admin, async (req, res) => {
  */
 router.get('/staff', admin, async (req, res) => {
   const rows = await queryRows(
-    `SELECT id, name, mobile, valet_role, valet_until, is_active
-       FROM residents
-      WHERE community_id = $1 AND type = 'guard' AND is_active = true
-      ORDER BY valet_role NULLS LAST, name`,
+    `SELECT r.id, r.name, r.mobile, r.valet_role, r.valet_until, r.is_active,
+            (fe.id IS NOT NULL) AS face_enrolled
+       FROM residents r
+       LEFT JOIN face_enrollments fe
+              ON fe.resident_id = r.id AND fe.status = 'active'
+      WHERE r.community_id = $1 AND r.type = 'guard' AND r.is_active = true
+      ORDER BY r.valet_role NULLS LAST, r.name`,
     [req.user.community_id]
   );
 
@@ -884,6 +888,7 @@ router.get('/staff', admin, async (req, res) => {
       name: r.name,
       mobile: r.mobile,
       role: r.valet_role || 'valet_manager',
+      faceEnrolled: r.face_enrolled === true,
       until: r.valet_until,
       // A temp whose date has passed is shown as expired rather than quietly
       // dropped: somebody has to notice they are still on the list.
@@ -986,4 +991,46 @@ router.post('/tickets/request', admin, async (req, res) => {
     sessionToken: created.session_token,
     claimCode: created.claim_code,
   });
+});
+
+/**
+ * Enrols a member of staff for shift-start verification.
+ *
+ * The photo is sent to the recogniser, the vector comes back, and the photo is
+ * gone. face_enrollments has held vectors and never images since it was
+ * written, and that is the whole reason it is safe to hold at all.
+ *
+ * Refused outright when the recogniser cannot produce a vector, rather than
+ * writing a row without one: an enrolment that matches nothing looks exactly
+ * like somebody who is set up, right up until the morning it matters.
+ */
+router.post('/staff/:id/face', admin, async (req, res) => {
+  const scan = String(req.body.imageBase64 || '');
+  if (!scan) return res.status(400).json({ error: 'image_required' });
+
+  const member = await queryOne(
+    `SELECT id, unit_id FROM residents
+      WHERE id = $1 AND community_id = $2 AND type = 'guard' AND is_active = true`,
+    [req.params.id, req.user.community_id]
+  );
+  if (!member) return res.status(404).json({ error: 'not_found' });
+
+  const vector = await vectorize(scan);
+  if (!vector) {
+    return res.status(503).json({
+      error: 'recognition_unavailable',
+      message: 'Face recognition is not available, so nobody was enrolled',
+    });
+  }
+
+  await query(
+    `INSERT INTO face_enrollments
+       (community_id, unit_id, resident_id, status, vector, enrolled_at, activated_at)
+     VALUES ($1, $2, $3, 'active', $4, NOW(), NOW())
+     ON CONFLICT (resident_id) DO UPDATE
+        SET vector = EXCLUDED.vector, status = 'active', activated_at = NOW()`,
+    [req.user.community_id, member.unit_id, member.id, vector]
+  );
+
+  res.status(201).json({ enrolled: true });
 });

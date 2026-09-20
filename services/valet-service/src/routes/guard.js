@@ -14,6 +14,7 @@ import { lastArrivalAt, usedTokenSince } from '../lib/handover.js';
 import { sendClaimCode } from '../lib/sms.js';
 import { notifyGuest } from '../lib/whatsapp-guest.js';
 import { readPlate } from '../lib/anpr.js';
+import { matchAttendant } from '../lib/face.js';
 import { authenticateJWT } from '../middleware/auth.js';
 
 const router = asyncRouter();
@@ -201,27 +202,51 @@ router.get('/slots', guard, async (req, res) => {
  * morning must not be the thing that stops somebody working.
  */
 router.post('/shift/start', guard, async (req, res) => {
-  const b64 = String(req.body.imageBase64 || '');
-  let photoKey = null;
+  const scan = String(req.body.imageBase64 || '');
 
-  if (b64) {
-    const buffer = Buffer.from(b64, 'base64');
-    photoKey = buildKey('shift', req.user.sub, extensionFor(req.body.mimetype || 'image/jpeg'));
-    await storage.put(photoKey, buffer, req.body.mimetype || 'image/jpeg');
+  // The selfie is passed to the recogniser and dropped. face_enrollments
+  // holds a vector and never a photograph -- that is the whole reason it is
+  // safe to hold -- and a stored selfie per shift would quietly undo it.
+  let enrollment = null;
+  if (scan) {
+    try {
+      enrollment = await queryOne(
+        `SELECT vector FROM face_enrollments
+          WHERE resident_id = $1 AND status = 'active' AND vector IS NOT NULL`,
+        [req.user.sub]
+      );
+    } catch {
+      // Treated as not enrolled, which is honest: we did not establish who
+      // this is, and that is exactly what the response will say.
+    }
   }
 
-  await query(
-    `UPDATE residents SET shift_photo_key = $2, shift_started_at = NOW() WHERE id = $1`,
-    [req.user.sub, photoKey]
-  ).catch(() => {
-    // The columns are additive and the shift is not worth failing over them.
-  });
+  const match = await matchAttendant(scan, enrollment?.vector ?? null);
 
+  // Three distinct outcomes, kept distinct. "We could not check" is not
+  // "we checked and it was not them", and an audit trail that collapses them
+  // asserts something nobody verified.
+  const verified = match.available ? match.verified : false;
+  const reason = match.available
+    ? (match.verified ? null : 'no_match')
+    : (!scan ? 'no_photo'
+      : !enrollment ? 'attendant_not_enrolled'
+      : 'recognition_not_configured');
+
+  try {
+    await query(`UPDATE residents SET shift_started_at = NOW() WHERE id = $1`, [req.user.sub]);
+  } catch {
+    // Additive column; a shift is not worth failing over the bookkeeping.
+  }
+
+  // Never a lock-out. A bad light at six in the morning must not strand a
+  // real attendant; the record says what happened and a manager decides.
   res.status(201).json({
     started: true,
-    photo: !!photoKey,
-    verified: false,
-    reason: 'recognition_not_configured',
+    photo: !!scan,
+    verified,
+    confidence: match.available ? match.confidence : null,
+    reason,
   });
 });
 

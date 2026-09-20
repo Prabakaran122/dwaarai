@@ -9,8 +9,13 @@ vi.mock('../lib/storage.js', () => ({
   extensionFor: vi.fn(() => 'jpg'),
 }));
 vi.mock('../lib/events.js', () => ({ logEvent: vi.fn() }));
+vi.mock('../lib/face.js', () => ({
+  isRecognitionConfigured: vi.fn(() => true),
+  matchAttendant: vi.fn(async () => ({ available: false })),
+}));
 
-import { query } from '../db.js';
+import { query, queryOne } from '../db.js';
+import { matchAttendant } from '../lib/face.js';
 import { storage } from '../lib/storage.js';
 import guardRoutes from '../routes/guard.js';
 import { createApp, request, guardToken } from './helpers.js';
@@ -21,7 +26,7 @@ const token = guardToken();
 beforeEach(() => vi.clearAllMocks());
 
 describe('POST /guard/shift/start', () => {
-  it('stores the selfie and opens the shift', async () => {
+  it('opens the shift without keeping the selfie', async () => {
     query.mockResolvedValue({});
 
     const res = await request(app, 'POST', '/guard/shift/start', {
@@ -29,21 +34,22 @@ describe('POST /guard/shift/start', () => {
     });
 
     expect(res.status).toBe(201);
-    expect(storage.put).toHaveBeenCalled();
+    // The image goes to the recogniser and nowhere else.
+    expect(storage.put).not.toHaveBeenCalled();
   });
 
-  it('says plainly that no recognition ran', async () => {
+  it('says which of the three things happened when it could not confirm', async () => {
     query.mockResolvedValue({});
 
     const res = await request(app, 'POST', '/guard/shift/start', {
       token, body: { imageBase64: Buffer.from('jpeg').toString('base64') },
     });
 
-    // The reference build treats any captured selfie as "verified". That is a
-    // fabricated result, and an audit trail that claims a check happened is
-    // worse than one that admits it did not.
+    // The reference build treats any captured selfie as verified. That is a
+    // fabricated result. Not enrolled, not configured and no match are three
+    // different facts and the response says which.
     expect(res.body.verified).toBe(false);
-    expect(res.body.reason).toBe('recognition_not_configured');
+    expect(res.body.reason).toBe('attendant_not_enrolled');
   });
 
   it('opens a shift even with no camera, rather than locking the attendant out', async () => {
@@ -54,6 +60,51 @@ describe('POST /guard/shift/start', () => {
     // A denied camera at 6am must not be the thing that stops a shift.
     expect(res.status).toBe(201);
     expect(res.body.photo).toBe(false);
+    expect(storage.put).not.toHaveBeenCalled();
+  });
+});
+
+describe('shift start, once recognition is wired', () => {
+  it('records a confirmed attendant', async () => {
+    queryOne.mockResolvedValueOnce({ vector: Buffer.from('v') });
+    vi.mocked(matchAttendant).mockResolvedValueOnce({ available: true, verified: true, confidence: 0.93 });
+    query.mockResolvedValue({});
+
+    const res = await request(app, 'POST', '/guard/shift/start', {
+      token, body: { imageBase64: Buffer.from('jpeg').toString('base64') },
+    });
+
+    expect(res.body.verified).toBe(true);
+    expect(res.body.confidence).toBeCloseTo(0.93);
+  });
+
+  it('records a failed match as failed, and still opens the shift', async () => {
+    queryOne.mockResolvedValueOnce({ vector: Buffer.from('v') });
+    vi.mocked(matchAttendant).mockResolvedValueOnce({ available: true, verified: false, confidence: 0.2 });
+    query.mockResolvedValue({});
+
+    const res = await request(app, 'POST', '/guard/shift/start', {
+      token, body: { imageBase64: Buffer.from('jpeg').toString('base64') },
+    });
+
+    // Locking somebody out on a face score would strand a real attendant over
+    // a bad light. The record says what happened; a manager decides.
+    expect(res.status).toBe(201);
+    expect(res.body.verified).toBe(false);
+    expect(res.body.reason).toBe('no_match');
+  });
+
+  it('never stores the selfie', async () => {
+    queryOne.mockResolvedValueOnce({ vector: Buffer.from('v') });
+    vi.mocked(matchAttendant).mockResolvedValueOnce({ available: true, verified: true, confidence: 0.9 });
+    query.mockResolvedValue({});
+
+    await request(app, 'POST', '/guard/shift/start', {
+      token, body: { imageBase64: Buffer.from('jpeg').toString('base64') },
+    });
+
+    // face_enrollments holds a vector and never a photograph, which is the
+    // whole reason it is safe to hold. A selfie per shift would undo that.
     expect(storage.put).not.toHaveBeenCalled();
   });
 });

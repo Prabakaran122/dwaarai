@@ -7,6 +7,10 @@ vi.mock('../db.js', () => ({
   queryOne: vi.fn(),
   queryRows: vi.fn(),
 }));
+vi.mock('../lib/face.js', () => ({
+  vectorize: vi.fn(async () => Buffer.from('v')),
+  isRecognitionConfigured: vi.fn(() => true),
+}));
 vi.mock('../lib/storage.js', () => ({
   storage: { put: vi.fn(async () => {}), getStream: vi.fn(), delete: vi.fn(async () => {}) },
   buildKey: vi.fn(() => 'valet/branding/community/logo.png'),
@@ -15,6 +19,7 @@ vi.mock('../lib/storage.js', () => ({
 
 import { query, queryOne, queryRows } from '../db.js';
 import { storage } from '../lib/storage.js';
+import { vectorize } from '../lib/face.js';
 import adminRoutes from '../routes/admin.js';
 import { createApp, request, guardToken, adminToken, COMMUNITY_ID } from './helpers.js';
 
@@ -22,6 +27,15 @@ const app = createApp(adminRoutes, '/admin');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks resets call history but NOT the queue left by
+  // mockResolvedValueOnce. A test that queues more values than it consumes --
+  // any test that returns early on a 4xx, for instance -- otherwise hands
+  // them to whichever test runs next, and the failure lands somewhere
+  // unrelated. These three carry no base implementation, so resetting them
+  // is safe; the mocks that do (storage, face) are deliberately left alone.
+  query.mockReset();
+  queryOne.mockReset();
+  queryRows.mockReset();
 });
 
 describe('GET /admin/plate-history', () => {
@@ -969,5 +983,57 @@ describe('logging a car that has just pulled up', () => {
     });
 
     expect(res.status).toBe(201);
+  });
+});
+
+describe('enrolling a valet face', () => {
+  it('stores the vector and never the photo', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'r1', unit_id: 'u1' });
+    query.mockResolvedValue({});
+
+    const res = await request(app, 'POST', '/admin/staff/r1/face', {
+      token: adminToken(), body: { imageBase64: Buffer.from('jpeg').toString('base64') },
+    });
+
+    expect(res.status).toBe(201);
+    expect(storage.put).not.toHaveBeenCalled();
+    expect(query.mock.calls[0][0]).toMatch(/face_enrollments/);
+  });
+
+  it('refuses rather than half-enrolling when recognition is unavailable', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'r1', unit_id: 'u1' });
+    vi.mocked(vectorize).mockResolvedValueOnce(null);
+
+    const res = await request(app, 'POST', '/admin/staff/r1/face', {
+      token: adminToken(), body: { imageBase64: Buffer.from('jpeg').toString('base64') },
+    });
+
+    // A row with no vector matches nothing and looks like somebody who is set
+    // up when they are not.
+    expect(res.status).toBe(503);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('will not enrol somebody who does not work here', async () => {
+    queryOne.mockResolvedValueOnce(null);
+
+    const res = await request(app, 'POST', '/admin/staff/nope/face', {
+      token: adminToken(), body: { imageBase64: 'x' },
+    });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('staff list', () => {
+  it('says who is enrolled, so a gap is visible before the shift not during it', async () => {
+    queryRows.mockResolvedValueOnce([
+      { id: 'a', name: 'Ravi', mobile: '9', valet_role: 'valet_manager', face_enrolled: true },
+      { id: 'b', name: 'Sunil', mobile: '8', valet_role: 'temporary_driver', face_enrolled: false },
+    ]);
+
+    const res = await request(app, 'GET', '/admin/staff', { token: adminToken() });
+
+    expect(res.body.staff.map((s) => s.faceEnrolled)).toEqual([true, false]);
   });
 });
