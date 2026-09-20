@@ -45,11 +45,13 @@ const guard = authenticateJWT(['guard', 'admin']);
 function findTicket(sessionToken, communityId) {
   return queryOne(
     `SELECT t.*, c.name AS community_name,
-            cg.name AS created_guard_name, ug.name AS current_guard_name
+            cg.name AS created_guard_name, ug.name AS current_guard_name,
+            s.floor AS slot_floor, s.zone AS slot_zone, s.number AS slot_number
        FROM valet_tickets t
        JOIN communities c ON c.id = t.community_id
        JOIN residents cg ON cg.id = t.created_by_guard_id
        LEFT JOIN residents ug ON ug.id = t.current_guard_id
+       LEFT JOIN valet_slots s ON s.id = t.slot_id
       WHERE t.session_token = $1 AND t.community_id = $2`,
     [sessionToken, communityId]
   );
@@ -73,6 +75,8 @@ function ticketView(t) {
     disputed: t.disputed,
     cardCode: t.card_code ?? null,
     claimCode: t.claim_code ?? null,
+    // Where the car actually is, so the queue can weigh the walk.
+    slot: t.slot_floor ? { floor: t.slot_floor, zone: t.slot_zone, number: t.slot_number } : null,
   };
 }
 
@@ -860,10 +864,12 @@ router.post('/tickets/:token/dispute', guard, async (req, res) => {
 router.get('/tickets', guard, async (req, res) => {
   const includeClosed = req.query.all === 'true';
   const rows = await queryRows(
-    `SELECT t.*, cg.name AS created_guard_name, ug.name AS current_guard_name
+    `SELECT t.*, cg.name AS created_guard_name, ug.name AS current_guard_name,
+            s.floor AS slot_floor, s.zone AS slot_zone, s.number AS slot_number
        FROM valet_tickets t
        JOIN residents cg ON cg.id = t.created_by_guard_id
        LEFT JOIN residents ug ON ug.id = t.current_guard_id
+       LEFT JOIN valet_slots s ON s.id = t.slot_id
       WHERE t.community_id = $1
         ${includeClosed ? '' : `AND t.status NOT IN ('final_closed', 'expired')`}
       ORDER BY t.created_at DESC`,

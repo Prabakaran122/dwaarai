@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as api from '../api/valet';
 import type { ValetTicket, ValetStatus } from '../api/valet';
+import { rankRetrievals } from '../lib/retrievalScore';
 
 /**
  * Valet queue state, one store per domain like the rest of this app.
@@ -23,6 +24,32 @@ export const NEEDS_ACTION: ValetStatus[] = ['retrieval_requested', 'arrived'];
  * until a guest asks.
  */
 const INBOUND: ValetStatus[] = ['requested', 'accepted', 'parking_in_progress'];
+
+/**
+ * Cars waiting to be fetched, ranked rather than first-in-first-out.
+ *
+ * The weighting lives in lib/retrievalScore.ts, on its own, because it is a
+ * policy somebody will want to retune against real walking times and it
+ * should not be buried in a store.
+ */
+export function rankedForDelivery(
+  tickets: ValetTicket[], attendantAt: { floor: string; zone: string } | null
+): ValetTicket[] {
+  const waiting = tickets.filter((t) => t.status === 'retrieval_requested');
+  const rest = forDelivery(tickets).filter((t) => t.status !== 'retrieval_requested');
+
+  const ranked = rankRetrievals(
+    waiting.map((t) => ({
+      ticket: t,
+      waitedMinutes: Math.max(0, (Date.now() - new Date(t.createdAt).getTime()) / 60000),
+      slot: t.slot ? { floor: t.slot.floor, zone: t.slot.zone } : null,
+    })),
+    attendantAt
+  ).map((x) => x.ticket);
+
+  // Guests who have asked stay above everything parked, whatever the walk.
+  return [...ranked, ...rest];
+}
 
 /** Cars still coming in — not yet parked. */
 export function forParking(tickets: ValetTicket[]): ValetTicket[] {

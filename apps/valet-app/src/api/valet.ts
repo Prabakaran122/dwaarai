@@ -75,6 +75,14 @@ export interface ValetTicket {
   cardCode: string | null;
   /** Short code the guest can type at /valet later. */
   claimCode: string | null;
+  /**
+   * Where the car is, when the venue uses slots.
+   *
+   * Optional rather than required: the server always sends it, but an app
+   * build that predates slots should keep working rather than fail to parse a
+   * queue over a field it never reads.
+   */
+  slot?: { floor: string; zone: string; number: string } | null;
 }
 
 export interface CreatedTicket {
