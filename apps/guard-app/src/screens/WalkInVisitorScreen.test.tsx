@@ -14,7 +14,19 @@ import { useAuthStore } from '../store/authStore';
 // per step; under CI's heavier load the default 5s timeout is too tight even
 // though nothing here is actually slow logic (observed flaking in CI, not
 // locally). Matches no other guard-app suite needing this, so scoped here.
-jest.setTimeout(15000);
+//
+// Raised 15s -> 45s after this went on flaking in CI. The number is not a
+// measurement of how long the work takes — locally the slowest test here is
+// ~180ms, an 80x margin at 15s — it is headroom against starvation. CI runs
+// `pnpm -r run test`, which fans every workspace out in parallel, and the
+// repo has grown two more Expo suites since the 15s fix; the runner simply
+// does not schedule this suite's `waitFor` polls often enough.
+//
+// The real fix is to stop running the Expo suites concurrently with
+// everything else in CI, not to keep raising a number. Until then this buys
+// reliability at no cost when the machine is healthy: a passing test never
+// waits, only a starved one does.
+jest.setTimeout(45000);
 
 beforeEach(() => {
   jest.clearAllMocks();

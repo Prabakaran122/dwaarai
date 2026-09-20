@@ -9,11 +9,15 @@ interface CardProps {
   accent?: string;          // optional left-border status accent colour
   style?: ViewStyle;
   onPress?: () => void;
+  /** Cards are the unit a screen test asserts on; without this, tests have to
+   *  match on whatever text happens to be inside them. */
+  testID?: string;
 }
 
-export default function Card({ children, variant = 'default', accent, style, onPress }: CardProps) {
+export default function Card({ children, variant = 'default', accent, style, onPress, testID }: CardProps) {
   const content = (
     <View
+      testID={testID}
       style={[
         styles.base,
         variant === 'hero' ? styles.hero : styles.default,

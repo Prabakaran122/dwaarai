@@ -16,19 +16,79 @@ const router = Router();
 const KNOWN_POST_TYPES = ['announcement', 'issue', 'poll', 'discussion'];
 
 /**
- * Feed order per BRD F-01: the most recent announcement is pinned to the top
- * regardless of its age, everything else is reverse-chronological. Only ONE
- * announcement is pinned — older ones fall back into the timeline, or a society
- * that posts often would show nothing but announcements.
+ * Feed order per BRD F-01 and F-22.
+ *
+ * Announcements are pinned above the regular feed regardless of age, stacked
+ * newest-first, and everything else is reverse-chronological below them.
+ *
+ * At most MAX_PINNED_ANNOUNCEMENTS are pinned at once and the oldest unpins
+ * automatically (F-22). The cap is the whole point: without it a society that
+ * announces often would push every other post below the fold, which is the
+ * failure mode this feed exists to avoid. Unpinned announcements are not
+ * hidden — they fall back into the timeline in date order.
  */
+// Words too common to describe anything. A trending list of "the, and, for"
+// tells a resident nothing about what their community is discussing.
+const TRENDING_STOPWORDS = new Set([
+  'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'any', 'can', 'her',
+  'was', 'one', 'our', 'out', 'has', 'have', 'this', 'that', 'with', 'from',
+  'they', 'been', 'will', 'would', 'there', 'their', 'what', 'about', 'which',
+  'when', 'your', 'said', 'each', 'she', 'him', 'his', 'how', 'its', 'who',
+  'please', 'need', 'needs', 'issue', 'again', 'still', 'also', 'very', 'into',
+]);
+
+const TRENDING_WINDOW_DAYS = 7;
+
+/**
+ * Trending topics (BRD F-06): the five most-used words in post titles over the
+ * past week, as tappable chips.
+ *
+ * Derived from titles only, not bodies — a title is what a resident chose to
+ * call the thing, so it carries the topic. Short words and stopwords are
+ * dropped, or the list degenerates into "the" and "for".
+ */
+export function trendingTopics(posts, now = Date.now()) {
+  const cutoff = now - TRENDING_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  const counts = new Map();
+
+  for (const post of posts) {
+    const created = new Date(post.createdAt).getTime();
+    if (!Number.isFinite(created) || created < cutoff) continue;
+
+    const title = post.title || post.topic || post.question || '';
+    const seen = new Set(); // one post counts a word once, however often it repeats
+    for (const raw of String(title).toLowerCase().match(/[a-z]{4,}/g) || []) {
+      if (TRENDING_STOPWORDS.has(raw) || seen.has(raw)) continue;
+      seen.add(raw);
+      counts.set(raw, (counts.get(raw) || 0) + 1);
+    }
+  }
+
+  return [...counts.entries()]
+    // Count first; ties break alphabetically so the order is stable between
+    // requests rather than depending on Map insertion order.
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 5)
+    .map(([term, count]) => ({ term, count }));
+}
+
+export const MAX_PINNED_ANNOUNCEMENTS = 3;
+
 export function orderFeed(posts) {
   const byNewest = [...posts].sort(
     (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
   );
-  const pinIndex = byNewest.findIndex((p) => p.type === 'announcement');
-  if (pinIndex <= 0) return byNewest;
-  const [pinned] = byNewest.splice(pinIndex, 1);
-  return [pinned, ...byNewest];
+
+  const pinned = [];
+  const rest = [];
+  for (const post of byNewest) {
+    if (post.type === 'announcement' && pinned.length < MAX_PINNED_ANNOUNCEMENTS) {
+      pinned.push(post);
+    } else {
+      rest.push(post);
+    }
+  }
+  return [...pinned, ...rest];
 }
 
 // A row with a null/missing createdAt is coerced to the epoch (new Date(0))
@@ -242,6 +302,10 @@ router.get('/community/feed', authenticateJWT(['resident', 'admin']), async (req
   return success(res, {
     posts,
     me,
+    // F-06. Derived from the full ordered feed, not the filtered view, so the
+    // chips stay the same whichever tab the resident is on — they are a
+    // property of the community's week, not of the current filter.
+    trending: trendingTopics(ordered),
     // DEPRECATED — see comment above the route. Byte-identical to the
     // pre-`posts` response; do not change without also updating the Basera
     // resident app's CommunityScreen.

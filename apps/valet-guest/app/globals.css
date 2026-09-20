@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* The guest page is the one surface a stranger opens on their own phone, in a
+   hotel lobby, often at night. It is dark-themed on Abyss — the Brief's
+   darkest brand ground — rather than reusing the portal's light theme. */
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #0D2535;
+  color: #F4F8FA;
+}

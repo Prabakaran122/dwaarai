@@ -1,0 +1,357 @@
+import { asyncRouter } from '../lib/async-router.js';
+import { query, queryOne } from '../db.js';
+import { newRotatingToken } from '../lib/tokens.js';
+import { toDataUrl } from '../lib/qr.js';
+import { logEvent } from '../lib/events.js';
+import { normalizeClaimCode } from '../lib/claim-code.js';
+import { handedOver } from '../lib/handover.js';
+import { issueDiscountCode } from '../lib/discount.js';
+import { storage } from '../lib/storage.js';
+import { emitTicketUpdate } from '../lib/realtime.js';
+
+const router = asyncRouter();
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const ROTATING_TTL_SECONDS = Number(process.env.ROTATING_TOKEN_TTL_SECONDS || 18);
+
+/**
+ * The guest side is deliberately unauthenticated. A guest scans a physical QR
+ * card and lands here with nothing but a session token; there is no login, no
+ * app install, and no account. The token is the only credential, so every
+ * handler below resolves exactly one ticket by it and nothing else.
+ */
+function findTicket(sessionToken) {
+  return queryOne(
+    `SELECT t.*, c.name AS community_name,
+            c.config->>'valetLogoKey' AS venue_logo_key,
+            (c.config->>'valetAdvertisingEnabled')::boolean AS promo_enabled,
+            c.config->>'valetPromoLabel' AS promo_label,
+            c.config->>'valetPromoLink'  AS promo_link,
+            cg.name AS created_guard_name, ug.name AS current_guard_name
+       FROM valet_tickets t
+       JOIN communities c ON c.id = t.community_id
+       JOIN residents cg ON cg.id = t.created_by_guard_id
+       LEFT JOIN residents ug ON ug.id = t.current_guard_id
+      WHERE t.session_token = $1`,
+    [sessionToken]
+  );
+}
+
+/**
+ * A missing ticket and an expired one return the identical body, so probing
+ * tokens learns nothing about which ones ever existed.
+ */
+function notFound(res) {
+  return res.status(404).json({ error: 'not_found', message: 'This valet link is invalid or has expired.' });
+}
+
+function guestView(t, isHandedOver = false) {
+  // Counts down from the guard's estimate, and floors at 0 rather than going
+  // negative, so a guard running slightly behind shows "any moment now"
+  // instead of a confusing negative number.
+  let etaSeconds = null;
+  if (t.status === 'en_route' && t.eta_minutes && t.en_route_started_at) {
+    const targetMs = new Date(t.en_route_started_at).getTime() + t.eta_minutes * 60000;
+    etaSeconds = Math.max(0, Math.round((targetMs - Date.now()) / 1000));
+  }
+
+  return {
+    displayId: t.display_id,
+    plate: t.plate,
+    vehicleMake: t.vehicle_make,
+    venueName: t.community_name,
+    status: t.status,
+    elapsedMinutes: Math.max(0, Math.round((Date.now() - new Date(t.created_at).getTime()) / 60000)),
+    // Whoever is handling the current pickup, which on a later visit may be a
+    // different person from the one who took the car in.
+    guardName: ['en_route', 'arrived'].includes(t.status) ? t.current_guard_name : null,
+    etaSeconds,
+    // Always present once a ticket exists: the guard who took the car in.
+    dropOffGuardName: t.created_guard_name,
+    // True from the scan, not from the guard's later confirm-pickup: by the
+    // time the car is formally closed the guest is in traffic.
+    handedOver: isHandedOver,
+    // Whether a logo exists, never where it lives. The file is fetched back
+    // through the session token, so no storage key or community id crosses to
+    // the guest.
+    hasVenueLogo: !!t.venue_logo_key,
+    // Only a guest actually holding a printed card should be asked to hand it
+    // back; a screen-QR guest never had one.
+    hasCard: !!t.card_code,
+    // The flag decides, not the copy. Promo text outlives advertising being
+    // switched off, and a venue that stopped paying should stop showing.
+    promo: t.promo_enabled && t.promo_label
+      ? { label: t.promo_label, link: t.promo_link || null }
+      : null,
+  };
+}
+
+router.get('/tickets/:token', async (req, res) => {
+  const ticket = await findTicket(req.params.token);
+  if (!ticket) return notFound(res);
+  res.json(guestView(ticket, await handedOver(ticket)));
+});
+
+/**
+ * Resolves a printed card to the ticket it is currently on.
+ *
+ * This is what the QR on a physical card encodes: /valet/c/<code>. Unlike the
+ * session token, a card code is short and guessable, so this deliberately
+ * returns ONLY a redirect target — the caller still needs the session token to
+ * read anything about the vehicle, and that token is never in the card's QR.
+ *
+ * A card between guests resolves to nothing, which is the same 404 shape as an
+ * unknown code: someone trying codes learns neither which exist nor which are
+ * in use.
+ */
+/**
+ * Resolves a printed card to its ticket. Venue-scoped, and that is not
+ * optional.
+ *
+ * Card codes are unique per venue, never globally — two properties can both
+ * own an "A001" without coordinating, and they will, because a box of cards
+ * starts at A001 everywhere. A lookup on the bare code would match whichever
+ * venue the database returned first, and a guest could be shown a stranger's
+ * vehicle at a property they have never visited. So the card's QR carries the
+ * venue and the lookup is scoped to it.
+ */
+router.get('/cards/:communityId/:code', async (req, res) => {
+  const code = String(req.params.code || '').trim();
+  const communityId = String(req.params.communityId || '').trim();
+  if (!code || !UUID.test(communityId)) return notFound(res);
+
+  // LEFT JOIN, not JOIN, and this is a deliberate change of behaviour.
+  //
+  // This used to 404 unless the card was on an open ticket, so that probing
+  // codes revealed neither which were real nor which were in use. The second
+  // half of that is now visible: a registered card answers whether or not a
+  // car is on it.
+  //
+  // It is traded knowingly. The guard scans the card to *start* intake and
+  // shows it to the guest straight away -- plate, make and four condition
+  // photos still to come -- so "no ticket yet" is the normal case in this
+  // flow, not an error. Refusing to answer would send the guest who scanned
+  // promptly to a dead end. What is disclosed is that a card code is
+  // registered stock at a venue, to someone already holding the card.
+  const row = await queryOne(
+    `SELECT c.wa_ref, t.session_token
+       FROM valet_cards c
+       LEFT JOIN valet_tickets t
+         ON t.card_id = c.id
+        AND t.status NOT IN ('final_closed', 'expired')
+      WHERE c.community_id = $1 AND UPPER(c.code) = UPPER($2) AND c.is_active = true
+      LIMIT 1`,
+    [communityId, code]
+  );
+  if (!row) return notFound(res);
+
+  res.json({ waRef: row.wa_ref, sessionToken: row.session_token ?? null });
+});
+
+/**
+ * Resolves a claim code the guest typed.
+ *
+ * Globally unique among open tickets, unlike a card code, because this is all
+ * the guest has: they arrive at /valet with six characters and no idea which
+ * venue owns them.
+ *
+ * An unknown code and a closed ticket return the identical 404, so the space
+ * cannot be probed for which codes are live.
+ */
+router.get('/claim/:code', async (req, res) => {
+  const code = normalizeClaimCode(req.params.code);
+  if (code.length < 4) return notFound(res);
+
+  const row = await queryOne(
+    `SELECT session_token FROM valet_tickets
+      WHERE claim_code = $1 AND status NOT IN ('final_closed', 'expired')
+      LIMIT 1`,
+    [code]
+  );
+  if (!row) return notFound(res);
+
+  res.json({ sessionToken: row.session_token });
+});
+
+router.post('/tickets/:token/request', async (req, res) => {
+  const ticket = await findTicket(req.params.token);
+  if (!ticket) return notFound(res);
+  if (!['parked', 'parked_again'].includes(ticket.status)) {
+    return res.status(409).json({ error: 'wrong_status', status: ticket.status });
+  }
+
+  await query(`UPDATE valet_tickets SET status = 'requested' WHERE id = $1`, [ticket.id]);
+  await logEvent(ticket.id, 'requested');
+
+  const updated = await findTicket(req.params.token);
+  emitTicketUpdate(updated);
+  res.json(guestView(updated));
+});
+
+/**
+ * Issues a fresh rotating QR on each call. Only the most recently issued
+ * token will validate at the guard's scanner, so a screenshot of a prior one
+ * cannot be replayed.
+ */
+/**
+ * The venue's logo for the thank-you screen.
+ *
+ * Addressed by session token like the guard badge photo, not by community id:
+ * guestView deliberately leaks no internal identifier, and adding one here to
+ * save a lookup would undo that for a picture.
+ */
+router.get('/tickets/:token/venue-logo', async (req, res) => {
+  const ticket = await findTicket(req.params.token);
+  if (!ticket) return notFound(res);
+  if (!ticket.venue_logo_key) return res.status(404).json({ error: 'no_logo' });
+
+  const stream = await storage.getStream(ticket.venue_logo_key);
+  if (!stream) return res.status(404).json({ error: 'no_logo' });
+
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  stream.pipe(res);
+});
+
+router.get('/tickets/:token/rotating-qr', async (req, res) => {
+  const ticket = await findTicket(req.params.token);
+  if (!ticket) return notFound(res);
+  if (ticket.status !== 'arrived') {
+    return res.status(409).json({ error: 'wrong_status', status: ticket.status });
+  }
+
+  const token = newRotatingToken();
+  const row = await queryOne(
+    `INSERT INTO valet_rotating_tokens (ticket_id, token, expires_at)
+     VALUES ($1, $2, NOW() + $3::interval) RETURNING expires_at`,
+    [ticket.id, token, `${ROTATING_TTL_SECONDS} seconds`]
+  );
+
+  res.json({
+    qrDataUrl: await toDataUrl(token),
+    expiresAt: row.expires_at,
+    ttlSeconds: ROTATING_TTL_SECONDS,
+  });
+});
+
+// --- staff badge -----------------------------------------------------------
+// Lets a guest confirm a valet's identity, at drop-off ("dropoff") and again
+// at pickup ("current"). Deliberately NOT a general guard lookup: it only
+// resolves a guard already recorded on this specific ticket, so a guest can
+// never browse the staff roster, only verify the person in front of them.
+
+function badgeGuardId(ticket, which) {
+  if (which === 'dropoff') return ticket.created_by_guard_id;
+  if (which === 'current') return ticket.current_guard_id;
+  return null;
+}
+
+router.get('/tickets/:token/guard-badge/:which', async (req, res) => {
+  const ticket = await findTicket(req.params.token);
+  if (!ticket) return notFound(res);
+
+  const guardId = badgeGuardId(ticket, req.params.which);
+  if (!guardId) return res.status(404).json({ error: 'no_guard' });
+
+  const guard = await queryOne(
+    'SELECT name, employee_code, badge_photo_key FROM residents WHERE id = $1',
+    [guardId]
+  );
+  // A guard who has not set a badge up yet is an expected state, not an
+  // error — the client shows a plain "not set up yet" message.
+  if (!guard?.employee_code) return res.status(404).json({ error: 'no_badge' });
+
+  res.json({ name: guard.name, employeeCode: guard.employee_code, hasPhoto: !!guard.badge_photo_key });
+});
+
+router.get('/tickets/:token/guard-badge/:which/photo', async (req, res) => {
+  const ticket = await findTicket(req.params.token);
+  if (!ticket) return notFound(res);
+
+  const guardId = badgeGuardId(ticket, req.params.which);
+  if (!guardId) return res.status(404).json({ error: 'no_guard' });
+
+  const guard = await queryOne('SELECT badge_photo_key FROM residents WHERE id = $1', [guardId]);
+  if (!guard?.badge_photo_key) return res.status(404).json({ error: 'no_photo' });
+
+  const stream = await storage.getStream(guard.badge_photo_key);
+  if (!stream) return res.status(404).json({ error: 'no_photo' });
+  res.setHeader('Cache-Control', 'private, no-store');
+  stream.pipe(res);
+});
+
+/**
+ * Marketing contact, a separate DPDP collection purpose from the vehicle
+ * handover photo, so it carries its own consent timestamp on its own table.
+ * If the guest never taps this, no phone number is ever requested or stored.
+ */
+router.post('/tickets/:token/discount-optin', async (req, res) => {
+  const ticket = await findTicket(req.params.token);
+  if (!ticket) return notFound(res);
+  // Offered from the handover, not from the formal close. The guard still has
+  // to photograph the car after scanning, and a guest asked for their number
+  // while the valet walks round the bonnet is a guest still holding the phone.
+  if (ticket.status !== 'final_closed' && !(await handedOver(ticket))) {
+    return res.status(409).json({ error: 'wrong_status', status: ticket.status });
+  }
+
+  const phoneNumber = String(req.body.phoneNumber || '').replace(/\s+/g, '');
+  if (!/^(\+91)?[6-9]\d{9}$/.test(phoneNumber)) {
+    return res.status(400).json({ error: 'invalid_phone', message: 'Enter a valid 10-digit mobile number' });
+  }
+
+  const { code, expiry } = await issueDiscountCode({
+    phoneNumber,
+    communityId: ticket.community_id,
+    ticketId: ticket.id,
+    consentAt: new Date().toISOString(),
+  });
+
+  await logEvent(ticket.id, 'discount_optin', { metadata: { code } });
+  res.status(201).json({ code, expiry });
+});
+
+export default router;
+
+/**
+ * One tap of sentiment, at the end of a trip.
+ *
+ * Deliberately chips and no free text. A rollup counts chips; prose has to be
+ * read, and nobody reads it. Anything a guest needs to say at length is a
+ * conversation with the venue, not a widget.
+ */
+const FEEDBACK_REASONS = ['wrong_vehicle', 'long_wait', 'damage', 'staff_conduct'];
+
+router.post('/tickets/:token/feedback', async (req, res) => {
+  const ticket = await findTicket(req.params.token);
+  if (!ticket) return notFound(res);
+  if (ticket.status !== 'final_closed') {
+    return res.status(409).json({ error: 'wrong_status', status: ticket.status });
+  }
+
+  const satisfied = req.body.satisfied === true;
+  const reasons = satisfied ? [] : (Array.isArray(req.body.reasons) ? req.body.reasons : []);
+
+  // Checked against a known list, not stored as given. One typo in a client
+  // and a category exists in the rollup that nobody can read or remove.
+  const unknown = reasons.filter((r) => !FEEDBACK_REASONS.includes(r));
+  if (unknown.length) {
+    return res.status(400).json({ error: 'unknown_reason', message: `Unrecognised: ${unknown.join(', ')}` });
+  }
+
+  try {
+    await query(
+      `INSERT INTO valet_feedback (ticket_id, community_id, satisfied, reasons)
+       VALUES ($1, $2, $3, $4)`,
+      [ticket.id, ticket.community_id, satisfied, reasons]
+    );
+  } catch (err) {
+    // 23505: the UNIQUE on ticket_id caught a second tap. The guest is on a
+    // flaky connection, not making a second point — telling them it failed
+    // would only invite a third tap.
+    if (err?.code !== '23505') throw err;
+    return res.status(200).json({ recorded: true, duplicate: true });
+  }
+
+  res.status(201).json({ recorded: true });
+});

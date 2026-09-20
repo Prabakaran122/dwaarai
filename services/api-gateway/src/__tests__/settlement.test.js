@@ -30,6 +30,7 @@ vi.mock('../../src/lib/razorpay.js', () => ({
   createOrder: vi.fn().mockResolvedValue({ id: 'order_test_abc123', amount: 0, currency: 'INR', test_mode: true }),
   getKeyId: vi.fn().mockReturnValue(null),
   isLiveMode: vi.fn().mockReturnValue(false),
+  isPlaceholderMode: vi.fn().mockReturnValue(true),
   verifyWebhookSignature: vi.fn().mockReturnValue(false),
 }));
 

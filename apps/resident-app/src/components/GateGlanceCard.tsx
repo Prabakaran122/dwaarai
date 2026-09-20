@@ -5,12 +5,15 @@ import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
 import { font } from '../theme/typography';
 import { relativeTime } from './GateActivityRow';
+import LiveDot from './LiveDot';
 import type { HomeSummary, ActivityEvent } from '../store/homeStore';
 
 interface Props {
   glance: HomeSummary['gateGlance'];
   latest: ActivityEvent | null;
   onParcels?: () => void;
+  /** When this data last arrived, so the live dot can tell the truth about it. */
+  updatedAt?: number | null;
 }
 
 function Tile({
@@ -26,7 +29,7 @@ function Tile({
   );
 }
 
-export default function GateGlanceCard({ glance, latest, onParcels }: Props) {
+export default function GateGlanceCard({ glance, latest, onParcels, updatedAt = null }: Props) {
   // BRD empty state: nothing expected, nothing pending, nobody arrived, and no
   // recent gate activity to show — "All quiet at the gate" rather than a wall
   // of zeroes.
@@ -40,7 +43,7 @@ export default function GateGlanceCard({ glance, latest, onParcels }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={styles.pulse} />
+        <LiveDot updatedAt={updatedAt} />
         <Text style={styles.title}>Gate at a Glance</Text>
       </View>
       {isQuiet ? (
@@ -66,7 +69,6 @@ export default function GateGlanceCard({ glance, latest, onParcels }: Props) {
 const styles = StyleSheet.create({
   card: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, padding: spacing.lg },
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
-  pulse: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.teal },
   title: { ...font(500), fontSize: 14, color: colors.textInverse },
   tiles: { flexDirection: 'row' },
   tile: { flex: 1, alignItems: 'center', gap: 2 },

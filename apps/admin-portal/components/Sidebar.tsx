@@ -5,6 +5,34 @@ import { usePathname } from 'next/navigation';
 import Image from 'next/image';
 import logo from '@/public/dwaar-ai-logo.png';
 import { useAuth } from '@/lib/auth';
+import { useModules } from '@/lib/modules';
+
+/**
+ * Which product owns each screen.
+ *
+ * The portal showed every property all fourteen items, which was fine while
+ * every customer was a gated society running the whole suite. A hotel that
+ * bought valet alone was reading Residents, Units, SOS Monitor and Notice
+ * Board -- and a product full of someone else's features reads as a product
+ * sold to someone else.
+ */
+const MODULE_OF: Record<string, 'gate' | 'community' | 'valet'> = {
+  '/': 'gate',
+  '/activity': 'gate',
+  '/vehicles': 'gate',
+  '/gates': 'gate',
+  '/guards': 'gate',
+  '/sos': 'gate',
+  '/incidents': 'gate',
+  '/reports': 'gate',
+  '/events': 'community',
+  '/community-events': 'community',
+  '/units': 'community',
+  '/residents': 'community',
+  '/notices': 'community',
+  '/valet': 'valet',
+};
+
 
 const communityNav = [
   { href: '/', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1' },
@@ -13,6 +41,7 @@ const communityNav = [
   { href: '/gates', label: 'Gates', icon: 'M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z' },
   { href: '/events', label: 'Events', icon: 'M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
   { href: '/community-events', label: 'Community Events', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
+  { href: '/valet', label: 'Valet', icon: 'M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0zM13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10m16 0h1a1 1 0 001-1v-5a1 1 0 00-.3-.7l-3-3A1 1 0 0016.6 6H13' },
   { href: '/reports', label: 'Reports', icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
   { href: '/units', label: 'Units', icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4' },
   { href: '/residents', label: 'Residents', icon: 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-5a4 4 0 10-4-4 4 4 0 004 4zm6 3a4 4 0 10-4-4' },
@@ -29,18 +58,47 @@ const superAdminNav = [
   { href: '/entitlements', label: 'Entitlements', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
 ];
 
+/**
+ * Valet's own screens.
+ *
+ * These lived as nine arrow-links crammed into the queue page's header, which
+ * is a strip rather than navigation — and for a property that bought valet
+ * alone it left a sidebar holding exactly one item while every actual
+ * destination hid inside a page.
+ */
+const valetNav = [
+  { href: '/valet', label: 'Queue' },
+  { href: '/valet/search', label: 'Find a vehicle' },
+  { href: '/valet/slots', label: 'Inventory' },
+  { href: '/valet/cards', label: 'Cards' },
+  { href: '/valet/visits', label: 'Vehicles in' },
+  { href: '/valet/plate-history', label: 'Plate history' },
+  { href: '/valet/feedback', label: 'Feedback' },
+  { href: '/valet/promotions', label: 'Promotions' },
+  { href: '/valet/branding', label: 'Branding' },
+  { href: '/valet/subscription', label: 'Plan' },
+];
+
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout, selectedCommunityId } = useAuth();
+
+  const { modules, valetOnly } = useModules();
 
   if (!user || pathname === '/login') return null;
 
   const isSuperAdmin = user.role === 'super_admin';
   const showCommunityNav = !isSuperAdmin || selectedCommunityId;
 
+  // Ops see every screen regardless: they are supporting properties that may
+  // hold any combination, and a hidden screen is one they cannot help with.
+  const allowed = isSuperAdmin
+    ? communityNav
+    : communityNav.filter((item) => modules.includes(MODULE_OF[item.href] ?? 'gate'));
+
   const navItems = [
     ...(isSuperAdmin ? superAdminNav : []),
-    ...(showCommunityNav ? communityNav : []),
+    ...(showCommunityNav ? allowed : []),
   ];
 
   return (
@@ -56,7 +114,7 @@ export default function Sidebar() {
           unoptimized
         />
         <p className="mt-2 text-[10px] uppercase tracking-[0.2em] text-teal-600 font-semibold">
-          {isSuperAdmin ? 'Super Admin' : 'Admin Portal'}
+          {isSuperAdmin ? 'Super Admin' : valetOnly ? 'Valet' : 'Admin Portal'}
         </p>
       </div>
       <nav className="flex-1 p-3 space-y-1">
@@ -67,6 +125,42 @@ export default function Sidebar() {
         )}
         {navItems.map((item) => {
           const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+
+          // Valet's own screens sit under it, opened when you are in valet —
+          // or always, for a property that has nothing else.
+          if (item.href === '/valet' && (isActive || valetOnly)) {
+            return (
+              <div key={item.href}>
+                <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold bg-teal-50 text-teal-700 border border-teal-100">
+                  <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d={item.icon} />
+                  </svg>
+                  {item.label}
+                </div>
+                <div className="mt-1 mb-1 ml-4 pl-4 border-l border-teal-100 space-y-0.5">
+                  {valetNav.map((sub) => {
+                    const subActive = sub.href === '/valet'
+                      ? pathname === '/valet'
+                      : pathname.startsWith(sub.href);
+                    return (
+                      <Link
+                        key={sub.href}
+                        href={sub.href}
+                        className={`block px-3 py-2 rounded-lg text-sm transition-colors ${
+                          subActive
+                            ? 'text-teal-700 font-semibold bg-teal-50/60'
+                            : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                        }`}
+                      >
+                        {sub.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
+
           return (
             <Link
               key={item.href}

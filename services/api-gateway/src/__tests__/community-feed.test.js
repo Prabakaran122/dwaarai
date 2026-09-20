@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { orderFeed } from '../routes/community-feed.js';
+import { orderFeed, trendingTopics } from '../routes/community-feed.js';
 
 const p = (id, type, iso) => ({ id, type, createdAt: iso });
 
@@ -22,14 +22,39 @@ describe('orderFeed', () => {
     expect(out.map((x) => x.id)).toEqual(['a1', 'p1', 'i1']);
   });
 
-  it('pins only the newest announcement, leaving older ones in place', () => {
+  it('stacks multiple announcements above the feed, newest first (F-22)', () => {
     const out = orderFeed([
       p('a_old', 'announcement', '2026-06-01T09:00:00Z'),
       p('a_new', 'announcement', '2026-07-01T09:00:00Z'),
       p('i1', 'issue', '2026-08-01T10:00:00Z'),
     ]);
-    expect(out[0].id).toBe('a_new');
-    expect(out.map((x) => x.id)).toEqual(['a_new', 'i1', 'a_old']);
+    // Both announcements pin, newest first; the newer issue drops below them.
+    expect(out.map((x) => x.id)).toEqual(['a_new', 'a_old', 'i1']);
+  });
+
+  it('pins at most three announcements — the oldest unpins (F-22)', () => {
+    const out = orderFeed([
+      p('a1', 'announcement', '2026-01-01T09:00:00Z'),
+      p('a2', 'announcement', '2026-02-01T09:00:00Z'),
+      p('a3', 'announcement', '2026-03-01T09:00:00Z'),
+      p('a4', 'announcement', '2026-04-01T09:00:00Z'),
+      p('i1', 'issue', '2026-08-01T10:00:00Z'),
+    ]);
+    // The cap is what stops a talkative RWA pushing every other post below
+    // the fold. a1, the oldest, falls back into the timeline by date.
+    expect(out.slice(0, 3).map((x) => x.id)).toEqual(['a4', 'a3', 'a2']);
+    expect(out.map((x) => x.id)).toEqual(['a4', 'a3', 'a2', 'i1', 'a1']);
+  });
+
+  it('does not hide an unpinned announcement', () => {
+    const out = orderFeed([
+      p('a1', 'announcement', '2026-01-01T09:00:00Z'),
+      p('a2', 'announcement', '2026-02-01T09:00:00Z'),
+      p('a3', 'announcement', '2026-03-01T09:00:00Z'),
+      p('a4', 'announcement', '2026-04-01T09:00:00Z'),
+    ]);
+    expect(out).toHaveLength(4);
+    expect(out.map((x) => x.id)).toContain('a1');
   });
 
   it('handles an empty feed and a feed with no announcements', () => {
@@ -193,5 +218,100 @@ describe('GET /community/feed — unified posts shape (additive)', () => {
   it('returns 401 without auth', async () => {
     const { status } = await request('GET', '/api/v1/community/feed');
     expect(status).toBe(401);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Trending topics (BRD F-06)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('trendingTopics', () => {
+  const NOW = new Date('2026-08-30T12:00:00Z').getTime();
+  const daysAgo = (n) => new Date(NOW - n * 86400000).toISOString();
+  const post = (title, iso) => ({ id: title, type: 'issue', title, createdAt: iso });
+
+  it('returns the most-used title words from the past week', () => {
+    const out = trendingTopics([
+      post('Water supply disrupted', daysAgo(1)),
+      post('Water pressure low', daysAgo(2)),
+      post('Water tanker schedule', daysAgo(3)),
+      post('Lift maintenance', daysAgo(1)),
+    ], NOW);
+
+    expect(out[0]).toEqual({ term: 'water', count: 3 });
+  });
+
+  it('returns at most five chips', () => {
+    const out = trendingTopics(
+      Array.from({ length: 12 }, (_, i) => post(`topic${i} alpha${i} beta${i}`, daysAgo(1))),
+      NOW
+    );
+
+    expect(out.length).toBeLessThanOrEqual(5);
+  });
+
+  it('ignores posts older than the seven-day window', () => {
+    const out = trendingTopics([
+      post('Water everywhere', daysAgo(30)),
+      post('Lift broken', daysAgo(1)),
+    ], NOW);
+
+    expect(out.map((t) => t.term)).not.toContain('water');
+    expect(out.map((t) => t.term)).toContain('lift');
+  });
+
+  it('drops stopwords — "the" trending tells a resident nothing', () => {
+    const out = trendingTopics([
+      post('The lift and the gate', daysAgo(1)),
+      post('The gate and the lift', daysAgo(1)),
+    ], NOW);
+
+    expect(out.map((t) => t.term)).not.toContain('the');
+    expect(out.map((t) => t.term)).not.toContain('and');
+  });
+
+  it('ignores words shorter than four characters', () => {
+    const out = trendingTopics([post('car bin dog lift', daysAgo(1))], NOW);
+
+    expect(out.map((t) => t.term)).toEqual(['lift']);
+  });
+
+  it('counts a word once per post, however often it repeats in one title', () => {
+    const out = trendingTopics([
+      post('Water water water everywhere', daysAgo(1)),
+      post('Water shortage', daysAgo(1)),
+    ], NOW);
+
+    expect(out.find((t) => t.term === 'water').count).toBe(2);
+  });
+
+  it('breaks ties alphabetically so the order is stable between requests', () => {
+    const a = trendingTopics([post('zebra apple', daysAgo(1))], NOW);
+    const b = trendingTopics([post('zebra apple', daysAgo(1))], NOW);
+
+    expect(a).toEqual(b);
+    expect(a[0].term).toBe('apple');
+  });
+
+  it('reads a poll topic and a poll question, not just an issue title', () => {
+    const out = trendingTopics([
+      { id: 'p1', type: 'poll', topic: 'Clubhouse timings', createdAt: daysAgo(1) },
+      { id: 'p2', type: 'poll', question: 'Clubhouse renovation?', createdAt: daysAgo(1) },
+    ], NOW);
+
+    expect(out.find((t) => t.term === 'clubhouse').count).toBe(2);
+  });
+
+  it('is empty for an empty feed', () => {
+    expect(trendingTopics([], NOW)).toEqual([]);
+  });
+
+  it('survives a post with no title and an unparseable date', () => {
+    const out = trendingTopics([
+      { id: 'x', type: 'issue', createdAt: 'not-a-date' },
+      { id: 'y', type: 'issue', title: null, createdAt: daysAgo(1) },
+    ], NOW);
+
+    expect(out).toEqual([]);
   });
 });

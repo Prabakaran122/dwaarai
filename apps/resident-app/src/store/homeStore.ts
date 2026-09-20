@@ -38,6 +38,8 @@ export interface HomeSummary {
 }
 
 interface HomeState {
+  /** When the summary last arrived — drives the gate card's live indicator. */
+  updatedAt: number | null;
   summary: HomeSummary | null;
   loading: boolean;
   error: boolean;
@@ -46,13 +48,14 @@ interface HomeState {
 
 export const useHomeStore = create<HomeState>((set) => ({
   summary: null,
+  updatedAt: null,
   loading: false,
   error: false,
   fetch: async () => {
     set({ loading: true, error: false });
     try {
       const res = await api.getResidentHome();
-      set({ summary: res.data.data as HomeSummary });
+      set({ summary: res.data.data as HomeSummary, updatedAt: Date.now() });
     } catch {
       set({ error: true });
     } finally {

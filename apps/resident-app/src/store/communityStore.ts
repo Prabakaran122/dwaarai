@@ -20,16 +20,21 @@ export type DiscussionPost = Discussion & { type: 'discussion' };
 export type FeedPost = AnnouncementPost | IssuePost | PollPost | DiscussionPost;
 
 export interface Me { isCommittee: boolean; committeeRole: string | null; }
+export interface TrendingTopic { term: string; count: number; }
 
 interface CommunityState {
   posts: FeedPost[];
   me: Me | null;
+  trending: TrendingTopic[];
+  /** A tapped trending chip narrows the feed to posts mentioning that word. */
+  topic: string | null;
   loading: boolean;
   error: boolean;
   filter: FeedFilter;
   fetch: () => Promise<void>;
   setFilter: (filter: FeedFilter) => void;
   visiblePosts: () => FeedPost[];
+  setTopic: (topic: string | null) => void;
   toggleUpvote: (issueId: string) => Promise<void>;
   castVote: (pollId: string, optionId: string) => Promise<void>;
 }
@@ -37,6 +42,8 @@ interface CommunityState {
 export const useCommunityStore = create<CommunityState>((set, get) => ({
   posts: [],
   me: null,
+  trending: [],
+  topic: null,
   loading: false,
   error: false,
   filter: 'all',
@@ -46,7 +53,11 @@ export const useCommunityStore = create<CommunityState>((set, get) => ({
     try {
       const res = await api.getCommunityFeed();
       const data = res.data.data;
-      set({ posts: (data.posts ?? []) as FeedPost[], me: data.me ?? null });
+      set({
+        posts: (data.posts ?? []) as FeedPost[],
+        me: data.me ?? null,
+        trending: (data.trending ?? []) as TrendingTopic[],
+      });
     } catch {
       // Keep whatever is already on screen — a failed refresh should not blank
       // the feed someone is reading.
@@ -58,12 +69,24 @@ export const useCommunityStore = create<CommunityState>((set, get) => ({
 
   setFilter: (filter) => set({ filter }),
 
+  // Selecting a topic clears the type filter and vice versa — two narrowings at
+  // once reads as an empty feed with no obvious cause.
+  setTopic: (topic) => set({ topic, filter: topic ? 'all' : get().filter }),
+
   // Filtering is client-side over data already held (BRD F-05), so switching a
   // tab is instant and costs no request. The server's ?type= filter exists for
   // callers that do not hold the feed.
   visiblePosts: () => {
-    const { posts, filter } = get();
-    return filter === 'all' ? posts : posts.filter((p) => p.type === filter);
+    const { posts, filter, topic } = get();
+    const byType = filter === 'all' ? posts : posts.filter((p) => p.type === filter);
+    if (!topic) return byType;
+
+    const needle = topic.toLowerCase();
+    return byType.filter((p) => {
+      const title = ('title' in p ? p.title : '') || ('topic' in p ? p.topic : '') || '';
+      const question = 'question' in p ? p.question : '';
+      return `${title} ${question}`.toLowerCase().includes(needle);
+    });
   },
 
   toggleUpvote: async (issueId) => {

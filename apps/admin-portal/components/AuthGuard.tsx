@@ -2,10 +2,12 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import { useModules } from '@/lib/modules';
 import { useAuth } from '@/lib/auth';
 import Sidebar from './Sidebar';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
+  const { valetOnly } = useModules();
   const { isAuthenticated, isLoading, user, selectedCommunityName, selectCommunity } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
@@ -57,7 +59,12 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
               </>
             )}
             {!isViewingCommunity && (
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest">Administration</h2>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest">
+                {/* A hotel that bought valet alone is not administering a
+                    housing society, and a header saying so reads as software
+                    sold to somebody else. */}
+                {valetOnly ? 'DwaarAI Valet' : 'Administration'}
+              </h2>
             )}
           </div>
           <div className="flex items-center gap-3">
