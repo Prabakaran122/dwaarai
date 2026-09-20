@@ -117,3 +117,20 @@ export function formatCountdown(totalSeconds: number): string {
   const s = totalSeconds % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
 }
+
+export type FeedbackReason = 'wrong_vehicle' | 'long_wait' | 'damage' | 'staff_conduct';
+
+export const REASON_LABEL: Record<FeedbackReason, string> = {
+  wrong_vehicle: 'Wrong vehicle',
+  long_wait: 'Long wait',
+  damage: 'Damage',
+  staff_conduct: 'Staff conduct',
+};
+
+export const submitFeedback = (
+  token: string, satisfied: boolean, reasons: FeedbackReason[] = []
+) =>
+  call<{ recorded: boolean }>(`/guest/tickets/${token}/feedback`, {
+    method: 'POST',
+    body: JSON.stringify({ satisfied, reasons }),
+  });

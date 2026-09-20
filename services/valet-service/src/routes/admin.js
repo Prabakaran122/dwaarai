@@ -577,3 +577,43 @@ router.patch('/slots/enabled', admin, async (req, res) => {
   );
   res.json({ enabled });
 });
+
+// --- feedback --------------------------------------------------------------
+
+/**
+ * Sentiment for the property, and the chips behind the unhappy half.
+ *
+ * A filtered aggregate over valet_feedback, computed on read like every other
+ * report here — there is no rollup table to drift away from the taps that
+ * produced it.
+ */
+router.get('/feedback', admin, async (req, res) => {
+  const communityId = req.user.community_id;
+  const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
+
+  const totals = await queryOne(
+    `SELECT COUNT(*) FILTER (WHERE satisfied)::int      AS satisfied,
+            COUNT(*) FILTER (WHERE NOT satisfied)::int  AS not_satisfied
+       FROM valet_feedback
+      WHERE community_id = $1 AND created_at >= NOW() - ($2 || ' days')::interval`,
+    [communityId, String(days)]
+  );
+
+  // Unnested so a trip that cited two reasons counts against both, which is
+  // what a manager reading "long wait: 4" expects it to mean.
+  const reasons = await queryRows(
+    `SELECT reason, COUNT(*)::int AS count
+       FROM valet_feedback f, UNNEST(f.reasons) AS reason
+      WHERE f.community_id = $1 AND f.created_at >= NOW() - ($2 || ' days')::interval
+      GROUP BY reason
+      ORDER BY count DESC`,
+    [communityId, String(days)]
+  );
+
+  res.json({
+    days,
+    satisfied: totals?.satisfied ?? 0,
+    notSatisfied: totals?.not_satisfied ?? 0,
+    reasons,
+  });
+});

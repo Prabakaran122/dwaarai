@@ -367,3 +367,22 @@ function floorRank(floor: string): number {
   const n = Number(f);
   return Number.isFinite(n) ? n : 999;
 }
+
+// --- feedback ---------------------------------------------------------------
+
+export interface FeedbackRollup {
+  days: number;
+  satisfied: number;
+  notSatisfied: number;
+  reasons: { reason: string; count: number }[];
+}
+
+export const REASON_LABEL: Record<string, string> = {
+  wrong_vehicle: 'Wrong vehicle',
+  long_wait: 'Long wait',
+  damage: 'Damage',
+  staff_conduct: 'Staff conduct',
+};
+
+export const getFeedback = (days = 30) =>
+  valetFetch<FeedbackRollup>(`/admin/feedback?days=${days}`);

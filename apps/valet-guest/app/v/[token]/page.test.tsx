@@ -19,11 +19,12 @@ vi.mock('@/lib/api', async () => {
     requestCar: vi.fn(),
     getRotatingQr: vi.fn(),
     claimDiscount: vi.fn(),
+    submitFeedback: vi.fn(),
   };
 });
 
 import GuestPage from './page';
-import { getTicket, requestCar, getRotatingQr, GuestTicket, GuestError } from '@/lib/api';
+import { getTicket, requestCar, getRotatingQr, submitFeedback, GuestTicket, GuestError } from '@/lib/api';
 
 const baseTicket: GuestTicket = {
   displayId: 'DWR-0001',
@@ -376,5 +377,55 @@ describe('the thank-you screen', () => {
     // guest's hands being described as still on its way.
     expect(screen.queryByText(/bringing your car/i)).not.toBeInTheDocument();
     expect(screen.getByText(/brought by/i)).toBeInTheDocument();
+  });
+});
+
+describe('how the trip went', () => {
+  const done = { ...baseTicket, status: 'final_closed' as const };
+
+  it('asks once the trip is over, and not before', async () => {
+    mockGetTicket.mockResolvedValue({ ...baseTicket, status: 'parked' as const });
+
+    render(<GuestPage />);
+    await screen.findByRole('button', { name: /request my car/i });
+
+    expect(screen.queryByRole('button', { name: /satisfied/i })).not.toBeInTheDocument();
+  });
+
+  it('records a happy tap without asking anything further', async () => {
+    mockGetTicket.mockResolvedValue(done);
+    vi.mocked(submitFeedback).mockResolvedValue({ recorded: true });
+
+    render(<GuestPage />);
+    fireEvent.click(await screen.findByTestId('feedback-yes'));
+
+    await waitFor(() => expect(submitFeedback).toHaveBeenCalledWith('test-token', true, []));
+    // Nothing more is asked of a guest who is happy.
+    expect(await screen.findByText(/thanks for letting us know/i)).toBeInTheDocument();
+  });
+
+  it('asks what went wrong only when the guest says it did', async () => {
+    mockGetTicket.mockResolvedValue(done);
+
+    render(<GuestPage />);
+    fireEvent.click(await screen.findByTestId('feedback-no'));
+
+    expect(await screen.findByText(/long wait/i)).toBeInTheDocument();
+    // Not sent yet — the chips are the point of the second tap.
+    expect(submitFeedback).not.toHaveBeenCalled();
+  });
+
+  it('sends the chips the guest picked', async () => {
+    mockGetTicket.mockResolvedValue(done);
+    vi.mocked(submitFeedback).mockResolvedValue({ recorded: true });
+
+    render(<GuestPage />);
+    fireEvent.click(await screen.findByTestId('feedback-no'));
+    fireEvent.click(await screen.findByTestId('reason-long_wait'));
+    fireEvent.click(screen.getByTestId('feedback-send'));
+
+    await waitFor(() =>
+      expect(submitFeedback).toHaveBeenCalledWith('test-token', false, ['long_wait'])
+    );
   });
 });

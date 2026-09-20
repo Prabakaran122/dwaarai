@@ -619,3 +619,66 @@ describe('a card scanned before the guard has finished intake', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('POST /guest/tickets/:token/feedback', () => {
+  it('records a satisfied tap with no reasons', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ status: 'final_closed' }));
+    query.mockResolvedValueOnce({});
+
+    const res = await request(app, 'POST', `/guest/tickets/${SESSION_TOKEN}/feedback`, {
+      body: { satisfied: true },
+    });
+
+    expect(res.status).toBe(201);
+    expect(query.mock.calls[0][1]).toEqual([TICKET_ID, COMMUNITY_ID, true, []]);
+  });
+
+  it('keeps the reason chips when the guest was not satisfied', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ status: 'final_closed' }));
+    query.mockResolvedValueOnce({});
+
+    const res = await request(app, 'POST', `/guest/tickets/${SESSION_TOKEN}/feedback`, {
+      body: { satisfied: false, reasons: ['long_wait', 'damage'] },
+    });
+
+    expect(res.status).toBe(201);
+    expect(query.mock.calls[0][1][3]).toEqual(['long_wait', 'damage']);
+  });
+
+  it('refuses a reason chip it does not recognise', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ status: 'final_closed' }));
+
+    const res = await request(app, 'POST', `/guest/tickets/${SESSION_TOKEN}/feedback`, {
+      body: { satisfied: false, reasons: ['made_up'] },
+    });
+
+    // A rollup counts chips. One typo in a client and a category exists that
+    // nobody can read or remove.
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('unknown_reason');
+  });
+
+  it('accepts a second tap without double counting', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ status: 'final_closed' }));
+    // 23505: the UNIQUE on ticket_id did its job.
+    query.mockRejectedValueOnce(Object.assign(new Error('dup'), { code: '23505' }));
+
+    const res = await request(app, 'POST', `/guest/tickets/${SESSION_TOKEN}/feedback`, {
+      body: { satisfied: true },
+    });
+
+    // The guest tapped twice on a flaky connection. Telling them it failed
+    // would invite a third tap; the record is already right.
+    expect(res.status).toBe(200);
+  });
+
+  it('is only offered once the trip is over', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ status: 'parked' }));
+
+    const res = await request(app, 'POST', `/guest/tickets/${SESSION_TOKEN}/feedback`, {
+      body: { satisfied: true },
+    });
+
+    expect(res.status).toBe(409);
+  });
+});

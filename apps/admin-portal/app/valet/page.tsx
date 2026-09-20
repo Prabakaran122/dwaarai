@@ -122,6 +122,12 @@ export default function ValetDashboard() {
             Vehicles in →
           </Link>
           <Link
+            href="/valet/feedback"
+            className="text-sm font-medium text-teal-700 hover:text-teal-800"
+          >
+            Feedback →
+          </Link>
+          <Link
             href="/valet/slots"
             className="text-sm font-medium text-teal-700 hover:text-teal-800"
           >

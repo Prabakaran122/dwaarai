@@ -689,3 +689,29 @@ describe('parking inventory', () => {
     expect(query.mock.calls[0][0]).toMatch(/valetSlotsEnabled/);
   });
 });
+
+describe('GET /admin/feedback', () => {
+  it('rolls up sentiment and the reasons behind it', async () => {
+    queryOne.mockResolvedValueOnce({ satisfied: 42, not_satisfied: 5 });
+    queryRows.mockResolvedValueOnce([
+      { reason: 'long_wait', count: 4 },
+      { reason: 'damage', count: 1 },
+    ]);
+
+    const res = await request(app, 'GET', '/admin/feedback', { token: adminToken() });
+
+    expect(res.status).toBe(200);
+    expect(res.body.satisfied).toBe(42);
+    expect(res.body.notSatisfied).toBe(5);
+    expect(res.body.reasons).toEqual([
+      { reason: 'long_wait', count: 4 },
+      { reason: 'damage', count: 1 },
+    ]);
+  });
+
+  it('is an admin view: a guard cannot read a venue-wide rollup', async () => {
+    const res = await request(app, 'GET', '/admin/feedback', { token: guardToken() });
+
+    expect(res.status).toBe(403);
+  });
+});

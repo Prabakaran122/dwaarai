@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import GuardBadgeModal from '@/components/GuardBadgeModal';
 import {
   getTicket, requestCar, getRotatingQr, claimDiscount, venueLogoUrl,
+  submitFeedback, REASON_LABEL, FeedbackReason,
   isValidIndianMobile, formatCountdown,
   GuestTicket, RotatingQr, GuestError,
 } from '@/lib/api';
@@ -86,6 +87,97 @@ function VehicleCard({
           </div>
         )}
       </dl>
+    </section>
+  );
+}
+
+/**
+ * How the trip went.
+ *
+ * One tap for the happy majority, and only then chips for the minority who
+ * were not. Asking everyone to categorise a good experience is how you get no
+ * answers at all; asking an unhappy guest for prose is how you get answers
+ * nobody counts.
+ */
+function Feedback({ token }: { token: string }) {
+  const [state, setState] = useState<'idle' | 'why' | 'done'>('idle');
+  const [picked, setPicked] = useState<FeedbackReason[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  async function send(satisfied: boolean, reasons: FeedbackReason[]) {
+    setBusy(true);
+    try {
+      await submitFeedback(token, satisfied, reasons);
+    } catch {
+      // Recorded or not, the guest has told us. Showing them an error over
+      // sentiment would be a worse last impression than losing one data point.
+    } finally {
+      setState('done');
+      setBusy(false);
+    }
+  }
+
+  if (state === 'done') {
+    return (
+      <section className="mt-5 rounded-2xl bg-[#1B3A4B] p-5 text-center ring-1 ring-white/10">
+        <p className="text-sm text-white/70">Thanks for letting us know.</p>
+      </section>
+    );
+  }
+
+  if (state === 'why') {
+    return (
+      <section className="mt-5 rounded-2xl bg-[#1B3A4B] p-5 ring-1 ring-white/10">
+        <p className="text-sm text-white/70 text-center">What went wrong?</p>
+        <div className="mt-3 flex flex-wrap justify-center gap-2">
+          {(Object.keys(REASON_LABEL) as FeedbackReason[]).map((r) => (
+            <button
+              key={r}
+              data-testid={`reason-${r}`}
+              onClick={() => setPicked((p) => (p.includes(r) ? p.filter((x) => x !== r) : [...p, r]))}
+              className={`px-3 py-2 rounded-xl text-xs font-semibold ring-1 ${
+                picked.includes(r)
+                  ? 'bg-amber-500 text-[#0D2535] ring-amber-500'
+                  : 'text-white/70 ring-white/20'
+              }`}
+            >
+              {REASON_LABEL[r]}
+            </button>
+          ))}
+        </div>
+        <button
+          data-testid="feedback-send"
+          onClick={() => send(false, picked)}
+          disabled={busy}
+          className="mt-4 w-full py-3 rounded-xl bg-amber-500 text-[#0D2535] text-sm font-bold disabled:opacity-50"
+        >
+          Send
+        </button>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mt-5 rounded-2xl bg-[#1B3A4B] p-5 text-center ring-1 ring-white/10">
+      <p className="text-sm text-white/70">How was your valet?</p>
+      <div className="mt-3 flex gap-3">
+        <button
+          data-testid="feedback-yes"
+          onClick={() => send(true, [])}
+          disabled={busy}
+          className="flex-1 py-3 rounded-xl ring-1 ring-white/20 text-white text-sm font-semibold disabled:opacity-50"
+        >
+          Satisfied
+        </button>
+        <button
+          data-testid="feedback-no"
+          onClick={() => setState('why')}
+          disabled={busy}
+          className="flex-1 py-3 rounded-xl ring-1 ring-white/20 text-white text-sm font-semibold disabled:opacity-50"
+        >
+          Not satisfied
+        </button>
+      </div>
     </section>
   );
 }
@@ -452,6 +544,7 @@ export default function GuestPage() {
               </a>
             </p>
           </section>
+          {ticket.status === 'final_closed' && <Feedback token={token} />}
           <DiscountOffer token={token} />
         </>
       )}

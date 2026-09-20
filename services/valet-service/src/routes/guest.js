@@ -304,3 +304,46 @@ router.post('/tickets/:token/discount-optin', async (req, res) => {
 });
 
 export default router;
+
+/**
+ * One tap of sentiment, at the end of a trip.
+ *
+ * Deliberately chips and no free text. A rollup counts chips; prose has to be
+ * read, and nobody reads it. Anything a guest needs to say at length is a
+ * conversation with the venue, not a widget.
+ */
+const FEEDBACK_REASONS = ['wrong_vehicle', 'long_wait', 'damage', 'staff_conduct'];
+
+router.post('/tickets/:token/feedback', async (req, res) => {
+  const ticket = await findTicket(req.params.token);
+  if (!ticket) return notFound(res);
+  if (ticket.status !== 'final_closed') {
+    return res.status(409).json({ error: 'wrong_status', status: ticket.status });
+  }
+
+  const satisfied = req.body.satisfied === true;
+  const reasons = satisfied ? [] : (Array.isArray(req.body.reasons) ? req.body.reasons : []);
+
+  // Checked against a known list, not stored as given. One typo in a client
+  // and a category exists in the rollup that nobody can read or remove.
+  const unknown = reasons.filter((r) => !FEEDBACK_REASONS.includes(r));
+  if (unknown.length) {
+    return res.status(400).json({ error: 'unknown_reason', message: `Unrecognised: ${unknown.join(', ')}` });
+  }
+
+  try {
+    await query(
+      `INSERT INTO valet_feedback (ticket_id, community_id, satisfied, reasons)
+       VALUES ($1, $2, $3, $4)`,
+      [ticket.id, ticket.community_id, satisfied, reasons]
+    );
+  } catch (err) {
+    // 23505: the UNIQUE on ticket_id caught a second tap. The guest is on a
+    // flaky connection, not making a second point — telling them it failed
+    // would only invite a third tap.
+    if (err?.code !== '23505') throw err;
+    return res.status(200).json({ recorded: true, duplicate: true });
+  }
+
+  res.status(201).json({ recorded: true });
+});
