@@ -4,9 +4,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import Image from 'next/image';
 import logo from '@/public/dwaar-ai-logo.png';
-import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
-import { apiFetch } from '@/lib/api';
+import { useModules } from '@/lib/modules';
 
 /**
  * Which product owns each screen.
@@ -34,7 +33,6 @@ const MODULE_OF: Record<string, 'gate' | 'community' | 'valet'> = {
   '/valet': 'valet',
 };
 
-const ALL_MODULES = ['gate', 'community', 'valet'];
 
 const communityNav = [
   { href: '/', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1' },
@@ -64,24 +62,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout, selectedCommunityId } = useAuth();
 
-  // Starts as everything, so a slow or failed lookup shows the full nav
-  // rather than briefly blanking a working portal.
-  const [modules, setModules] = useState<string[]>(ALL_MODULES);
-
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    apiFetch<{ data?: { modules?: string[] } }>('/entitlements')
-      .then((res) => {
-        const found = res?.data?.modules;
-        if (!cancelled && found?.length) setModules(found);
-      })
-      .catch(() => {
-        // A property we cannot ask keeps the portal it had. Hiding screens on
-        // a failed request would look exactly like losing access to them.
-      });
-    return () => { cancelled = true; };
-  }, [user, selectedCommunityId]);
+  const { modules, valetOnly } = useModules();
 
   if (!user || pathname === '/login') return null;
 
@@ -112,7 +93,7 @@ export default function Sidebar() {
           unoptimized
         />
         <p className="mt-2 text-[10px] uppercase tracking-[0.2em] text-teal-600 font-semibold">
-          {isSuperAdmin ? 'Super Admin' : 'Admin Portal'}
+          {isSuperAdmin ? 'Super Admin' : valetOnly ? 'Valet' : 'Admin Portal'}
         </p>
       </div>
       <nav className="flex-1 p-3 space-y-1">
