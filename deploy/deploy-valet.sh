@@ -196,9 +196,24 @@ sudo systemctl restart communitygate-valet-guest
 say "Rebuilding the admin portal so /admin/valet exists"
 # --------------------------------------------------------------------------
 pnpm install --filter admin-portal
-# Preserve whatever API URL the existing build used; only add the valet one.
+# Preserve whatever API URL the existing build used -- but only if it is
+# actually usable. The unit on this box carried "http://:3000/api/v1", an
+# empty host left behind by an unset variable, and because ${x:-default}
+# only fires on the empty string this script faithfully rebuilt the broken
+# value into every release. The portal shipped with a login that could not
+# reach the API at all, and nothing noticed because the page still returns
+# 200 -- it is the fetch inside it that fails.
+#
+# So the inherited value has to clear a bar, not merely exist: scheme, a
+# non-empty host, and no leading-colon host.
 EXISTING_API_URL=$(grep -oP 'NEXT_PUBLIC_API_URL=\K\S+' /etc/systemd/system/communitygate-admin.service 2>/dev/null || true)
-NEXT_PUBLIC_API_URL="${EXISTING_API_URL:-https://$PUBLIC_HOST/api/v1}" \
+if [[ ! "$EXISTING_API_URL" =~ ^https?://[A-Za-z0-9._-]+(:[0-9]+)?(/|$) ]]; then
+  [ -n "$EXISTING_API_URL" ] && \
+    echo "  ignoring unusable inherited NEXT_PUBLIC_API_URL='$EXISTING_API_URL'"
+  EXISTING_API_URL="https://$PUBLIC_HOST/api/v1"
+fi
+echo "  admin portal will call: $EXISTING_API_URL"
+NEXT_PUBLIC_API_URL="$EXISTING_API_URL" \
 NEXT_PUBLIC_VALET_API_URL="https://$PUBLIC_HOST/valet-api" \
   pnpm --filter admin-portal build
 sudo systemctl restart communitygate-admin
