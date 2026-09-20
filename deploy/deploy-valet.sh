@@ -64,14 +64,19 @@ say "Applying database migrations"
 pnpm install --filter api-gateway
 DATABASE_URL="$DATABASE_URL" pnpm --filter api-gateway migrate
 
-# 7 = the six from 043_valet.sql plus valet_cards from 044.
-EXPECTED_VALET_TABLES=7
-MIGRATION_CHECK=$(docker exec "$(docker ps -q -f name=postgres)" \
-  psql -U cguser -d communitygate -tAc \
-  "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'valet_%'")
-[ "$MIGRATION_CHECK" = "$EXPECTED_VALET_TABLES" ] \
-  || die "expected $EXPECTED_VALET_TABLES valet_* tables, found $MIGRATION_CHECK"
-echo "valet tables present: $MIGRATION_CHECK"
+# Named, not counted. A bare count has to be edited every time a migration
+# adds a table, and the failure mode is this script refusing to deploy a
+# perfectly good release at 3am because someone added one -- which is exactly
+# what it did on the WhatsApp and slots migrations. Naming what must exist
+# checks the thing actually worth checking, and stays true as more arrive.
+REQUIRED_VALET_TABLES="valet_tickets valet_ticket_events valet_photos \
+valet_condition_records valet_rotating_tokens valet_discount_optins valet_cards"
+for TBL in $REQUIRED_VALET_TABLES; do
+  HAVE=$(docker exec "$(docker ps -q -f name=postgres)" \
+    psql -U cguser -d communitygate -tAc "SELECT to_regclass('$TBL') IS NOT NULL")
+  [ "$HAVE" = "t" ] || die "missing table $TBL — migrations did not apply"
+done
+echo "valet tables present: $(echo $REQUIRED_VALET_TABLES | wc -w) required, all found"
 
 # The card flow is unusable without this index — it is what stops one card
 # being on two open tickets — and a partial index is easy to lose in a restore
