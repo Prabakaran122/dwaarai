@@ -201,10 +201,15 @@ describe('intake condition capture', () => {
     expect(screen.queryByTestId('valet-done-card')).toBeNull();
   });
 
-  it('allows finishing once a capture exists', async () => {
+  it('allows finishing once the whole set exists', async () => {
     const screen = await reachCondition();
 
-    await act(async () => { fireEvent.press(screen.getByTestId('valet-angle-front')); });
+    // One photo used to be enough. Four is the rule now: a pair of photos of
+    // a four-sided car proves nothing about the other two sides, which is the
+    // entire reason the capture exists.
+    for (const angle of ['front', 'right', 'back', 'left']) {
+      await act(async () => { fireEvent.press(screen.getByTestId(`valet-angle-${angle}`)); });
+    }
     await act(async () => { fireEvent.press(screen.getByTestId('valet-finish')); });
 
     await waitFor(() => expect(screen.getByTestId('valet-done-card')).toBeTruthy());
@@ -674,5 +679,58 @@ describe('parking slots, where the venue uses them', () => {
     expect(api.createTicket).toHaveBeenCalledWith(
       'KA03NJ0435', 'Swift', expect.any(String), expect.objectContaining({ slotId: undefined })
     );
+  });
+});
+
+describe('the four-angle condition sequence', () => {
+  async function toCondition(screen: ReturnType<typeof render>) {
+    fireEvent.changeText(screen.getByTestId('valet-plate-input'), 'KA03NJ0435');
+    fireEvent.changeText(screen.getByTestId('valet-make-input'), 'Swift');
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-create')); });
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-skip-photo')); });
+  }
+
+  it('locks every angle but the next one', async () => {
+    const screen = render(<NewValetTicketScreen onClose={jest.fn()} />);
+    await toCondition(screen);
+
+    // Out of order, the set is no longer a comparable pair in a dispute —
+    // "front" on one ticket might be "left" on another.
+    expect(screen.getByTestId('valet-angle-front')).not.toBeDisabled();
+    expect(screen.getByTestId('valet-angle-right')).toBeDisabled();
+    expect(screen.getByTestId('valet-angle-back')).toBeDisabled();
+    expect(screen.getByTestId('valet-angle-left')).toBeDisabled();
+  });
+
+  it('unlocks the next angle only once the previous one is captured', async () => {
+    const screen = render(<NewValetTicketScreen onClose={jest.fn()} />);
+    await toCondition(screen);
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-angle-front')); });
+
+    expect(screen.getByTestId('valet-angle-right')).not.toBeDisabled();
+    expect(screen.getByTestId('valet-angle-back')).toBeDisabled();
+  });
+
+  it('will not finish on a partial set', async () => {
+    const screen = render(<NewValetTicketScreen onClose={jest.fn()} />);
+    await toCondition(screen);
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-angle-front')); });
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-angle-right')); });
+
+    // Two photos of a four-sided car prove nothing about the other two.
+    expect(screen.getByTestId('valet-finish')).toBeDisabled();
+  });
+
+  it('finishes once all four are in', async () => {
+    const screen = render(<NewValetTicketScreen onClose={jest.fn()} />);
+    await toCondition(screen);
+
+    for (const a of ['front', 'right', 'back', 'left']) {
+      await act(async () => { fireEvent.press(screen.getByTestId(`valet-angle-${a}`)); });
+    }
+
+    expect(screen.getByTestId('valet-finish')).not.toBeDisabled();
   });
 });

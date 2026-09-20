@@ -25,7 +25,8 @@ import { takePhoto, openAppSettings } from '../lib/camera';
  * never become something a valet has to dismiss before taking a car in.
  */
 
-const ANGLES = ['front', 'back', 'left', 'right'] as const;
+/** Walking once round the car, in the order the BRD specifies. */
+const ANGLES = ['front', 'right', 'back', 'left'] as const;
 const PLATE_LOOKUP_DEBOUNCE_MS = 400;
 
 type Step = 'details' | 'card' | 'photo' | 'condition' | 'done';
@@ -584,14 +585,26 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
           <>
             <Text style={styles.label}>{t('valetConditionIntake')}</Text>
             <View style={styles.angleGrid}>
-              {ANGLES.map((angle) => {
+              {ANGLES.map((angle, i) => {
                 const done = captured.includes(angle);
+                // Forced sequence: only the next uncaptured angle is live.
+                //
+                // Out of order the set stops being a comparable pair in a
+                // dispute — "front" on one ticket could be "left" on another,
+                // and the photos are only worth having if the same four views
+                // exist for every car.
+                const isNext = i === captured.length;
                 return (
                   <Pressable
                     key={angle}
                     testID={`valet-angle-${angle}`}
+                    disabled={!isNext}
                     onPress={() => captureCondition(angle)}
-                    style={[styles.angleTile, done && styles.angleTileDone]}
+                    style={[
+                      styles.angleTile,
+                      done && styles.angleTileDone,
+                      !isNext && !done && styles.angleTileLocked,
+                    ]}
                   >
                     <MaterialCommunityIcons
                       name={done ? 'check-circle' : 'camera-outline'}
@@ -604,7 +617,7 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
               })}
             </View>
 
-            {captured.length === 0 && (
+            {captured.length < ANGLES.length && (
               <Text style={styles.hint} testID="valet-condition-hint">
                 {t('valetConditionRequired')}
               </Text>
@@ -612,9 +625,9 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
 
             <Pressable
               testID="valet-finish"
-              disabled={captured.length === 0}
+              disabled={captured.length < ANGLES.length}
               onPress={() => setStep('done')}
-              style={[styles.cta, captured.length === 0 && styles.ctaDisabled]}
+              style={[styles.cta, captured.length < ANGLES.length && styles.ctaDisabled]}
             >
               <Text style={styles.ctaText}>{t('done')}</Text>
             </Pressable>
@@ -683,6 +696,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card,
     alignItems: 'center', justifyContent: 'center', gap: spacing.xs,
   },
+  angleTileLocked: { opacity: 0.35 },
   angleTileDone: { borderColor: colors.teal, backgroundColor: colors.successBg },
   angleText: { color: colors.textSecondary, fontSize: 12, textTransform: 'capitalize' },
   hint: { color: colors.textTertiary, fontSize: 12, textAlign: 'center' },
