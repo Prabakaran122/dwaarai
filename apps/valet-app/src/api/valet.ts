@@ -133,6 +133,23 @@ export interface TicketExtras {
  * Extras arrive as an object rather than more positional arguments. Six
  * optionals in a row is a call nobody can read and everybody mis-orders.
  */
+/**
+ * Starts a job the moment the card is scanned, before the details exist.
+ *
+ * The ticket now lives from this point, which is what lets a guest who scans
+ * the same card seconds later find something to attach themselves to.
+ */
+export const startIntake = (cardCode?: string) =>
+  valet.post<CreatedTicket>('/guard/tickets/start', { cardCode });
+
+export const completeIntake = (
+  token: string, plate: string, vehicleMake: string, stayEndAt: string,
+  extras: Omit<TicketExtras, 'cardCode'> = {}
+) =>
+  valet.post<ValetTicket>(`/guard/tickets/${token}/complete`, {
+    plate, vehicleMake, stayEndAt, ...extras,
+  });
+
 export const createTicket = (
   plate: string, vehicleMake: string, stayEndAt: string, extras: TicketExtras = {}
 ) =>

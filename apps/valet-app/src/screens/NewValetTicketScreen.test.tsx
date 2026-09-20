@@ -38,6 +38,8 @@ beforeEach(() => {
   (useCameraPermissions as jest.Mock).mockReturnValue([{ granted: true, canAskAgain: true }, jest.fn()]);
   (api.lookupPlate as jest.Mock).mockResolvedValue({ data: { isReturning: false } });
   (api.createTicket as jest.Mock).mockResolvedValue({ data: createdTicket });
+  (api.startIntake as jest.Mock).mockResolvedValue({ data: createdTicket });
+  (api.completeIntake as jest.Mock).mockResolvedValue({ data: {} });
   (api.listSlots as jest.Mock).mockResolvedValue({ data: { enabled: false, floors: [] } });
   (api.uploadGuestPhoto as jest.Mock).mockResolvedValue({});
   (api.uploadCondition as jest.Mock).mockResolvedValue({});
@@ -260,7 +262,7 @@ describe('binding a printed card at intake', () => {
     expect(screen.getByText(/A047/)).toBeTruthy();
   });
 
-  it('sends the scanned card with the ticket', async () => {
+  it('starts the job on the scan, then completes it with the details', async () => {
     const screen = render(<NewValetTicketScreen />);
     fireEvent.press(screen.getByTestId('valet-scan-card'));
     await act(async () => {
@@ -271,8 +273,12 @@ describe('binding a printed card at intake', () => {
 
     await fillDetails(screen);
 
-    expect(api.createTicket).toHaveBeenCalledWith(
-      'KA03NJ0435', 'Maruti Swift', expect.any(String), expect.objectContaining({ cardCode: 'A047' })
+    // The card no longer rides along with a single create: scanning it starts
+    // the job so the guest has something to scan into, and the details finish
+    // the job that already exists.
+    expect(api.startIntake).toHaveBeenCalledWith('A047');
+    expect(api.completeIntake).toHaveBeenCalledWith(
+      'tok-9', 'KA03NJ0435', 'Maruti Swift', expect.any(String), expect.any(Object)
     );
   });
 
@@ -732,5 +738,49 @@ describe('the four-angle condition sequence', () => {
     }
 
     expect(screen.getByTestId('valet-finish')).not.toBeDisabled();
+  });
+});
+
+describe('a job that begins when the card is scanned', () => {
+  it('starts the intake the moment a card is accepted', async () => {
+    const screen = render(<NewValetTicketScreen onClose={jest.fn()} />);
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-scan-card')); });
+    fireEvent.changeText(screen.getByTestId('valet-card-input'), 'A047');
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-card-use')); });
+
+    // The guard hands the card over straight after scanning it. If the job
+    // does not exist by then, the guest scans into nothing.
+    expect(api.startIntake).toHaveBeenCalledWith('A047');
+  });
+
+  it('completes that job rather than creating a second one', async () => {
+    const screen = render(<NewValetTicketScreen onClose={jest.fn()} />);
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-scan-card')); });
+    fireEvent.changeText(screen.getByTestId('valet-card-input'), 'A047');
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-card-use')); });
+
+    fireEvent.changeText(screen.getByTestId('valet-plate-input'), 'KA03NJ0435');
+    fireEvent.changeText(screen.getByTestId('valet-make-input'), 'Swift');
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-create')); });
+
+    expect(api.completeIntake).toHaveBeenCalledWith(
+      'tok-9', 'KA03NJ0435', 'Swift', expect.any(String), expect.any(Object)
+    );
+    expect(api.createTicket).not.toHaveBeenCalled();
+  });
+
+  it('still creates in one shot when no card was scanned', async () => {
+    const screen = render(<NewValetTicketScreen onClose={jest.fn()} />);
+
+    fireEvent.changeText(screen.getByTestId('valet-plate-input'), 'KA03NJ0435');
+    fireEvent.changeText(screen.getByTestId('valet-make-input'), 'Swift');
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-create')); });
+
+    // No card means nothing was handed to a guest, so there is no window to
+    // close and no reason to make two round trips at a busy porch.
+    expect(api.createTicket).toHaveBeenCalled();
+    expect(api.completeIntake).not.toHaveBeenCalled();
   });
 });

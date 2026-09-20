@@ -193,9 +193,30 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
     setStep('card');
   }
 
-  function acceptCard(code: string) {
+  /**
+   * A scanned card starts the job immediately.
+   *
+   * The guard hands the card to the guest within seconds of scanning it. If
+   * the ticket does not exist by then, the guest scans into nothing — which is
+   * the whole reason the number used to have to wait on the card.
+   */
+  async function acceptCard(code: string) {
     setCardCode(code);
     setError(null);
+    setBusy(true);
+    try {
+      const res = await api.startIntake(code);
+      setCreated(res.data);
+    } catch (err) {
+      const errCode = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      if (errCode === 'card_in_use') setError(t('valetCardInUse'));
+      else if (errCode === 'unknown_card') setError(t('valetCardUnknown'));
+      else setError(t('valetFailed'));
+      setCardCode(null);
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
     setStep('details');
   }
 
@@ -247,18 +268,29 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
     try {
       const stayEnd = new Date();
       stayEnd.setDate(stayEnd.getDate() + days);
-      const res = await api.createTicket(
-        plate.trim(), vehicleMake.trim(), stayEnd.toISOString(),
-        {
-          cardCode: cardCode ?? undefined,
-          phoneNumber: phone.trim() ? phone.replace(/\s+/g, '') : undefined,
-          slotId: slotId ?? undefined,
-          guestName: guestName.trim() || undefined,
-          carType: carType ?? undefined,
-          isPremium: isPremium || undefined,
-        }
-      );
-      setCreated(res.data);
+      const extras = {
+        phoneNumber: phone.trim() ? phone.replace(/\s+/g, '') : undefined,
+        slotId: slotId ?? undefined,
+        guestName: guestName.trim() || undefined,
+        carType: carType ?? undefined,
+        isPremium: isPremium || undefined,
+      };
+
+      if (created) {
+        // The job already exists — started when the card was scanned. Finish
+        // it rather than creating a second ticket for the same car.
+        await api.completeIntake(
+          created.sessionToken, plate.trim(), vehicleMake.trim(), stayEnd.toISOString(), extras
+        );
+      } else {
+        // No card, so nothing was handed to a guest and there is no window to
+        // close: one round trip is enough at a busy porch.
+        const res = await api.createTicket(
+          plate.trim(), vehicleMake.trim(), stayEnd.toISOString(),
+          { ...extras, cardCode: cardCode ?? undefined }
+        );
+        setCreated(res.data);
+      }
       setStep('photo');
     } catch (err) {
       // A card clash is the valet's own mistake to fix — they are holding the
