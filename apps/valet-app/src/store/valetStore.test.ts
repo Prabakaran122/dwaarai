@@ -1,7 +1,7 @@
 jest.mock('../api/valet');
 
 import * as api from '../api/valet';
-import { useValetStore, sortQueue, NEEDS_ACTION } from './valetStore';
+import { useValetStore, sortQueue, NEEDS_ACTION, forParking, forDelivery } from './valetStore';
 import type { ValetTicket, ValetStatus } from '../api/valet';
 
 function ticket(overrides: Partial<ValetTicket> = {}): ValetTicket {
@@ -259,5 +259,32 @@ describe('plate search on the queue', () => {
     useValetStore.getState().setSearch('KA05');
     useValetStore.getState().visibleTickets();
     expect(api.listTickets).not.toHaveBeenCalled();
+  });
+});
+
+describe('the two sides of a valet shift', () => {
+  const t = (id: string, status: string) =>
+    ({ id, status, createdAt: new Date().toISOString() }) as never;
+
+  it('splits cars going in from cars coming out', () => {
+    const all = [
+      t('a', 'parking_in_progress'), t('b', 'parked'),
+      t('c', 'retrieval_requested'), t('d', 'en_route'),
+      t('e', 'requested'), t('f', 'arrived'),
+    ];
+
+    // An attendant walking to park a car and one walking to fetch one are
+    // doing different jobs; one list mixes them into a queue nobody can read.
+    expect(forParking(all).map((x) => x.id).sort()).toEqual(['a', 'e']);
+    // Parked cars stay on the lot tab: it is also how an attendant finds a
+    // plate, and hiding them would trade one capability for another.
+    expect(forDelivery(all).map((x) => x.id).sort()).toEqual(['b', 'c', 'd', 'f']);
+  });
+
+  it('keeps parked cars visible, since the lot tab is also how you find one', () => {
+    const all = [t('b', 'parked'), t('g', 'parked_again')];
+
+    expect(forParking(all)).toHaveLength(0);
+    expect(forDelivery(all)).toHaveLength(2);
   });
 });

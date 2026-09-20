@@ -5,7 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
 import { type } from '../theme/typography';
-import { useValetStore, NEEDS_ACTION } from '../store/valetStore';
+import { useValetStore, NEEDS_ACTION, forParking, forDelivery } from '../store/valetStore';
 import type { ValetTicket, ValetStatus } from '../api/valet';
 import { useT } from '../store/langStore';
 
@@ -49,7 +49,15 @@ export default function ValetQueueScreen({
   const t = useT();
   const { loading, search, fetch, setSearch, visibleTickets, accept, arrived, waitingCount } = useValetStore();
   const [etaFor, setEtaFor] = useState<string | null>(null);
-  const tickets = visibleTickets();
+  const all = visibleTickets();
+
+  // Two halves of a shift, not one list. Walking out to park a car and
+  // walking back to fetch one are different jobs, and mixing them makes a
+  // queue nobody can read at a busy porch.
+  const [tab, setTab] = useState<'parking' | 'delivery'>('delivery');
+  const parking = forParking(all);
+  const delivery = forDelivery(all);
+  const tickets = tab === 'parking' ? parking : delivery;
 
   useEffect(() => {
     fetch();
@@ -159,6 +167,24 @@ export default function ValetQueueScreen({
         )}
       </View>
 
+      <View style={styles.tabRow}>
+        {([
+          ['delivery', t('valetTabDelivery'), delivery.length],
+          ['parking', t('valetTabParking'), parking.length],
+        ] as const).map(([key, label, count]) => (
+          <Pressable
+            key={key}
+            testID={`valet-tab-${key}`}
+            onPress={() => setTab(key)}
+            style={[styles.tab, tab === key && styles.tabActive]}
+          >
+            <Text style={[styles.tabText, tab === key && styles.tabTextActive]}>
+              {label}{count > 0 ? ` (${count})` : ''}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={fetch} tintColor={colors.teal} />}
@@ -231,6 +257,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   newBtnText: { color: colors.bgPrimary, fontWeight: '700', fontSize: 13 },
+  tabRow: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
+  tab: { flex: 1, paddingVertical: spacing.sm, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
+  tabActive: { backgroundColor: colors.surfaceHover, borderColor: colors.teal },
+  tabText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  tabTextActive: { color: colors.textPrimary },
   content: { padding: spacing.lg, gap: spacing.md },
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,

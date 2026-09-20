@@ -14,6 +14,33 @@ import type { ValetTicket, ValetStatus } from '../api/valet';
 /** States where a guest is actively waiting on a valet to do something. */
 export const NEEDS_ACTION: ValetStatus[] = ['retrieval_requested', 'arrived'];
 
+/**
+ * The two halves of a shift.
+ *
+ * An attendant walking out to park a car and one walking back to fetch one
+ * are doing different jobs, and a single list mixes them into a queue nobody
+ * can read at a busy porch. A parked car appears in neither: it needs nobody
+ * until a guest asks.
+ */
+const INBOUND: ValetStatus[] = ['requested', 'accepted', 'parking_in_progress'];
+
+/** Cars still coming in — not yet parked. */
+export function forParking(tickets: ValetTicket[]): ValetTicket[] {
+  return sortQueue(tickets.filter((t) => INBOUND.includes(t.status)));
+}
+
+/**
+ * Everything already on the lot, whether or not anyone has asked for it.
+ *
+ * The BRD's second tab is strictly "assigned for delivery", but this queue is
+ * also how an attendant sees what is parked and finds a plate. Showing only
+ * the cars somebody has asked for would add one capability by removing
+ * another, so parked cars stay here and the urgent ones sort to the top.
+ */
+export function forDelivery(tickets: ValetTicket[]): ValetTicket[] {
+  return sortQueue(tickets.filter((t) => !INBOUND.includes(t.status)));
+}
+
 /** States that no longer belong in a working queue. */
 const CLOSED: ValetStatus[] = ['final_closed', 'expired'];
 
