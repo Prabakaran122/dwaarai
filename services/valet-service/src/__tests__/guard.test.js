@@ -17,6 +17,7 @@ vi.mock('../lib/storage.js', () => ({
   buildKey: vi.fn(() => 'valet/photo/t/key.jpg'),
   extensionFor: vi.fn(() => 'jpg'),
 }));
+vi.mock('../lib/anpr.js', () => ({ readPlate: vi.fn(async () => null), isConfigured: vi.fn(() => true) }));
 vi.mock('../lib/whatsapp-guest.js', () => ({ notifyGuest: vi.fn(async () => ({ status: 'sent' })) }));
 vi.mock('../lib/sms.js', () => ({ sendClaimCode: vi.fn(async () => ({ status: 'sent' })) }));
 vi.mock('../lib/realtime.js', () => ({ emitTicketUpdate: vi.fn(), getIO: vi.fn(), initRealtime: vi.fn() }));
@@ -29,6 +30,7 @@ import pool, { query, queryOne, queryRows } from '../db.js';
 import { schedulePhotoDeletion, scheduleConditionMediaDeletion } from '../lib/expiry.js';
 import { sendClaimCode } from '../lib/sms.js';
 import { notifyGuest } from '../lib/whatsapp-guest.js';
+import { readPlate } from '../lib/anpr.js';
 import { toDataUrl } from '../lib/qr.js';
 import guardRoutes from '../routes/guard.js';
 import {
@@ -1319,6 +1321,42 @@ describe('completing an intake', () => {
     const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/complete`, {
       token, body: { plate: 'KA03NJ0435' },
     });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /guard/plate-scan', () => {
+  it('suggests a plate it read, and says it is only a suggestion', async () => {
+    vi.mocked(readPlate).mockResolvedValueOnce({ plate: 'KA03NJ0435', confidence: 0.94 });
+
+    const res = await request(app, 'POST', '/guard/plate-scan', {
+      token,
+      headers: { 'Content-Type': 'application/json' },
+      body: { imageBase64: Buffer.from('jpeg').toString('base64') },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.plate).toBe('KA03NJ0435');
+    expect(res.body.confidence).toBeCloseTo(0.94);
+  });
+
+  it('answers 200 with no plate rather than an error when it cannot read one', async () => {
+    vi.mocked(readPlate).mockResolvedValueOnce(null);
+
+    const res = await request(app, 'POST', '/guard/plate-scan', {
+      token, body: { imageBase64: Buffer.from('jpeg').toString('base64') },
+    });
+
+    // Not being able to read a plate is the ordinary case, not a failure. An
+    // error here would put a red banner in front of a guard who simply needs
+    // to type it.
+    expect(res.status).toBe(200);
+    expect(res.body.plate).toBeNull();
+  });
+
+  it('needs an image', async () => {
+    const res = await request(app, 'POST', '/guard/plate-scan', { token, body: {} });
 
     expect(res.status).toBe(400);
   });

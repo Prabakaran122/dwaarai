@@ -13,6 +13,7 @@ import { emitTicketUpdate } from '../lib/realtime.js';
 import { lastArrivalAt, usedTokenSince } from '../lib/handover.js';
 import { sendClaimCode } from '../lib/sms.js';
 import { notifyGuest } from '../lib/whatsapp-guest.js';
+import { readPlate } from '../lib/anpr.js';
 import { authenticateJWT } from '../middleware/auth.js';
 
 const router = asyncRouter();
@@ -171,6 +172,30 @@ router.get('/slots', guard, async (req, res) => {
  * submit" was invisible -- including the window in which the guest scans the
  * same card and messages us.
  */
+/**
+ * Reads a plate off a photo, as a suggestion.
+ *
+ * Never submits anything. The attendant sees the reading in the field and
+ * either accepts or corrects it, which is the BRD rule and the right one: a
+ * plate nobody read is a plate nobody can be held to.
+ *
+ * A failed reading answers 200 with a null plate. Not recognising a plate is
+ * the ordinary case, not an error, and a red banner in front of a guard who
+ * simply needs to type it helps nobody.
+ */
+router.post('/plate-scan', guard, async (req, res) => {
+  const b64 = String(req.body.imageBase64 || '');
+  if (!b64) return res.status(400).json({ error: 'image_required' });
+
+  const suggestion = await readPlate(Buffer.from(b64, 'base64'), req.body.mimetype || 'image/jpeg');
+  res.json({
+    plate: suggestion?.plate ?? null,
+    confidence: suggestion?.confidence ?? null,
+    // Said explicitly so no client is tempted to treat it as settled.
+    suggestionOnly: true,
+  });
+});
+
 router.post('/tickets/start', guard, async (req, res) => {
   const communityId = req.user.community_id;
   const cardCode = String(req.body.cardCode ?? '').trim();
