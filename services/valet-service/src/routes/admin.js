@@ -4,6 +4,7 @@ import { query, queryOne, queryRows } from '../db.js';
 import { normalizePlate } from '../lib/plate.js';
 import { storage, extensionFor } from '../lib/storage.js';
 import { newClaimCode } from '../lib/claim-code.js';
+import bcrypt from 'bcryptjs';
 import { authenticateJWT } from '../middleware/auth.js';
 
 const router = asyncRouter();
@@ -827,4 +828,118 @@ router.get('/visits.csv', admin, async (req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="vehicle-log-${stamp}.csv"`);
   res.send(lines.join('\n'));
+});
+
+// --- locations and staff ---------------------------------------------------
+
+const VALET_ROLES = ['valet_manager', 'temporary_driver'];
+
+/**
+ * Every property under a client admin's account.
+ *
+ * Not offered to a location manager at all. They have exactly one property,
+ * visible on every other screen already, and a Locations list of one is
+ * furniture that implies a choice they do not have.
+ */
+router.get('/locations', admin, async (req, res) => {
+  if (req.user.role !== 'client_admin' || !req.user.account_id) {
+    return res.status(403).json({ error: 'not_a_group', message: 'This account holds a single property' });
+  }
+
+  const locations = await queryRows(
+    `SELECT c.id, c.name, c.address,
+            COALESCE(c.config->>'valetPlan', 'basic') AS plan
+       FROM communities c
+      WHERE c.account_id = $1
+      ORDER BY c.name`,
+    [req.user.account_id]
+  );
+
+  res.json({ locations });
+});
+
+/**
+ * The valet staff of a property: managers, and the temporary drivers brought
+ * in for an event.
+ *
+ * One list, because surge staff are the same kind of record with a different
+ * shelf life — and two lists would mean every "who is on shift" question
+ * having to be asked twice and somebody remembering to.
+ */
+router.get('/staff', admin, async (req, res) => {
+  const rows = await queryRows(
+    `SELECT id, name, mobile, valet_role, valet_until, is_active
+       FROM residents
+      WHERE community_id = $1 AND type = 'guard' AND is_active = true
+      ORDER BY valet_role NULLS LAST, name`,
+    [req.user.community_id]
+  );
+
+  res.json({
+    staff: rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      mobile: r.mobile,
+      role: r.valet_role || 'valet_manager',
+      until: r.valet_until,
+      // A temp whose date has passed is shown as expired rather than quietly
+      // dropped: somebody has to notice they are still on the list.
+      expired: !!(r.valet_until && new Date(r.valet_until) < new Date()),
+    })),
+  });
+});
+
+router.post('/staff', admin, async (req, res) => {
+  const name = String(req.body.name ?? '').trim();
+  const mobile = String(req.body.mobile ?? '').trim();
+  const password = String(req.body.password ?? '');
+  const role = String(req.body.role ?? 'valet_manager');
+
+  if (!VALET_ROLES.includes(role)) {
+    return res.status(400).json({ error: 'invalid_role', message: `role must be one of ${VALET_ROLES.join(', ')}` });
+  }
+  if (!name || !/^[6-9]\d{9}$/.test(mobile) || password.length < 4) {
+    return res.status(400).json({ error: 'invalid_staff', message: 'Name, a 10-digit mobile and a PIN of at least 4 are required' });
+  }
+
+  const existing = await queryOne(
+    `SELECT id FROM residents
+      WHERE community_id = $1 AND mobile = $2 AND type = 'guard' AND is_active = true`,
+    [req.user.community_id, mobile]
+  );
+  if (existing) return res.status(409).json({ error: 'already_exists' });
+
+  // Guards hang off a unit like every other resident row; the post is the
+  // unit they belong to.
+  let unit = await queryOne(
+    "SELECT id FROM units WHERE community_id = $1 AND unit_number = 'GUARD-POST'",
+    [req.user.community_id]
+  );
+  if (!unit) {
+    unit = await queryOne(
+      "INSERT INTO units (community_id, unit_number, floor, status) VALUES ($1, 'GUARD-POST', 'G', 'occupied') RETURNING id",
+      [req.user.community_id]
+    );
+  }
+
+  const hash = await bcrypt.hash(password, 12);
+  await query(
+    `INSERT INTO residents
+       (community_id, unit_id, name, mobile, type, is_primary, password_hash, valet_role, valet_until)
+     VALUES ($1, $2, $3, $4, 'guard', false, $5, $6, $7)`,
+    [req.user.community_id, unit.id, name, mobile, hash, role,
+     role === 'temporary_driver' ? (req.body.until || null) : null]
+  );
+
+  res.status(201).json({ added: true });
+});
+
+/** Retires a member of staff. Deactivated, never deleted: their name is on tickets. */
+router.delete('/staff/:id', admin, async (req, res) => {
+  await query(
+    `UPDATE residents SET is_active = false
+      WHERE id = $1 AND community_id = $2 AND type = 'guard'`,
+    [req.params.id, req.user.community_id]
+  );
+  res.json({ retired: true });
 });

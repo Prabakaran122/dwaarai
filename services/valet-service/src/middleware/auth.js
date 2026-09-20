@@ -13,6 +13,16 @@ if (!JWT_SECRET) {
  * cookie — attribution only, never access control. Every guard action in this
  * service is now tied to a real residents(id) with a real community.
  */
+/**
+ * Everyone who administers a property, at any scope.
+ *
+ * client_admin spans an account of several properties; community_admin holds
+ * one. Both are administrators, and a route that asks for 'admin' means the
+ * job rather than the scope -- the scope is enforced by which community the
+ * token carries.
+ */
+const ADMIN_ROLES = ['super_admin', 'client_admin', 'community_admin'];
+
 export function authenticateJWT(roles = []) {
   return (req, res, next) => {
     const header = req.headers.authorization;
@@ -26,7 +36,7 @@ export function authenticateJWT(roles = []) {
       if (roles.length) {
         const role = decoded.role;
         const ok = roles.some(
-          (r) => r === role || (r === 'admin' && (role === 'super_admin' || role === 'community_admin'))
+          (r) => r === role || (r === 'admin' && ADMIN_ROLES.includes(role))
         );
         if (!ok) return res.status(403).json({ error: 'forbidden', message: 'Insufficient permissions' });
       }

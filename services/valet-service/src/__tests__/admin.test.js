@@ -869,3 +869,77 @@ describe('GET /admin/visits.csv', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('locations under an account', () => {
+  it('lists every property a client admin holds', async () => {
+    queryRows.mockResolvedValueOnce([
+      { id: 'c1', name: 'The Leela Bhartiya City', address: 'Bengaluru', plan: 'basic' },
+      { id: 'c2', name: 'The Leela Coastal', address: 'Goa', plan: 'enterprise' },
+    ]);
+
+    const res = await request(app, 'GET', '/admin/locations', {
+      token: adminToken({ role: 'client_admin', account_id: 'acc-1' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.locations).toHaveLength(2);
+    expect(queryRows.mock.calls[0][1]).toEqual(['acc-1']);
+  });
+
+  it('is not a screen a location manager has', async () => {
+    const res = await request(app, 'GET', '/admin/locations', { token: adminToken() });
+
+    // A manager with exactly one property sees it everywhere else already;
+    // a Locations list of one is furniture.
+    expect(res.status).toBe(403);
+    expect(queryRows).not.toHaveBeenCalled();
+  });
+});
+
+describe('the staff directory', () => {
+  it('lists valet staff with their tier', async () => {
+    queryRows.mockResolvedValueOnce([
+      { id: 'r1', name: 'Ramesh', mobile: '9876543210', valet_role: 'valet_manager', valet_until: null, is_active: true },
+      { id: 'r2', name: 'Surge', mobile: '9876500000', valet_role: 'temporary_driver', valet_until: '2026-12-31T00:00:00Z', is_active: true },
+    ]);
+
+    const res = await request(app, 'GET', '/admin/staff', { token: adminToken() });
+
+    expect(res.status).toBe(200);
+    expect(res.body.staff[0].role).toBe('valet_manager');
+    expect(res.body.staff[1].until).toBeTruthy();
+  });
+
+  it('hires a temporary driver with an end date set at the outset', async () => {
+    queryOne.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'unit-1' });
+    query.mockResolvedValue({});
+    queryOne.mockResolvedValueOnce({ id: 'r9', name: 'Surge' });
+
+    const res = await request(app, 'POST', '/admin/staff', {
+      token: adminToken(),
+      body: {
+        name: 'Surge', mobile: '9876500000', password: 'pw1234',
+        role: 'temporary_driver', until: '2026-12-31T00:00:00Z',
+      },
+    });
+
+    // The point of a temp is that somebody set the end date when they were
+    // hired, not that a manager remembers to remove them after the wedding.
+    expect(res.status).toBe(201);
+  });
+
+  it('refuses a tier that is not one of the two', async () => {
+    const res = await request(app, 'POST', '/admin/staff', {
+      token: adminToken(),
+      body: { name: 'X', mobile: '9876500000', password: 'pw1234', role: 'chef' },
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('is admin-only', async () => {
+    const res = await request(app, 'GET', '/admin/staff', { token: guardToken() });
+
+    expect(res.status).toBe(403);
+  });
+});
