@@ -1221,3 +1221,105 @@ describe('who the guest is and what they drive', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('intake that starts when the card is scanned', () => {
+  it('creates a job before the details exist', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({})                              // BEGIN
+      .mockResolvedValueOnce({})                              // advisory lock
+      .mockResolvedValueOnce({ rows: [] })                    // last display id
+      .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })   // INSERT
+      .mockResolvedValueOnce({})                              // logEvent
+      .mockResolvedValueOnce({});                             // COMMIT
+
+    const res = await request(app, 'POST', '/guard/tickets/start', { token, body: {} });
+
+    expect(res.status).toBe(201);
+    expect(res.body.sessionToken).toHaveLength(32);
+    expect(res.body.claimCode).toBeTruthy();
+    const insert = mockClient.query.mock.calls.find((c) => /INSERT INTO valet_tickets/.test(c[0]));
+    // The plate is what the next ninety seconds are for.
+    expect(insert[0]).toMatch(/'parking_in_progress'/);
+  });
+
+  it('binds the scanned card and claims a number the guest already left', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A047', pending_wa_phone: '919876543210' }] })
+      .mockResolvedValueOnce({ rows: [] })                    // card not in use
+      .mockResolvedValueOnce({})                              // advisory lock
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })
+      .mockResolvedValueOnce({})                              // claim the held phone
+      .mockResolvedValueOnce({})                              // clear the card hold
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({});
+
+    const res = await request(app, 'POST', '/guard/tickets/start', {
+      token, body: { cardCode: 'A047' },
+    });
+
+    expect(res.status).toBe(201);
+    const sql = mockClient.query.mock.calls.map((c) => c[0]).join(' ');
+    expect(sql).toMatch(/pending_wa_phone/);
+  });
+
+  it('refuses a card already on another open ticket', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A047' }] })
+      .mockResolvedValueOnce({ rows: [{ display_id: 'DWR-0007' }] })
+      .mockResolvedValueOnce({});
+
+    const res = await request(app, 'POST', '/guard/tickets/start', {
+      token, body: { cardCode: 'A047' },
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('card_in_use');
+  });
+});
+
+describe('completing an intake', () => {
+  const body = () => ({
+    plate: 'KA03NJ0435', vehicleMake: 'Swift',
+    stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+  });
+
+  it('fills the details in and parks the car', async () => {
+    queryOne
+      .mockResolvedValueOnce(ticketRow({ status: 'parking_in_progress' }))
+      .mockResolvedValueOnce(ticketRow({ status: 'parked' }));
+    query.mockResolvedValue({});
+
+    const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/complete`, {
+      token, body: body(),
+    });
+
+    expect(res.status).toBe(200);
+    const sql = query.mock.calls.map((c) => c[0]).join(' ');
+    expect(sql).toMatch(/status = 'parked'/);
+    expect(sql).toMatch(/plate/);
+  });
+
+  it('refuses to complete a car that is already parked', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ status: 'parked' }));
+
+    const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/complete`, {
+      token, body: body(),
+    });
+
+    // Completing twice would overwrite a plate somebody already checked.
+    expect(res.status).toBe(409);
+  });
+
+  it('refuses a body missing the details that make it parkable', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ status: 'parking_in_progress' }));
+
+    const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/complete`, {
+      token, body: { plate: 'KA03NJ0435' },
+    });
+
+    expect(res.status).toBe(400);
+  });
+});

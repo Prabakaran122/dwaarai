@@ -163,6 +163,159 @@ router.get('/slots', guard, async (req, res) => {
   res.json({ enabled: true, floors });
 });
 
+/**
+ * Starts a job when the guard scans the card, before any of its details exist.
+ *
+ * This is the state the product was missing. A ticket used to spring into
+ * being already parked, so everything between "car arrives" and "guard hits
+ * submit" was invisible -- including the window in which the guest scans the
+ * same card and messages us.
+ */
+router.post('/tickets/start', guard, async (req, res) => {
+  const communityId = req.user.community_id;
+  const cardCode = String(req.body.cardCode ?? '').trim();
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    let card = null;
+    if (cardCode) {
+      const resolved = await resolveCard(client, communityId, cardCode);
+      if (resolved.error) {
+        await client.query('ROLLBACK');
+        return cardConflict(res, resolved.error, resolved.displayId);
+      }
+      card = resolved.card;
+    }
+
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext('valet_display_id'), hashtext($1))`,
+      [communityId]
+    );
+    const last = await client.query(
+      `SELECT display_id FROM valet_tickets
+        WHERE community_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [communityId]
+    );
+    const displayId = nextDisplayId(last.rows[0]?.display_id);
+    const sessionToken = newSessionToken();
+    const claimCode = newClaimCode();
+
+    const inserted = await client.query(
+      `INSERT INTO valet_tickets
+         (community_id, display_id, session_token, claim_code, status,
+          created_by_guard_id, card_id, card_code)
+       VALUES ($1, $2, $3, $4, 'parking_in_progress', $5, $6, $7)
+       RETURNING id`,
+      [communityId, displayId, sessionToken, claimCode, req.user.sub,
+       card ? card.id : null, card ? card.code : null]
+    );
+    const ticketId = inserted.rows[0].id;
+
+    // A guest who scanned the card first left their number on it. The job
+    // exists now, so it can hold the number directly -- and once the app
+    // moves fully to this flow the card no longer needs to hold anything.
+    if (card?.pending_wa_phone) {
+      await client.query(
+        `UPDATE valet_tickets
+            SET phone_number = $2, phone_consent_at = NOW(), whatsapp_last_inbound_at = NOW()
+          WHERE id = $1`,
+        [ticketId, card.pending_wa_phone]
+      );
+      await client.query(
+        `UPDATE valet_cards SET pending_wa_phone = NULL, pending_wa_at = NULL WHERE id = $1`,
+        [card.id]
+      );
+    }
+
+    await logEvent(ticketId, 'intake_started', { guardId: req.user.sub, client });
+    await client.query('COMMIT');
+
+    const baseUrl = process.env.VALET_GUEST_BASE_URL || 'https://dwaarai.com/valet';
+    res.status(201).json({
+      id: ticketId,
+      displayId,
+      sessionToken,
+      claimCode,
+      claimUrl: baseUrl,
+      cardCode: card ? card.code : null,
+      qrDataUrl: await toDataUrl(`${baseUrl}/w/${claimCode}`),
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (isCardRaceLoss(err)) return cardConflict(res, 'card_in_use');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+const completeIntakeSchema = z.object({
+  plate: z.string().trim().min(1).max(20),
+  vehicleMake: z.string().trim().min(1).max(100),
+  stayEndAt: z.string().min(1),
+  slotId: z.string().uuid().optional(),
+  guestName: z.string().trim().max(120).optional(),
+  carType: z.enum(['hatchback', 'sedan', 'suv']).optional(),
+  isPremium: z.boolean().optional(),
+  phoneNumber: z.string().trim().max(20).optional(),
+});
+
+/**
+ * Finishes an intake: the details arrive and the car is parked.
+ *
+ * Only from parking_in_progress. Completing twice would overwrite a plate
+ * somebody has already checked against the car in front of them.
+ */
+router.post('/tickets/:token/complete', guard, async (req, res) => {
+  const ticket = await findTicket(req.params.token, req.user.community_id);
+  if (!ticket) return notFound(res);
+  if (ticket.status !== 'parking_in_progress') {
+    return res.status(409).json({ error: 'wrong_status', status: ticket.status });
+  }
+
+  const parsed = completeIntakeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'missing_fields', message: 'plate, vehicleMake and stayEndAt are required' });
+  }
+
+  const stayEnd = new Date(parsed.data.stayEndAt);
+  if (Number.isNaN(stayEnd.getTime()) || stayEnd.getTime() <= Date.now()) {
+    return res.status(400).json({ error: 'invalid_stay_end' });
+  }
+
+  const phoneNumber = parsed.data.phoneNumber ? parsed.data.phoneNumber.replace(/\s+/g, '') : null;
+  if (phoneNumber && !/^(\+91)?[6-9]\d{9}$/.test(phoneNumber)) {
+    return res.status(400).json({ error: 'invalid_phone' });
+  }
+
+  const plate = parsed.data.plate.toUpperCase();
+  await query(
+    `UPDATE valet_tickets
+        SET plate = $2, plate_normalized = $3, vehicle_make = $4, stay_end_at = $5,
+            slot_id = $6, guest_name = $7, car_type = $8, is_premium = $9,
+            phone_number = COALESCE(phone_number, $10),
+            phone_consent_at = CASE WHEN $10 IS NULL THEN phone_consent_at
+                                    ELSE COALESCE(phone_consent_at, NOW()) END,
+            status = 'parked'
+      WHERE id = $1`,
+    [ticket.id, plate, normalizePlate(plate), parsed.data.vehicleMake, stayEnd.toISOString(),
+     parsed.data.slotId || null, parsed.data.guestName || null,
+     parsed.data.carType || null, parsed.data.isPremium === true, phoneNumber]
+  );
+  await logEvent(ticket.id, 'created', {
+    guardId: req.user.sub,
+    metadata: { plate, vehicleMake: parsed.data.vehicleMake },
+  });
+
+  const updated = await findTicket(req.params.token, req.user.community_id);
+  emitTicketUpdate(updated);
+  if (updated?.phone_number) await notifyGuest(updated, 'bound');
+
+  res.json(ticketView(updated));
+});
+
 const createTicketSchema = z.object({
   plate: z.string().trim().min(1).max(20),
   vehicleMake: z.string().trim().min(1).max(100),
