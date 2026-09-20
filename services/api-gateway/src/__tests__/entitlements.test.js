@@ -51,6 +51,7 @@ describe('GET /entitlements', () => {
     expect(json.data).toEqual({
       fastag: true, anpr: true, face: false, aiAnomaly: false,
       tier: 'Basic', updatedAt: '2026-08-01T00:00:00.000Z',
+      modules: ['gate', 'community', 'valet'],
     });
   });
 
@@ -58,7 +59,11 @@ describe('GET /entitlements', () => {
     queryOne.mockResolvedValueOnce(null);
     const { status, json } = await request('GET', '/api/v1/entitlements', { headers: { Authorization: `Bearer ${guard}` } });
     expect(status).toBe(200);
-    expect(json.data).toEqual({ fastag: true, anpr: false, face: false, aiAnomaly: false, tier: 'Starter', updatedAt: null });
+    expect(json.data).toEqual({
+      fastag: true, anpr: false, face: false, aiAnomaly: false,
+      tier: 'Starter', updatedAt: null,
+      modules: ['gate', 'community', 'valet'],
+    });
   });
 });
 
@@ -88,7 +93,11 @@ describe('GET /entitlements/:communityId (super_admin only, NAZ-050..055 admin U
     queryOne.mockResolvedValueOnce(null);
     const { status, json } = await request('GET', '/api/v1/entitlements/c3', { headers: { Authorization: `Bearer ${superAdmin}` } });
     expect(status).toBe(200);
-    expect(json.data).toEqual({ fastag: true, anpr: false, face: false, aiAnomaly: false, tier: 'Starter', updatedAt: null });
+    expect(json.data).toEqual({
+      fastag: true, anpr: false, face: false, aiAnomaly: false,
+      tier: 'Starter', updatedAt: null,
+      modules: ['gate', 'community', 'valet'],
+    });
   });
 });
 
@@ -120,5 +129,45 @@ describe('PUT /entitlements/:communityId', () => {
       body: { fastag: 'yes' },
     });
     expect(status).toBe(400);
+  });
+});
+
+describe('which products a property bought', () => {
+  it('reports the modules on the row', async () => {
+    queryOne.mockResolvedValueOnce({
+      community_id: 'c1', fastag_enabled: true, anpr_enabled: false,
+      face_enabled: false, ai_anomaly_enabled: false, modules: ['valet'],
+    });
+
+    const { json } = await request('GET', '/api/v1/entitlements', {
+      headers: { Authorization: `Bearer ${communityAdmin}` },
+    });
+
+    expect(json.data.modules).toEqual(['valet']);
+  });
+
+  it('treats a property with no entitlements row as having everything', async () => {
+    queryOne.mockResolvedValueOnce(null);
+
+    const { json } = await request('GET', '/api/v1/entitlements', {
+      headers: { Authorization: `Bearer ${communityAdmin}` },
+    });
+
+    // Absence must never empty a portal. Every property predating this column
+    // has no row, and reading that as "nothing" would blank their whole nav.
+    expect(json.data.modules).toEqual(['gate', 'community', 'valet']);
+  });
+
+  it('treats a null modules column as having everything', async () => {
+    queryOne.mockResolvedValueOnce({
+      community_id: 'c1', fastag_enabled: true, anpr_enabled: false,
+      face_enabled: false, ai_anomaly_enabled: false, modules: null,
+    });
+
+    const { json } = await request('GET', '/api/v1/entitlements', {
+      headers: { Authorization: `Bearer ${communityAdmin}` },
+    });
+
+    expect(json.data.modules).toEqual(['gate', 'community', 'valet']);
   });
 });

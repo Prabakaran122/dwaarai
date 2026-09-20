@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
@@ -75,6 +76,26 @@ function relTime(ts: number) {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
+
+  // A property that did not buy the gate product has no use for this screen
+  // and, with the nav scoped, no way off it either. Valet is where they live.
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<{ data?: { modules?: string[] } }>('/entitlements')
+      .then((res) => {
+        const modules = res?.data?.modules;
+        if (!cancelled && modules?.length && !modules.includes('gate')) {
+          router.replace(modules.includes('valet') ? '/valet' : '/');
+        }
+      })
+      .catch(() => {
+        // Unreachable means unchanged: never bounce someone off their own
+        // dashboard because one lookup failed.
+      });
+    return () => { cancelled = true; };
+  }, [router]);
+
   const [summary, setSummary] = useState<Summary | null>(null);
   const [feed, setFeed] = useState<FeedEvent[]>([]);
   const [loading, setLoading] = useState(true);

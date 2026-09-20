@@ -16,6 +16,9 @@ const putSchema = z.object({
 
 // Starter (FASTag only) is the default for a community that has no row yet —
 // never silently grant layers a society hasn't been sold (BRD §5.6).
+/** gate = Nazar, community = Basera, valet = DwaarAI Valet. */
+export const ALL_MODULES = ['gate', 'community', 'valet'];
+
 const DEFAULTS = { fastag: true, anpr: false, face: false, aiAnomaly: false };
 
 function tierFor({ fastag, anpr, face, aiAnomaly }) {
@@ -29,7 +32,17 @@ function shape(row) {
   const flags = row
     ? { fastag: row.fastag_enabled, anpr: row.anpr_enabled, face: row.face_enabled, aiAnomaly: row.ai_anomaly_enabled }
     : DEFAULTS;
-  return { ...flags, tier: tierFor(flags), updatedAt: row?.updated_at ? new Date(row.updated_at).toISOString() : null };
+  return {
+    ...flags,
+    tier: tierFor(flags),
+    updatedAt: row?.updated_at ? new Date(row.updated_at).toISOString() : null,
+    // Which products this property bought, and so which nav the portal shows.
+    //
+    // Absence means everything, never nothing. Every property predating this
+    // column has no row or a null here, and reading that as "no modules"
+    // would blank the nav of every existing customer at once.
+    modules: row?.modules?.length ? row.modules : ALL_MODULES,
+  };
 }
 
 // -- GET /entitlements (any authenticated role) -- caller's own community ----

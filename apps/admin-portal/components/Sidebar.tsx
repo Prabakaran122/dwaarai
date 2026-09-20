@@ -4,7 +4,37 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import Image from 'next/image';
 import logo from '@/public/dwaar-ai-logo.png';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
+import { apiFetch } from '@/lib/api';
+
+/**
+ * Which product owns each screen.
+ *
+ * The portal showed every property all fourteen items, which was fine while
+ * every customer was a gated society running the whole suite. A hotel that
+ * bought valet alone was reading Residents, Units, SOS Monitor and Notice
+ * Board -- and a product full of someone else's features reads as a product
+ * sold to someone else.
+ */
+const MODULE_OF: Record<string, 'gate' | 'community' | 'valet'> = {
+  '/': 'gate',
+  '/activity': 'gate',
+  '/vehicles': 'gate',
+  '/gates': 'gate',
+  '/guards': 'gate',
+  '/sos': 'gate',
+  '/incidents': 'gate',
+  '/reports': 'gate',
+  '/events': 'community',
+  '/community-events': 'community',
+  '/units': 'community',
+  '/residents': 'community',
+  '/notices': 'community',
+  '/valet': 'valet',
+};
+
+const ALL_MODULES = ['gate', 'community', 'valet'];
 
 const communityNav = [
   { href: '/', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1' },
@@ -34,14 +64,39 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout, selectedCommunityId } = useAuth();
 
+  // Starts as everything, so a slow or failed lookup shows the full nav
+  // rather than briefly blanking a working portal.
+  const [modules, setModules] = useState<string[]>(ALL_MODULES);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    apiFetch<{ data?: { modules?: string[] } }>('/entitlements')
+      .then((res) => {
+        const found = res?.data?.modules;
+        if (!cancelled && found?.length) setModules(found);
+      })
+      .catch(() => {
+        // A property we cannot ask keeps the portal it had. Hiding screens on
+        // a failed request would look exactly like losing access to them.
+      });
+    return () => { cancelled = true; };
+  }, [user, selectedCommunityId]);
+
   if (!user || pathname === '/login') return null;
 
   const isSuperAdmin = user.role === 'super_admin';
   const showCommunityNav = !isSuperAdmin || selectedCommunityId;
 
+  // Ops see every screen regardless: they are supporting properties that may
+  // hold any combination, and a hidden screen is one they cannot help with.
+  const allowed = isSuperAdmin
+    ? communityNav
+    : communityNav.filter((item) => modules.includes(MODULE_OF[item.href] ?? 'gate'));
+
   const navItems = [
     ...(isSuperAdmin ? superAdminNav : []),
-    ...(showCommunityNav ? communityNav : []),
+    ...(showCommunityNav ? allowed : []),
   ];
 
   return (
