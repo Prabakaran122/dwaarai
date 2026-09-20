@@ -420,3 +420,32 @@ export interface Subscription {
 }
 
 export const getSubscription = () => valetFetch<Subscription>('/admin/subscription');
+
+/**
+ * Downloads the vehicle log.
+ *
+ * Fetched with the session token and handed to the browser as a blob, not
+ * pointed at with an <a href>: the route is admin-only and a browser sends no
+ * Authorization header on a plain navigation, so a direct link would 401.
+ */
+export async function downloadVisitsCsv(days = 30): Promise<void> {
+  const token = typeof window === 'undefined' ? '' : localStorage.getItem('cg_admin_token') || '';
+  const communityId =
+    typeof window === 'undefined' ? null : localStorage.getItem('cg_selected_community_id');
+
+  const res = await fetch(`${VALET_BASE}/admin/visits.csv?days=${days}`, {
+    cache: 'no-store',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(communityId ? { 'X-Community-Id': communityId } : {}),
+    },
+  });
+  if (!res.ok) throw new ValetError(res.status, 'export_failed', 'Could not build that export');
+
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `vehicle-log-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}

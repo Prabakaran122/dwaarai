@@ -6,6 +6,7 @@ import Image from 'next/image';
 import logo from '@/public/dwaar-ai-logo.png';
 import { useAuth } from '@/lib/auth';
 import { useModules } from '@/lib/modules';
+import CrossSell from './CrossSell';
 
 /**
  * Which product owns each screen.
@@ -180,6 +181,7 @@ export default function Sidebar() {
           );
         })}
       </nav>
+      <CrossSell />
       <div className="p-4 border-t border-gray-200 space-y-3">
         <button
           onClick={logout}

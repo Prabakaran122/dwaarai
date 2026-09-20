@@ -766,3 +766,63 @@ router.get('/subscription', admin, async (req, res) => {
     pooled: false,
   });
 });
+
+// --- exports ---------------------------------------------------------------
+
+/**
+ * A field, made safe for a spreadsheet.
+ *
+ * Quoting anything containing a comma, quote or newline is not politeness: a
+ * vehicle make like "Swift, Dzire" would otherwise shift every later column on
+ * that row by one, and the corruption is invisible until someone reconciles a
+ * month of visits by hand.
+ */
+function csvField(value) {
+  if (value === null || value === undefined) return '';
+  const s = String(value);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * The vehicle log, as a file.
+ *
+ * Deliberately the same query the on-screen table runs rather than a second
+ * one -- an export that disagrees with the screen it was exported from is
+ * worse than no export.
+ */
+router.get('/visits.csv', admin, async (req, res) => {
+  const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
+
+  const rows = await queryRows(
+    `SELECT t.display_id, t.plate, t.vehicle_make, t.status,
+            t.created_at, t.closed_at, t.disputed,
+            cg.name AS created_guard_name,
+            EXTRACT(EPOCH FROM (COALESCE(t.closed_at, NOW()) - t.created_at))::bigint AS stay_seconds
+       FROM valet_tickets t
+       JOIN residents cg ON cg.id = t.created_by_guard_id
+      WHERE t.community_id = $1
+        AND t.created_at >= NOW() - ($2 || ' days')::interval
+      ORDER BY t.created_at DESC`,
+    [req.user.community_id, String(days)]
+  );
+
+  const header = [
+    'Ticket', 'Plate', 'Make', 'Status', 'Checked in', 'Checked out',
+    'Stay (minutes)', 'Attendant', 'Disputed',
+  ];
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    lines.push([
+      r.display_id, r.plate, r.vehicle_make, r.status,
+      r.created_at ? new Date(r.created_at).toISOString() : '',
+      r.closed_at ? new Date(r.closed_at).toISOString() : '',
+      Math.round((Number(r.stay_seconds) || 0) / 60),
+      r.created_guard_name, r.disputed ? 'yes' : 'no',
+    ].map(csvField).join(','));
+  }
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="vehicle-log-${stamp}.csv"`);
+  res.send(lines.join('\n'));
+});

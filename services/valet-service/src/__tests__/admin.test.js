@@ -830,3 +830,42 @@ describe('GET /admin/subscription', () => {
     expect(queryOne.mock.calls[1][0]).toMatch(/date_trunc\('month'/i);
   });
 });
+
+describe('GET /admin/visits.csv', () => {
+  it('streams the same rows the table shows, as CSV', async () => {
+    queryRows.mockResolvedValueOnce([{
+      display_id: 'DWR-0009', plate: 'KA 03 NJ 0435', vehicle_make: 'Swift',
+      status: 'final_closed', created_at: '2026-09-01T10:00:00Z',
+      closed_at: '2026-09-01T13:00:00Z', stay_seconds: 10800,
+      created_guard_name: 'Ramesh', disputed: false,
+    }]);
+
+    const res = await request(app, 'GET', '/admin/visits.csv?days=30', { token: adminToken() });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/csv/);
+    expect(res.headers['content-disposition']).toMatch(/attachment/);
+    expect(res.body).toMatch(/DWR-0009/);
+    expect(res.body).toMatch(/Ramesh/);
+  });
+
+  it('quotes a field containing a comma rather than splitting the row', async () => {
+    queryRows.mockResolvedValueOnce([{
+      display_id: 'DWR-0010', plate: 'KA 03 NJ 0435', vehicle_make: 'Swift, Dzire',
+      status: 'parked', created_at: '2026-09-01T10:00:00Z', closed_at: null,
+      stay_seconds: 60, created_guard_name: 'Ramesh', disputed: false,
+    }]);
+
+    const res = await request(app, 'GET', '/admin/visits.csv', { token: adminToken() });
+
+    // A make with a comma in it would otherwise shift every later column by
+    // one and quietly corrupt the whole export.
+    expect(res.body).toMatch(/"Swift, Dzire"/);
+  });
+
+  it('is admin-only, like every other venue-wide report', async () => {
+    const res = await request(app, 'GET', '/admin/visits.csv', { token: guardToken() });
+
+    expect(res.status).toBe(403);
+  });
+});

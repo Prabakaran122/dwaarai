@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  valetFetch, ValetError, VisitsReport, STATUS_LABEL, formatStay,
-} from '@/lib/valet';
+  valetFetch, ValetError, VisitsReport, STATUS_LABEL, formatStay, downloadVisitsCsv } from '@/lib/valet';
 
 /**
  * "What came through the valet stand recently" — the report a manager actually
@@ -27,6 +26,20 @@ function StatTile({ label, value, hint }: { label: string; value: string | numbe
 }
 
 export default function ValetVisitsPage() {
+  const [exporting, setExporting] = useState(false);
+
+  async function onExport() {
+    setExporting(true);
+    try {
+      await downloadVisitsCsv(days);
+    } catch {
+      // The table is still on screen and still correct; a failed export is
+      // not worth replacing it with an error.
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const [days, setDays] = useState<number>(30);
   const [data, setData] = useState<VisitsReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,6 +90,13 @@ export default function ValetVisitsPage() {
               {w} days
             </button>
           ))}
+          <button
+            onClick={onExport}
+            disabled={exporting}
+            className="ml-2 px-3 py-1.5 rounded-lg text-sm font-semibold text-gray-600 ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-40"
+          >
+            {exporting ? 'Building…' : 'Export CSV'}
+          </button>
         </div>
       </div>
 
