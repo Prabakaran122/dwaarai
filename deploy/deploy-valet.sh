@@ -176,9 +176,27 @@ sudo systemctl restart communitygate-valet
 say "Building the guest app (:3110)"
 # --------------------------------------------------------------------------
 pnpm install --filter valet-guest
+# NEXT_PUBLIC_* values are inlined at compile time, so a cached chunk keeps
+# whatever the variable was when it was last compiled. The WhatsApp number
+# changed while the sources did not, and the guest card page shipped a
+# "wa.me/" link with no number behind it -- a button that opened a chat with
+# nobody. Clearing the cache costs a minute and makes the built output a
+# function of the environment it was built with.
+rm -rf "$APP_DIR/apps/valet-guest/.next/cache"
 NEXT_PUBLIC_VALET_API_URL="https://$PUBLIC_HOST/valet-api" \
 NEXT_PUBLIC_WHATSAPP_NUMBER="${WHATSAPP_NUMBER:-}" \
   pnpm --filter valet-guest build
+
+# The number must survive into the build output, not merely into the build.
+#
+# Grepped on its own, not as "wa.me/<number>": the link is built from a
+# template literal, which compiles to concatenation, so the host and the
+# number are separate strings in the bundle and the joined form never appears.
+if [ -n "${WHATSAPP_NUMBER:-}" ] && \
+   ! grep -rq "${WHATSAPP_NUMBER}" "$APP_DIR/apps/valet-guest/.next/static/chunks/" 2>/dev/null; then
+  echo "WhatsApp number did not reach the guest bundle -- the card page link would be dead." >&2
+  exit 1
+fi
 
 sudo tee /etc/systemd/system/communitygate-valet-guest.service > /dev/null <<EOF
 [Unit]
@@ -192,6 +210,7 @@ WorkingDirectory=$APP_DIR/apps/valet-guest
 Environment=NODE_ENV=production
 Environment=PORT=3110
 Environment=NEXT_PUBLIC_VALET_API_URL=https://$PUBLIC_HOST/valet-api
+Environment=NEXT_PUBLIC_WHATSAPP_NUMBER=${WHATSAPP_NUMBER:-}
 ExecStart=/usr/bin/npx next start -p 3110
 Restart=always
 RestartSec=5
