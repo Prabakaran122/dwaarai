@@ -93,7 +93,23 @@ rsh "sudo systemctl restart communitygate-api && sleep 5 && systemctl is-active 
 curl -fsS --max-time 20 https://dwaarai.com/api/v1/health >/dev/null && echo "  api-gateway answering"
 
 say "Running the repo's deploy script"
-rsh "cd /opt/communitygate && sudo -u ec2-user bash deploy/deploy-valet.sh 2>&1 | tail -40"
+# Forwarded explicitly. Environment set for this script lives on the laptop;
+# the deploy runs over ssh, so without this the remote script sees none of it,
+# writes empty Environment= lines, and reports a clean success with the
+# integration switched off -- which is exactly what it did once.
+#
+# Only names, never values, are echoed: these are credentials.
+FORWARD=""
+for v in WHATSAPP_PROVIDER WHATSAPP_NUMBER WHATSAPP_COUNTRY_CODE \
+         AUTHKEY_API_KEY MSG91_AUTH_KEY WHATSAPP_WEBHOOK_SECRET \
+         WHATSAPP_TEMPLATE_CAR_READY ANPR_SERVICE_URL FACE_RECOGNITION_URL; do
+  if [ -n "${!v:-}" ]; then
+    FORWARD="$FORWARD $v=$(printf %q "${!v}")"
+    echo "  forwarding $v"
+  fi
+done
+
+rsh "cd /opt/communitygate && sudo -u ec2-user env$FORWARD bash deploy/deploy-valet.sh 2>&1 | tail -40"
 
 say "Verifying"
 curl -fsS --max-time 20 https://dwaarai.com/valet-api/health && echo
