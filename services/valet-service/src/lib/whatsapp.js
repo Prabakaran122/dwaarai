@@ -20,6 +20,18 @@ const authkeyIoKey = () => process.env.AUTHKEY_API_KEY || '';
 const fromNumber = () => process.env.WHATSAPP_NUMBER || '';
 const defaultCountryCode = () => process.env.WHATSAPP_COUNTRY_CODE || '91';
 
+/**
+ * Whether this provider can send anything other than an approved template.
+ *
+ * authkey.io cannot: a request without a `wid` is answered
+ * { status: 'Fail', Message: 'Nothing To Do' }. Every message it sends is a
+ * template, which changes what the caller is allowed to say rather than just
+ * how it is sent -- so it is asked, not discovered by failing.
+ */
+export function supportsFreeForm() {
+  return provider() !== 'authkey';
+}
+
 export function isConfigured() {
   // No sender number: authkey.io takes only the recipient and sends from
   // whatever number the account has registered, and exposes no API to read

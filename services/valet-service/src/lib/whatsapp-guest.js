@@ -1,4 +1,4 @@
-import { sendText, sendTemplate } from './whatsapp.js';
+import { sendText, sendTemplate, supportsFreeForm } from './whatsapp.js';
 
 /**
  * Everything the guest is ever told, and the one decision about how to tell
@@ -75,8 +75,46 @@ export function notifyCardHeld(waId, venueName) {
   );
 }
 
+/**
+ * One approved template per thing worth saying.
+ *
+ * A provider that cannot send free text can only say what has been approved
+ * in advance, so the set of templates *is* the set of things this product can
+ * tell a guest. With only car_ready configured, every notification said
+ * "ready for collection" -- including the one sent the moment a car was
+ * parked, which is how a guest was told to come and collect a car that had
+ * just been handed over.
+ */
+const TEMPLATE_FOR = {
+  bound: () => process.env.WHATSAPP_TEMPLATE_CHECKED_IN,
+  accepted: () => process.env.WHATSAPP_TEMPLATE_ON_THE_WAY,
+  en_route: () => process.env.WHATSAPP_TEMPLATE_ON_THE_WAY,
+  arrived: () => process.env.WHATSAPP_TEMPLATE_CAR_READY || 'car_ready',
+};
+
+/** What each template's {{1}}, {{2}}, {{3}} are filled with. */
+function templateVars(t, kind) {
+  const venue = t.community_name || 'Your venue';
+  if (kind === 'bound') {
+    const car = [t.vehicle_make, t.plate].filter(Boolean).join(' - ');
+    return [venue, car || 'Your vehicle', t.display_id || ''];
+  }
+  return [venue, t.display_id || '', trackUrl(t)];
+}
+
 export async function notifyGuest(ticket, kind) {
   if (!ticket?.phone_number) return { status: 'skipped' };
+
+  // Asked up front rather than discovered by a failed send, because it
+  // changes what may be said and not merely how.
+  if (!supportsFreeForm()) {
+    const wid = TEMPLATE_FOR[kind]?.();
+    // Silence beats a wrong message. Telling a guest their car is ready when
+    // it is still being fetched sends them to the kerb for a car that is not
+    // there, and the tracking link they already hold is live either way.
+    if (!wid) return { status: 'skipped', reason: 'no_template_for_kind' };
+    return sendTemplate(ticket.phone_number, wid, templateVars(ticket, kind));
+  }
 
   if (withinWindow(ticket)) {
     const free = await sendText(ticket.phone_number, compose(ticket, kind));

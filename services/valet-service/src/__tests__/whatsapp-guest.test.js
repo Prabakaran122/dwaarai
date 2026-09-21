@@ -4,6 +4,8 @@ vi.mock('../lib/whatsapp.js', () => ({
   isConfigured: vi.fn(() => true),
   sendText: vi.fn(async () => ({ status: 'sent' })),
   sendTemplate: vi.fn(async () => ({ status: 'sent' })),
+  // Mirrors the real one: free-form is available unless the provider is authkey.
+  supportsFreeForm: vi.fn(() => (process.env.WHATSAPP_PROVIDER || '') !== 'authkey'),
 }));
 
 import { sendText, sendTemplate } from '../lib/whatsapp.js';
@@ -135,5 +137,58 @@ describe('when free-form is not available on the provider', () => {
     // Skipped means nothing is configured. Retrying as a template would just
     // be a second skip, and would read in the logs as a real attempt.
     expect(sendTemplate).not.toHaveBeenCalled();
+  });
+});
+
+describe('on a provider with no free-form messages', () => {
+  const ticket = (extra = {}) => ({
+    phone_number: '919003143250',
+    whatsapp_last_inbound_at: new Date().toISOString(),
+    community_name: 'Palm Meadows',
+    display_id: 'DWR-0009',
+    claim_code: 'B73V5M',
+    plate: 'TN09AB1234',
+    vehicle_make: 'Toyota Innova',
+    ...extra,
+  });
+
+  beforeEach(() => {
+    process.env.WHATSAPP_PROVIDER = 'authkey';
+    process.env.WHATSAPP_TEMPLATE_CAR_READY = '49385';
+    process.env.WHATSAPP_TEMPLATE_CHECKED_IN = '49411';
+    delete process.env.WHATSAPP_TEMPLATE_ON_THE_WAY;
+  });
+
+  it('tells a guest their car is checked in, not that it is ready', async () => {
+    await notifyGuest(ticket(), 'bound');
+
+    // authkey.io has no free-form path at all, so every message is a template
+    // and there is exactly one per thing worth saying. With a single template
+    // the fallback told a guest whose car had just been parked that it was
+    // ready for collection.
+    expect(sendText).not.toHaveBeenCalled();
+    expect(sendTemplate).toHaveBeenCalledWith('919003143250', '49411', expect.anything());
+  });
+
+  it('uses the ready template when the car has actually arrived', async () => {
+    await notifyGuest(ticket({ status: 'arrived' }), 'arrived');
+    expect(sendTemplate).toHaveBeenCalledWith('919003143250', '49385', expect.anything());
+  });
+
+  it('says nothing rather than something untrue when no template fits', async () => {
+    const res = await notifyGuest(ticket(), 'accepted');
+
+    // No on-the-way template configured. Saying "ready for collection" to a
+    // guest whose car is still being fetched sends them to the kerb for a car
+    // that is not there -- worse than silence, and the tracking link they
+    // already have is live.
+    expect(sendTemplate).not.toHaveBeenCalled();
+    expect(res.status).toBe('skipped');
+  });
+
+  it('still sends free-form on a provider that supports it', async () => {
+    process.env.WHATSAPP_PROVIDER = 'msg91';
+    await notifyGuest(ticket(), 'bound');
+    expect(sendText).toHaveBeenCalled();
   });
 });
