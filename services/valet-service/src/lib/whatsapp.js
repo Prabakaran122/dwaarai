@@ -234,3 +234,25 @@ export function normalizeInbound(body) {
 
   return { id: String(id), from: String(body.from ?? body.mobile ?? body.sender ?? ''), text: String(text) };
 }
+
+/**
+ * Constant-time compare of a shared secret carried in the webhook URL.
+ *
+ * For providers that cannot sign. authkey.io's webhook console offers a URL,
+ * a method and a JSON toggle -- and no signing secret of any kind, so an HMAC
+ * check would reject every message it ever sent.
+ *
+ * This is genuinely weaker than a signature: it authenticates the caller but
+ * proves nothing about the body, so a tampered payload from someone holding
+ * the URL would pass. It is therefore the fallback, consulted only when no
+ * signature is offered, and the URL must be treated as a credential -- it
+ * belongs in the provider's console, never in a log or a bug report.
+ */
+export function verifyUrlToken(token) {
+  const secret = process.env.WHATSAPP_WEBHOOK_SECRET || '';
+  if (!secret || !token) return false;
+
+  const a = Buffer.from(secret);
+  const b = Buffer.from(String(token));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}

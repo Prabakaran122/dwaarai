@@ -1,6 +1,6 @@
 import { asyncRouter } from '../lib/async-router.js';
 import { query, queryOne } from '../db.js';
-import { verifySignature, normalizeInbound } from '../lib/whatsapp.js';
+import { verifySignature, verifyUrlToken, normalizeInbound } from '../lib/whatsapp.js';
 import { notifyGuest, notifyCardHeld } from '../lib/whatsapp-guest.js';
 import { normalizeClaimCode } from '../lib/claim-code.js';
 import { logEvent } from '../lib/events.js';
@@ -52,7 +52,14 @@ function recordInbound(messageId, ticketId) {
 }
 
 router.post('/whatsapp', async (req, res) => {
-  if (!verifySignature(req.rawBody, req.headers['x-whatsapp-signature'])) {
+  // A signature when the provider offers one, the URL token when it cannot.
+  // Preferring the signature means a provider that can sign is never silently
+  // downgraded to the weaker check just because a token is also present.
+  const signature = req.headers['x-whatsapp-signature'];
+  const authentic = signature
+    ? verifySignature(req.rawBody, signature)
+    : verifyUrlToken(req.query.token);
+  if (!authentic) {
     return res.status(401).json({ error: 'bad_signature' });
   }
 

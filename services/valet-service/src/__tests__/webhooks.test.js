@@ -204,3 +204,50 @@ describe('an MSG91-shaped delivery', () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe('providers that cannot sign', () => {
+  /**
+   * authkey.io's webhook console offers a URL, a method and a JSON toggle --
+   * and no signing secret of any kind. HMAC was designed here for MSG91 and
+   * would reject every message this provider ever sends.
+   *
+   * The fallback is a secret carried in the URL, which is what a provider
+   * without signing can actually do. It is weaker than HMAC -- it does not
+   * prove the body is untampered -- so it is only consulted when no signature
+   * is offered, and compared in constant time like the real thing.
+   */
+  const inboundBody = { messageId: 'wamid.tok1', from: '919876543210', content: JSON.stringify({ text: '4K7QP2 CAR' }) };
+
+  it('accepts a request carrying the shared token in the URL', async () => {
+    queryOne.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: 't1', claim_code: '4K7QP2', phone_number: '919876543210',
+      status: 'parked', community_name: 'The Leela', display_id: 'DWR-0042',
+    });
+
+    const res = await request(app, 'POST', '/webhooks/whatsapp?token=shh', { body: inboundBody });
+
+    expect(res.status).toBe(200);
+    const sql = query.mock.calls.map((c) => c[0]).join(' ');
+    expect(sql).toMatch(/status\s*=\s*'retrieval_requested'/);
+  });
+
+  it('refuses a wrong token', async () => {
+    const res = await request(app, 'POST', '/webhooks/whatsapp?token=nope', { body: inboundBody });
+    expect(res.status).toBe(401);
+  });
+
+  it('still refuses a request with neither signature nor token', async () => {
+    const res = await request(app, 'POST', '/webhooks/whatsapp', { body: inboundBody });
+    expect(res.status).toBe(401);
+  });
+
+  it('still accepts a properly signed request, so MSG91 keeps working', async () => {
+    queryOne.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: 't1', claim_code: '4K7QP2', phone_number: '919876543210',
+      status: 'parked', community_name: 'The Leela', display_id: 'DWR-0042',
+    });
+
+    const res = await signedPost(inbound('4K7QP2 CAR', { messageId: 'wamid.sig1' }));
+    expect(res.status).toBe(200);
+  });
+});
