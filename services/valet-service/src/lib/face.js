@@ -80,7 +80,13 @@ export async function vectorize(scanB64) {
     if (!res.ok) return null;
     const { vector } = await res.json();
     if (!vector) return null;
-    return Buffer.from(typeof vector === 'string' ? vector : JSON.stringify(vector));
+    // Decoded, not re-wrapped. Buffer.from(b64) with no encoding stores the
+    // ASCII of the base64 text, which is longer than the vector and decodes
+    // to nothing -- and goes back to /match double-encoded, so an enrolment
+    // could never match the person who made it.
+    if (typeof vector === 'string') return Buffer.from(vector, 'base64');
+    if (Array.isArray(vector)) return Buffer.from(Float32Array.from(vector).buffer);
+    return null;
   } catch {
     return null;
   }

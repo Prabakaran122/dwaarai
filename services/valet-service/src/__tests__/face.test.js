@@ -1,62 +1,71 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { isRecognitionConfigured, matchAttendant } from '../lib/face.js';
+import { vectorize, matchAttendant, isRecognitionConfigured } from '../lib/face.js';
 
-const ORIGINAL = { ...process.env };
-
+const realFetch = global.fetch;
 beforeEach(() => {
-  vi.unstubAllGlobals();
-  process.env.FACE_RECOGNITION_URL = 'http://face:9000';
+  process.env.FACE_RECOGNITION_URL = 'http://face.local';
 });
-afterEach(() => { process.env = { ...ORIGINAL }; });
+afterEach(() => {
+  global.fetch = realFetch;
+  delete process.env.FACE_RECOGNITION_URL;
+});
 
-const vector = Buffer.from('enrolled-vector');
+/** A vector the way the service sends it: float32 bytes, base64. */
+function serviceVector(nums) {
+  return Buffer.from(Float32Array.from(nums).buffer).toString('base64');
+}
 
-describe('verifying the attendant at shift start', () => {
-  it('confirms a match above the threshold', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true, json: async () => ({ matched: true, confidence: 0.93 }),
-    }));
+describe('storing what the recogniser returns', () => {
+  it('decodes the base64 rather than storing the text of it', async () => {
+    const b64 = serviceVector([0.1, 0.2, 0.3]);
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ vector: b64 }) });
 
-    expect(await matchAttendant('scan', vector)).toEqual({
-      available: true, verified: true, confidence: 0.93,
-    });
+    const stored = await vectorize('scan');
+
+    // Buffer.from(b64) without an encoding stores the ASCII of the base64,
+    // which is longer than the vector and decodes to nothing. Sent back to
+    // /match it arrives double-encoded, so an enrolment could never match the
+    // person who made it -- silently, and only once a recogniser existed.
+    expect(stored.length).toBe(12);
+    expect(stored.toString('base64')).toBe(b64);
   });
 
-  it('reports a failed match as a failed match, not an error', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true, json: async () => ({ matched: false, confidence: 0.31 }),
-    }));
+  it('accepts a plain array of numbers too', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ vector: [0.5, 0.25] }) });
 
-    // Somebody else holding the phone is the thing this exists to catch, and
-    // it is an answer rather than a fault.
-    expect(await matchAttendant('scan', vector)).toEqual({
-      available: true, verified: false, confidence: 0.31,
-    });
+    const stored = await vectorize('scan');
+
+    expect(stored.length).toBe(8);
+    expect(Array.from(new Float32Array(stored.buffer, stored.byteOffset, 2))).toEqual([0.5, 0.25]);
   });
 
-  it('is unavailable rather than false when no service is configured', async () => {
+  it('returns null when there is no recogniser, so nothing is half-enrolled', async () => {
     delete process.env.FACE_RECOGNITION_URL;
-    const f = vi.fn();
-    vi.stubGlobal('fetch', f);
-
-    // "We could not check" and "we checked and it was not them" must never
-    // collapse into the same answer in an audit trail.
-    expect(await matchAttendant('scan', vector)).toEqual({ available: false });
+    expect(await vectorize('scan')).toBeNull();
     expect(isRecognitionConfigured()).toBe(false);
-    expect(f).not.toHaveBeenCalled();
+  });
+});
+
+describe('matching an attendant', () => {
+  it('sends the stored vector back in the shape it came in', async () => {
+    const b64 = serviceVector([0.1, 0.2, 0.3]);
+    const stored = Buffer.from(b64, 'base64');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ matched: true, confidence: 0.97 }),
+    });
+    global.fetch = fetchMock;
+
+    const res = await matchAttendant('selfie', stored);
+
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(sent.candidates[0].vector).toBe(b64);
+    expect(res).toEqual({ available: true, verified: true, confidence: 0.97 });
   });
 
-  it('is unavailable when the attendant has never enrolled', async () => {
-    const f = vi.fn();
-    vi.stubGlobal('fetch', f);
+  it('says the check did not happen when the service is down', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('refused'));
 
-    expect(await matchAttendant('scan', null)).toEqual({ available: false });
-    expect(f).not.toHaveBeenCalled();
-  });
-
-  it('is unavailable, not verified, when the service is unreachable', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('down')));
-
-    expect(await matchAttendant('scan', vector)).toEqual({ available: false });
+    // Not the same as "it was not them".
+    expect(await matchAttendant('selfie', Buffer.from('v'))).toEqual({ available: false });
   });
 });

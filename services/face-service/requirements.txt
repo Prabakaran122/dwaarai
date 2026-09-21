@@ -1,0 +1,8 @@
+# CPU only, and deliberately small: the box this runs on has 2 vCPU and under
+# 3GB of RAM shared with everything else.
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+numpy==1.26.4
+opencv-python-headless==4.9.0.80
+onnxruntime==1.17.3
+insightface==0.7.3

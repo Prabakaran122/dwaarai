@@ -29,8 +29,14 @@ export async function vectorize(scanB64) {
     throw new Error(`Recognition service vectorize failed (${res.status})`);
   }
   const { vector } = await res.json();
-  // vector expected as a base64 / array — store as opaque bytes.
-  return Buffer.from(typeof vector === 'string' ? vector : JSON.stringify(vector));
+    if (!vector) return null;
+    // Decoded, not re-wrapped. Buffer.from(b64) with no encoding stores the
+    // ASCII of the base64 text, which is longer than the vector and decodes
+    // to nothing -- and goes back to /match double-encoded, so an enrolment
+    // could never match the person who made it.
+    if (typeof vector === 'string') return Buffer.from(vector, 'base64');
+    if (Array.isArray(vector)) return Buffer.from(Float32Array.from(vector).buffer);
+    return null;
 }
 
 /**
