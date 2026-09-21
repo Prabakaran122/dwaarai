@@ -222,11 +222,24 @@ export default function EntitlementsPage() {
                       disabled={isLast}
                       data-testid={`module-${m.key}`}
                       onChange={() => toggleModule(m.key)}
-                      className="mt-0.5 h-4 w-4 rounded border-gray-300 disabled:opacity-40"
+                      // Deliberately not dimmed when it is the last one. A
+                      // faded tick reads as "this got switched off too",
+                      // which is the opposite of what it means: it is on and
+                      // cannot be turned off. The note beside it says so.
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300"
                     />
                     <span>
-                      <span className="block text-sm font-bold text-gray-900">{m.label}</span>
-                      <span className="block text-xs text-gray-400">{m.description}</span>
+                      <span className="block text-sm font-bold text-gray-900">
+                        {m.label}
+                        {isLast && (
+                          <span className="ml-2 align-middle rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-teal-700">
+                            Kept
+                          </span>
+                        )}
+                      </span>
+                      <span className="block text-xs text-gray-400">
+                        {isLast ? 'The only product left — a property must keep at least one.' : m.description}
+                      </span>
                     </span>
                   </label>
                 );

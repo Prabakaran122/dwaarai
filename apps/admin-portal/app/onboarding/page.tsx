@@ -198,11 +198,22 @@ export default function OnboardingPage() {
                   checked={on}
                   disabled={isLast}
                   onChange={() => toggleModule(m.key)}
-                  className="mt-0.5 h-4 w-4 rounded border-gray-300 disabled:opacity-40"
+                  // Not dimmed when it is the last one: a faded tick reads as
+                  // "switched off", which is the opposite of the truth.
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300"
                 />
                 <span>
-                  <span className="block text-sm font-bold text-gray-900">{m.label}</span>
-                  <span className="block text-xs text-gray-400">{m.description}</span>
+                  <span className="block text-sm font-bold text-gray-900">
+                    {m.label}
+                    {isLast && (
+                      <span className="ml-2 align-middle rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-teal-700">
+                        Kept
+                      </span>
+                    )}
+                  </span>
+                  <span className="block text-xs text-gray-400">
+                    {isLast ? 'The only product left — a property must keep at least one.' : m.description}
+                  </span>
                 </span>
               </label>
             );
