@@ -10,6 +10,9 @@ function getCommunityId(): string | null {
   return localStorage.getItem('cg_selected_community_id');
 }
 
+/** Where a signed-out user belongs. basePath is '/admin'. */
+const LOGIN_PATH = '/admin/login';
+
 export async function apiFetch<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const communityId = getCommunityId();
@@ -28,7 +31,14 @@ export async function apiFetch<T = unknown>(path: string, options: RequestInit =
     if (typeof window !== 'undefined') {
       localStorage.removeItem('cg_admin_token');
       localStorage.removeItem('cg_admin_user');
-      window.location.href = '/admin/login';
+      // Assigning href to the page you are already on is a full reload, and
+      // anything that fetches on mount turns that into an endless refresh.
+      // That is exactly what the portal did on its own login screen: a
+      // request fired there, 401'd because there is no session on a login
+      // page, and reloaded into the same request.
+      if (window.location.pathname !== LOGIN_PATH) {
+        window.location.href = LOGIN_PATH;
+      }
     }
     throw new Error('Unauthorized');
   }

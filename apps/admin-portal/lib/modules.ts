@@ -19,6 +19,12 @@ export function useModules(): { modules: string[]; valetOnly: boolean } {
 
   useEffect(() => {
     let cancelled = false;
+    // Nothing to ask on behalf of nobody. This hook sits in AuthGuard, which
+    // renders on the login page too, so without this it fired a request that
+    // could only ever 401 -- and the handler for that used to reload the page.
+    if (typeof window !== 'undefined' && !localStorage.getItem('cg_admin_token')) {
+      return () => { cancelled = true; };
+    }
     apiFetch<{ data?: { modules?: string[] } }>('/entitlements')
       .then((res) => {
         const found = res?.data?.modules;

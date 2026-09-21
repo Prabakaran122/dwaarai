@@ -49,7 +49,11 @@ export async function valetFetch<T = unknown>(path: string, options: RequestInit
 
   if (res.status === 401 && typeof window !== 'undefined') {
     localStorage.removeItem('cg_admin_token');
-    window.location.href = '/admin/login';
+    // Never onto the page we are already on -- that is a reload, and a
+    // polling screen makes it a loop.
+    if (window.location.pathname !== '/admin/login') {
+      window.location.href = '/admin/login';
+    }
     throw new ValetError(401, 'unauthorized', 'Session expired');
   }
 
