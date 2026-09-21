@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { query, queryOne, queryRows } from '../db/queries.js';
+import pool from '../db/pool.js';
 import { success, error } from '../middleware/response.js';
 import { authenticateJWT } from '../middleware/auth.js';
 
@@ -514,3 +515,99 @@ router.post('/admin/set-guard-password', adminOnly, async (req, res) => {
 // /admin/dashboard/summary (routes/dashboard.js).
 
 export default router;
+
+// -- POST /admin/onboarding/valet ---------------------------------------------
+
+const onboardValetSchema = z.object({
+  property: z.object({
+    name: z.string().min(1).max(200),
+    address: z.string().max(500).optional(),
+    contactName: z.string().max(200).optional(),
+    contactPhone: z.string().max(20).optional(),
+  }),
+  admin: z.object({
+    name: z.string().min(1).max(200),
+    username: z.string().min(3).max(100),
+    // Long enough to be worth setting. The person typing it is handing it to
+    // a customer, and "admin123" is how this product already has a live
+    // account nobody has rotated.
+    password: z.string().min(8).max(200),
+  }),
+  modules: z.array(z.enum(['gate', 'community', 'valet'])).nonempty().optional(),
+});
+
+/**
+ * Stands up a new valet property in one act.
+ *
+ * Onboarding is three writes across three tables -- the property, what it was
+ * sold, and the login that will administer it -- and until now it was three
+ * screens with nothing tying them together. Half-finished was a real state:
+ * a property on the list with no way to sign into it looks onboarded from
+ * every angle and cannot be used, and nobody finds out until the customer
+ * tries. So all three go in one transaction, or none of them do.
+ *
+ * Cards, slots and branding are deliberately not here. They belong to the
+ * property once it exists, they are edited repeatedly afterwards, and a valet
+ * stand can open without them.
+ */
+router.post('/admin/onboarding/valet', superOnly, async (req, res) => {
+  const parsed = onboardValetSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return error(res, 'Validation error', 400, parsed.error.issues);
+  }
+  const { property, admin, modules } = parsed.data;
+  // This flow exists to sell valet; anything wider is an explicit choice.
+  const sold = modules ?? ['valet'];
+
+  // Everything from here is inside a try. Express 4 does not catch a rejected
+  // promise from an async handler: it leaves the caller holding a socket that
+  // never answers, which is worse than any error code. The username lookup,
+  // the hash and pool.connect() can all fail, so none of them sit outside.
+  let client;
+  try {
+    // Checked before opening a transaction: a taken username is the one
+    // failure worth reporting as itself rather than as a rolled-back 500.
+    const taken = await queryOne('SELECT id FROM admins WHERE username = $1', [admin.username]);
+    if (taken) return error(res, 'Username already exists', 409);
+
+    const password_hash = await bcrypt.hash(admin.password, 10);
+    client = await pool.connect();
+    await client.query('BEGIN');
+
+      const created = await client.query(
+        `INSERT INTO communities (name, address, contact_name, contact_phone)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [property.name, property.address || null, property.contactName || null, property.contactPhone || null]
+      );
+      const communityId = created.rows[0].id;
+
+      await client.query(
+        `INSERT INTO community_entitlements
+           (community_id, fastag_enabled, anpr_enabled, face_enabled, ai_anomaly_enabled, modules, updated_at, updated_by)
+         VALUES ($1, false, false, false, false, $2, NOW(), $3)`,
+        [communityId, sold, req.user.sub]
+      );
+
+      await client.query(
+        `INSERT INTO admins (name, username, password_hash, role, community_id)
+         VALUES ($1, $2, $3, 'community_admin', $4)`,
+        [admin.name, admin.username, password_hash, communityId]
+      );
+
+      await client.query('COMMIT');
+      return success(res, {
+        communityId,
+        communityName: property.name,
+        adminUsername: admin.username,
+        modules: sold,
+      }, 201);
+  } catch (err) {
+    // Only roll back a transaction that was actually opened -- a failure in
+    // pool.connect() leaves nothing to roll back and no client to release.
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    console.error('POST /admin/onboarding/valet error:', err);
+    return error(res, 'Internal server error', 500);
+  } finally {
+    if (client) client.release();
+  }
+});
