@@ -4,6 +4,7 @@ import { z } from 'zod';
 import pool, { query, queryOne, queryRows } from '../db.js';
 import { newSessionToken, nextDisplayId } from '../lib/tokens.js';
 import { normalizePlate } from '../lib/plate.js';
+import { normalizePhone } from '../lib/phone.js';
 import { newClaimCode } from '../lib/claim-code.js';
 import { toDataUrl } from '../lib/qr.js';
 import { logEvent } from '../lib/events.js';
@@ -406,10 +407,16 @@ router.post('/tickets/:token/complete', guard, async (req, res) => {
     return res.status(400).json({ error: 'invalid_stay_end' });
   }
 
-  const phoneNumber = parsed.data.phoneNumber ? parsed.data.phoneNumber.replace(/\s+/g, '') : null;
-  if (phoneNumber && !/^(\+91)?[6-9]\d{9}$/.test(phoneNumber)) {
+  const typedPhone = parsed.data.phoneNumber ? parsed.data.phoneNumber.replace(/\s+/g, '') : null;
+  if (typedPhone && !/^(\+91)?[6-9]\d{9}$/.test(typedPhone)) {
     return res.status(400).json({ error: 'invalid_phone' });
   }
+  // Stored with its country code, the shape WhatsApp delivers. A guard types
+  // ten digits and the guest's own messages arrive with twelve; keeping both
+  // shapes in one column is what made a guest unreachable from their own
+  // WhatsApp. Matching still uses the last ten digits, for rows written
+  // before this.
+  const phoneNumber = typedPhone ? normalizePhone(typedPhone) : null;
 
   const plate = parsed.data.plate.toUpperCase();
   await query(

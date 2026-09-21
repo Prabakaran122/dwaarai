@@ -306,3 +306,43 @@ describe('a guest who replies exactly as we told them to', () => {
     expect(byPhone).toHaveLength(0);
   });
 });
+
+describe('a number written one way and messaged from another', () => {
+  const ak = (text, from = '919003143250') => ({
+    channel: 'wapp',
+    eventContent: { message: { id: `wamid.${text}${from}`, from, text: { body: text } } },
+  });
+  const post = (b) => request(app, 'POST', '/webhooks/whatsapp?token=shh', { body: b });
+
+  it('finds a ticket whose number the guard typed without a country code', async () => {
+    queryOne
+      .mockResolvedValueOnce(null)   // dedup
+      .mockResolvedValueOnce({       // by phone
+        id: 't10', claim_code: 'B73V5M', phone_number: '9003143250',
+        status: 'parked', community_name: 'Palm Meadows', display_id: 'DWR-0010',
+      });
+
+    await post(ak('CAR'));
+
+    // The guard types ten digits; WhatsApp delivers twelve. Matching with '='
+    // meant a guest could never reach a ticket a guard had entered by hand.
+    const lookup = queryOne.mock.calls.find((c) => /phone/i.test(c[0]));
+    expect(lookup[0]).toMatch(/RIGHT\(/i);
+    const sql = query.mock.calls.map((c) => c[0]).join(' ');
+    expect(sql).toMatch(/status\s*=\s*'retrieval_requested'/);
+  });
+
+  it('treats the guest as the bound one despite the shorter stored form', async () => {
+    queryOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 't10', claim_code: 'B73V5M', phone_number: '9003143250',
+        status: 'parked', community_name: 'Palm Meadows', display_id: 'DWR-0010',
+      });
+
+    const res = await post(ak('CAR'));
+
+    // Not "already bound to someone else" -- it is the same person.
+    expect(res.body.alreadyBound).toBeUndefined();
+  });
+});

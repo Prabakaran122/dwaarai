@@ -1,6 +1,7 @@
 import { asyncRouter } from '../lib/async-router.js';
 import { query, queryOne } from '../db.js';
 import { verifySignature, verifyUrlToken, normalizeInbound } from '../lib/whatsapp.js';
+import { phoneKey } from '../lib/phone.js';
 import { notifyGuest, notifyCardHeld } from '../lib/whatsapp-guest.js';
 import { normalizeClaimCode } from '../lib/claim-code.js';
 import { logEvent } from '../lib/events.js';
@@ -63,6 +64,29 @@ router.post('/whatsapp', async (req, res) => {
     return res.status(401).json({ error: 'bad_signature' });
   }
 
+  // Flag-gated (WHATSAPP_DEBUG_INBOUND=1), off by default, and kept rather
+  // than deleted: a provider's payload is the one thing here that cannot be
+  // learned from documentation, and this is the second time it was needed.
+  //
+  // Field *names* are what map a payload, so this records the shape and
+  // deliberately not the contents -- every value is reported as its type and
+  // length. An inbound webhook carries a guest's number and whatever they
+  // wrote, and logging that for every message would be a privacy problem
+  // outliving the question it answers.
+  if (process.env.WHATSAPP_DEBUG_INBOUND === '1') {
+    const shape = (v, depth = 0) => {
+      if (v === null || v === undefined) return String(v);
+      if (Array.isArray(v)) return depth > 3 ? 'array' : `[${v.slice(0, 2).map((x) => shape(x, depth + 1)).join(', ')}]`;
+      if (typeof v === 'object') {
+        if (depth > 3) return 'object';
+        return `{${Object.entries(v).map(([k, val]) => `${k}: ${shape(val, depth + 1)}`).join(', ')}}`;
+      }
+      if (typeof v === 'string') return `string(${v.length})`;
+      return typeof v;
+    };
+    console.log('[wa-inbound] shape:', shape(req.body));
+  }
+
   // Normalised here rather than read inline: MSG91 and Meta disagree on the
   // shape, and this route should not know which provider is configured.
   const message = normalizeInbound(req.body);
@@ -91,10 +115,11 @@ router.post('/whatsapp', async (req, res) => {
       `SELECT t.*, c.name AS community_name
          FROM valet_tickets t
          JOIN communities c ON c.id = t.community_id
-        WHERE t.phone_number = $1 AND t.status NOT IN ('final_closed', 'expired')
+        WHERE RIGHT(regexp_replace(t.phone_number, '\\D', '', 'g'), 10) = $1
+          AND t.status NOT IN ('final_closed', 'expired')
         ORDER BY t.created_at DESC
         LIMIT 1`,
-      [message.from]
+      [phoneKey(message.from)]
     );
     await recordInbound(message.id, own?.id || null);
     if (!own) return res.status(200).json({ ok: true, unmatched: true });
@@ -160,7 +185,9 @@ export default router;
  * the two must behave identically from this point on.
  */
 async function handleTicket(res, ticket, message) {
-  if (ticket.phone_number && ticket.phone_number !== message.from) {
+  // Compared on the last ten digits: a guard types ten, WhatsApp delivers
+  // twelve, and the same person written two ways is not two people.
+  if (ticket.phone_number && phoneKey(ticket.phone_number) !== phoneKey(message.from)) {
     // The window still refreshes so we could answer them, but the ticket does
     // not move to whoever scanned the screen last.
     await query(
