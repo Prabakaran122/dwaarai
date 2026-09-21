@@ -187,3 +187,84 @@ describe('inbound normalisation', () => {
     expect(normalizeInbound(undefined)).toBeNull();
   });
 });
+
+/**
+ * authkey.io is a different API in every respect: GET/POST to console.authkey.io,
+ * Basic auth rather than an authkey header, a numeric template id (`wid`) instead
+ * of a name, named bodyValues instead of an ordered array, and the country code
+ * split out of the number.
+ */
+describe('authkey.io transport', () => {
+  function capture(fn, response = { success: true }) {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => response });
+    vi.stubGlobal('fetch', fetchMock);
+    return fn().then((result) => ({
+      url: fetchMock.mock.calls[0]?.[0],
+      init: fetchMock.mock.calls[0]?.[1],
+      body: fetchMock.mock.calls[0] ? JSON.parse(fetchMock.mock.calls[0][1].body) : null,
+      result,
+    }));
+  }
+
+  beforeEach(() => {
+    process.env.WHATSAPP_PROVIDER = 'authkey';
+    process.env.AUTHKEY_API_KEY = 'testkey';
+    process.env.WHATSAPP_NUMBER = '919000000000';
+  });
+
+  it('is configured by its own key, not MSG91 s', async () => {
+    const { isConfigured } = await import('../lib/whatsapp.js');
+    expect(isConfigured()).toBe(true);
+
+    delete process.env.AUTHKEY_API_KEY;
+    expect(isConfigured()).toBe(false);
+  });
+
+  it('posts a template to requestjson.php with Basic auth', async () => {
+    const { url, init, body } = await capture(() => sendTemplate('919876543210', '4821', ['The Leela']));
+
+    expect(url).toBe('https://console.authkey.io/restapi/requestjson.php');
+    expect(init.headers.Authorization).toBe('Basic testkey');
+    expect(body.wid).toBe('4821');
+  });
+
+  it('splits the country code out of the number', async () => {
+    const { body } = await capture(() => sendTemplate('919876543210', '4821', []));
+
+    // The provider wants them apart; our waId is one international string.
+    expect(body.country_code).toBe('91');
+    expect(body.mobile).toBe('9876543210');
+  });
+
+  it('accepts a number that already lacks a country code', async () => {
+    const { body } = await capture(() => sendTemplate('9876543210', '4821', []));
+    expect(body.country_code).toBe('91');
+    expect(body.mobile).toBe('9876543210');
+  });
+
+  it('names the variables var1..varN, which is how the template reads them', async () => {
+    const { body } = await capture(() => sendTemplate('919876543210', '4821', ['The Leela', 'DWR-0042']));
+
+    expect(body.bodyValues).toEqual({ var1: 'The Leela', var2: 'DWR-0042' });
+  });
+
+  it('reports failure when the provider says the send failed', async () => {
+    const { result } = await capture(
+      () => sendTemplate('919876543210', '4821', []),
+      { success: false, message: 'Invalid authkey or expired user' }
+    );
+
+    // success:false with HTTP 200 is this provider's normal failure shape;
+    // reading only the status code would call it sent.
+    expect(result).toEqual({ status: 'failed' });
+  });
+
+  it('skips rather than claiming success when nothing is configured', async () => {
+    delete process.env.AUTHKEY_API_KEY;
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await sendTemplate('919876543210', '4821', [])).toEqual({ status: 'skipped' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

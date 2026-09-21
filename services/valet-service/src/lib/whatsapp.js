@@ -12,12 +12,60 @@ import crypto from 'crypto';
 const MSG91_WHATSAPP_URL =
   'https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/';
 
+const AUTHKEY_URL = 'https://console.authkey.io/restapi/requestjson.php';
+
 const provider = () => process.env.WHATSAPP_PROVIDER || '';
 const authKey = () => process.env.MSG91_AUTH_KEY || '';
+const authkeyIoKey = () => process.env.AUTHKEY_API_KEY || '';
 const fromNumber = () => process.env.WHATSAPP_NUMBER || '';
+const defaultCountryCode = () => process.env.WHATSAPP_COUNTRY_CODE || '91';
 
 export function isConfigured() {
+  if (provider() === 'authkey') return !!authkeyIoKey() && !!fromNumber();
   return provider() === 'msg91' && !!authKey() && !!fromNumber();
+}
+
+/**
+ * authkey.io wants the country code and the subscriber number apart; we carry
+ * one international string everywhere else, because that is what WhatsApp
+ * hands us on an inbound message.
+ *
+ * A number that already arrives without a country code is left alone and given
+ * the configured default -- guessing a code onto a ten-digit number is how a
+ * message ends up in another country.
+ */
+export function splitNumber(waId, fallbackCc = defaultCountryCode()) {
+  const digits = String(waId || '').replace(/\D/g, '');
+  if (digits.length > 10) {
+    return { country_code: digits.slice(0, digits.length - 10), mobile: digits.slice(-10) };
+  }
+  return { country_code: fallbackCc, mobile: digits };
+}
+
+/**
+ * One send, authkey.io's way.
+ *
+ * Reports rather than throws, exactly as the MSG91 path does. Note this
+ * provider answers HTTP 200 with { success: false } on a rejected send, so
+ * reading the status code alone would call a failure a delivery.
+ */
+async function postAuthkey(body) {
+  if (!isConfigured()) return { status: 'skipped' };
+  try {
+    const res = await fetch(AUTHKEY_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${authkeyIoKey()}`,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10000),
+    });
+    const data = await res.json().catch(() => null);
+    return data?.success === true ? { status: 'sent' } : { status: 'failed' };
+  } catch {
+    return { status: 'failed' };
+  }
 }
 
 /**
@@ -52,6 +100,16 @@ async function post(payload) {
  * looks at -- the request is accepted and the message reaches nobody.
  */
 export function sendText(waId, body) {
+  if (provider() === 'authkey') {
+    // Undocumented on this provider, whose every published path carries a
+    // template id. Attempted rather than assumed away: if it is rejected the
+    // caller sees 'failed' and falls back to a template, which always works.
+    return postAuthkey({
+      ...splitNumber(waId),
+      type: 'text',
+      body,
+    });
+  }
   return post({
     integrated_number: fromNumber(),
     content_type: 'text',
@@ -76,6 +134,19 @@ export function sendText(waId, body) {
  * Cloud API; sending it to MSG91 is a different API's vocabulary.
  */
 export function sendTemplate(waId, templateName, vars = []) {
+  if (provider() === 'authkey') {
+    // `wid` is a numeric template id from the authkey.io console, not a name.
+    // Variables are named var1..varN there, in the order the template declares
+    // its {#placeholders#}.
+    const bodyValues = {};
+    vars.forEach((v, i) => { bodyValues[`var${i + 1}`] = v; });
+    return postAuthkey({
+      ...splitNumber(waId),
+      wid: String(templateName),
+      type: 'text',
+      bodyValues,
+    });
+  }
   return post({
     integrated_number: fromNumber(),
     content_type: 'template',

@@ -86,3 +86,54 @@ describe('what the messages say', () => {
     expect(sendText.mock.calls[0][1]).not.toContain('a'.repeat(32));
   });
 });
+
+describe('when free-form is not available on the provider', () => {
+  it('falls back to the template rather than leaving the guest unnotified', async () => {
+    vi.mocked(sendText).mockResolvedValueOnce({ status: 'failed' });
+
+    const ticket = {
+      phone_number: '919876543210',
+      whatsapp_last_inbound_at: new Date().toISOString(),
+      community_name: 'The Leela',
+      display_id: 'DWR-0042',
+      claim_code: '4K7QP2',
+    };
+
+    const res = await notifyGuest(ticket, 'arrived');
+
+    // authkey.io publishes no free-form path. If the attempt is rejected the
+    // guest must still hear that their car is at the door -- a template always
+    // delivers, and hearing it slightly less naturally beats not hearing it.
+    expect(sendText).toHaveBeenCalled();
+    expect(sendTemplate).toHaveBeenCalled();
+    expect(res.status).toBe('sent');
+  });
+
+  it('does not send twice when the free-form message worked', async () => {
+    vi.mocked(sendText).mockResolvedValueOnce({ status: 'sent' });
+
+    await notifyGuest({
+      phone_number: '919876543210',
+      whatsapp_last_inbound_at: new Date().toISOString(),
+      community_name: 'The Leela',
+      claim_code: '4K7QP2',
+    }, 'arrived');
+
+    expect(sendTemplate).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back when the send was merely skipped', async () => {
+    vi.mocked(sendText).mockResolvedValueOnce({ status: 'skipped' });
+
+    await notifyGuest({
+      phone_number: '919876543210',
+      whatsapp_last_inbound_at: new Date().toISOString(),
+      community_name: 'The Leela',
+      claim_code: '4K7QP2',
+    }, 'arrived');
+
+    // Skipped means nothing is configured. Retrying as a template would just
+    // be a second skip, and would read in the logs as a real attempt.
+    expect(sendTemplate).not.toHaveBeenCalled();
+  });
+});

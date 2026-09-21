@@ -30,6 +30,7 @@ DATABASE_URL="${DATABASE_URL:-$(sudo sed -n 's/^Environment=DATABASE_URL=//p' "$
 # Read from the existing valet unit before this script rewrites it, so a key
 # set once on the box survives every later deploy without being re-supplied.
 MSG91_AUTH_KEY="${MSG91_AUTH_KEY:-$(sudo sed -n 's/^Environment=MSG91_AUTH_KEY=//p' "$VALET_UNIT" 2>/dev/null)}"
+AUTHKEY_API_KEY="${AUTHKEY_API_KEY:-$(sudo sed -n 's/^Environment=AUTHKEY_API_KEY=//p' "$VALET_UNIT" 2>/dev/null)}"
 # Inherited rather than set here: the gateway already points at a recogniser,
 # and valet must match faces against the same one the vectors were made by.
 # Two URLs would mean two vector spaces and every comparison failing.
@@ -148,6 +149,8 @@ Environment=WHATSAPP_PROVIDER=${WHATSAPP_PROVIDER:-}
 # reported skipped and nothing is ever sent -- quietly, because skipped is a
 # success as far as the ticket is concerned. It was missing entirely.
 Environment=MSG91_AUTH_KEY=$MSG91_AUTH_KEY
+Environment=AUTHKEY_API_KEY=$AUTHKEY_API_KEY
+Environment=WHATSAPP_COUNTRY_CODE=${WHATSAPP_COUNTRY_CODE:-91}
 Environment=WHATSAPP_NUMBER=${WHATSAPP_NUMBER:-}
 Environment=WHATSAPP_WEBHOOK_SECRET=${WHATSAPP_WEBHOOK_SECRET:-}
 Environment=WHATSAPP_TEMPLATE_CAR_READY=${WHATSAPP_TEMPLATE_CAR_READY:-car_ready}

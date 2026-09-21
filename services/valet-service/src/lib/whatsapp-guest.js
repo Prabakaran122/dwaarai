@@ -79,7 +79,14 @@ export async function notifyGuest(ticket, kind) {
   if (!ticket?.phone_number) return { status: 'skipped' };
 
   if (withinWindow(ticket)) {
-    return sendText(ticket.phone_number, compose(ticket, kind));
+    const free = await sendText(ticket.phone_number, compose(ticket, kind));
+    if (free.status !== 'failed') return free;
+    // Falls through to the template. authkey.io publishes no free-form path,
+    // so a rejection here may mean the provider simply cannot do it -- and a
+    // guest who never hears their car is at the door is a worse outcome than
+    // one who hears it in slightly stiffer wording. 'skipped' is deliberately
+    // not a fallback: nothing is configured, so the retry would only be a
+    // second skip that reads like a real attempt.
   }
 
   // One template covers every re-engagement. Utility category: "your car is
