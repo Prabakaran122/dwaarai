@@ -171,3 +171,52 @@ describe('which products a property bought', () => {
     expect(json.data.modules).toEqual(['gate', 'community', 'valet']);
   });
 });
+
+describe('PUT /entitlements/:communityId — modules', () => {
+  it('persists the modules a property was sold', async () => {
+    query.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+    const { status, json } = await request('PUT', '/api/v1/entitlements/c1', {
+      headers: { Authorization: `Bearer ${superAdmin}` },
+      body: { fastag: true, anpr: false, face: false, aiAnomaly: false, modules: ['valet'] },
+    });
+
+    expect(status).toBe(200);
+    // The column has to actually be written -- reading it back from the
+    // request body while the database keeps its default is how this was
+    // broken before.
+    const sql = query.mock.calls[0][0];
+    expect(sql).toMatch(/modules/);
+    expect(query.mock.calls[0][1]).toContainEqual(['valet']);
+    expect(json.data.modules).toEqual(['valet']);
+  });
+
+  it('leaves the stored modules alone when the caller does not mention them', async () => {
+    query.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+    queryOne.mockResolvedValueOnce({ modules: ['gate', 'valet'] });
+    const { status, json } = await request('PUT', '/api/v1/entitlements/c1', {
+      headers: { Authorization: `Bearer ${superAdmin}` },
+      body: { fastag: true, anpr: false, face: false, aiAnomaly: false },
+    });
+
+    // An older client that only knows about the four flags must not silently
+    // widen a valet-only property back to the whole suite.
+    expect(status).toBe(200);
+    expect(json.data.modules).toEqual(['gate', 'valet']);
+  });
+
+  it('refuses an empty module list rather than blanking a portal', async () => {
+    const { status } = await request('PUT', '/api/v1/entitlements/c1', {
+      headers: { Authorization: `Bearer ${superAdmin}` },
+      body: { fastag: true, anpr: false, face: false, aiAnomaly: false, modules: [] },
+    });
+    expect(status).toBe(400);
+  });
+
+  it('refuses a module nobody sells', async () => {
+    const { status } = await request('PUT', '/api/v1/entitlements/c1', {
+      headers: { Authorization: `Bearer ${superAdmin}` },
+      body: { fastag: true, anpr: false, face: false, aiAnomaly: false, modules: ['valet', 'spaceship'] },
+    });
+    expect(status).toBe(400);
+  });
+});

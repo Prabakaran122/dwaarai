@@ -12,6 +12,14 @@ const putSchema = z.object({
   anpr: z.boolean(),
   face: z.boolean(),
   aiAnomaly: z.boolean(),
+  // Optional, and absence is not the empty list. A client that predates
+  // modules sends only the four flags, and must leave whatever this property
+  // was sold exactly as it is -- silently widening a valet-only hotel back to
+  // the full suite would undo the sale on the next unrelated toggle.
+  //
+  // An explicit empty list is refused rather than honoured: it would leave a
+  // property logged in and looking at nothing at all.
+  modules: z.array(z.enum(['gate', 'community', 'valet'])).nonempty().optional(),
 });
 
 // Starter (FASTag only) is the default for a community that has no row yet —
@@ -77,20 +85,32 @@ router.put('/entitlements/:communityId', authenticateJWT(['super_admin']), async
     if (!parsed.success) {
       return error(res, 'Validation error', 400, parsed.error.issues);
     }
-    const { fastag, anpr, face, aiAnomaly } = parsed.data;
+    const { fastag, anpr, face, aiAnomaly, modules } = parsed.data;
     const communityId = req.params.communityId;
 
+    // Only read the stored list when the caller stayed silent about it, so the
+    // common path is still a single write.
+    let effectiveModules = modules;
+    if (!effectiveModules) {
+      const current = await queryOne(
+        'SELECT modules FROM community_entitlements WHERE community_id = $1',
+        [communityId]
+      );
+      effectiveModules = current?.modules?.length ? current.modules : ALL_MODULES;
+    }
+
     await query(
-      `INSERT INTO community_entitlements (community_id, fastag_enabled, anpr_enabled, face_enabled, ai_anomaly_enabled, updated_at, updated_by)
-       VALUES ($1, $2, $3, $4, $5, NOW(), $6)
+      `INSERT INTO community_entitlements (community_id, fastag_enabled, anpr_enabled, face_enabled, ai_anomaly_enabled, modules, updated_at, updated_by)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)
        ON CONFLICT (community_id) DO UPDATE SET
          fastag_enabled = $2, anpr_enabled = $3, face_enabled = $4, ai_anomaly_enabled = $5,
-         updated_at = NOW(), updated_by = $6`,
-      [communityId, fastag, anpr, face, aiAnomaly, req.user.sub]
+         modules = $6, updated_at = NOW(), updated_by = $7`,
+      [communityId, fastag, anpr, face, aiAnomaly, effectiveModules, req.user.sub]
     );
 
     const data = shape({
       fastag_enabled: fastag, anpr_enabled: anpr, face_enabled: face, ai_anomaly_enabled: aiAnomaly,
+      modules: effectiveModules,
       updated_at: new Date(),
     });
     broadcast(communityId, 'entitlement:updated', data);

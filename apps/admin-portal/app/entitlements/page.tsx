@@ -15,7 +15,24 @@ interface Entitlements {
   aiAnomaly: boolean;
   tier: string;
   updatedAt: string | null;
+  modules: ModuleKey[];
 }
+
+type ModuleKey = 'gate' | 'community' | 'valet';
+
+/**
+ * The products a property actually bought, which decides what nav it sees.
+ *
+ * Separate from the verification layers above because they answer different
+ * questions: the layers are how thoroughly a gate checks a vehicle, these are
+ * which products exist for this customer at all. A hotel that buys valet alone
+ * should never see Residents or Notice Board.
+ */
+const MODULES: { key: ModuleKey; label: string; description: string }[] = [
+  { key: 'gate', label: 'Nazar — Gate', description: 'Gate automation, guards, visitors, vehicles' },
+  { key: 'community', label: 'Basera — Community', description: 'Residents, units, notices, SOS, facilities' },
+  { key: 'valet', label: 'DwaarAI Valet', description: 'Valet stand, cards, slots, handover tracking' },
+];
 
 const LAYERS: { key: keyof Pick<Entitlements, 'fastag' | 'anpr' | 'face' | 'aiAnomaly'>; label: string; description: string }[] = [
   { key: 'fastag', label: 'FASTag', description: 'RFID/UHF tag matching at the gate' },
@@ -73,6 +90,21 @@ export default function EntitlementsPage() {
     else setEntitlements(null);
   }, [communityId, fetchEntitlements]);
 
+  const toggleModule = (key: ModuleKey) => {
+    if (!entitlements) return;
+    const has = entitlements.modules.includes(key);
+    // Refusing the last one here rather than letting the API reject it: the
+    // person is mid-edit, and an alert after Save is a worse way to learn that
+    // a property must own something.
+    if (has && entitlements.modules.length === 1) return;
+    setEntitlements({
+      ...entitlements,
+      modules: has
+        ? entitlements.modules.filter((m) => m !== key)
+        : [...entitlements.modules, key],
+    });
+  };
+
   const toggle = (key: keyof Pick<Entitlements, 'fastag' | 'anpr' | 'face' | 'aiAnomaly'>) => {
     if (!entitlements) return;
     const next = { ...entitlements, [key]: !entitlements[key] };
@@ -89,6 +121,7 @@ export default function EntitlementsPage() {
         anpr: entitlements.anpr,
         face: entitlements.face,
         aiAnomaly: entitlements.aiAnomaly,
+        modules: entitlements.modules,
       });
       setEntitlements(res.data);
       setSavedAt(Date.now());
@@ -164,6 +197,41 @@ export default function EntitlementsPage() {
                 </button>
               </div>
             ))}
+          </div>
+
+          <div className="border-t border-gray-100 pt-5">
+            <div className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">
+              Products sold
+            </div>
+            <p className="text-xs text-gray-400 mb-3">
+              Decides which sections this property sees in its own portal.
+            </p>
+            <div className="space-y-3">
+              {MODULES.map((m) => {
+                const on = entitlements.modules.includes(m.key);
+                const isLast = on && entitlements.modules.length === 1;
+                return (
+                  <label
+                    key={m.key}
+                    className={`flex items-start gap-3 ${isLast ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                    title={isLast ? 'A property must have at least one product' : undefined}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      disabled={isLast}
+                      data-testid={`module-${m.key}`}
+                      onChange={() => toggleModule(m.key)}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 disabled:opacity-40"
+                    />
+                    <span>
+                      <span className="block text-sm font-bold text-gray-900">{m.label}</span>
+                      <span className="block text-xs text-gray-400">{m.description}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
 
           <div className="flex items-center gap-3 pt-2">
