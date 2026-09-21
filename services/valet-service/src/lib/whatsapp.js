@@ -21,7 +21,12 @@ const fromNumber = () => process.env.WHATSAPP_NUMBER || '';
 const defaultCountryCode = () => process.env.WHATSAPP_COUNTRY_CODE || '91';
 
 export function isConfigured() {
-  if (provider() === 'authkey') return !!authkeyIoKey() && !!fromNumber();
+  // No sender number: authkey.io takes only the recipient and sends from
+  // whatever number the account has registered, and exposes no API to read
+  // that back. WHATSAPP_NUMBER still matters -- it is the number printed on
+  // the card for guests to message -- but requiring it to *send* would leave
+  // every message silently skipped over a value the provider never sees.
+  if (provider() === 'authkey') return !!authkeyIoKey();
   return provider() === 'msg91' && !!authKey() && !!fromNumber();
 }
 

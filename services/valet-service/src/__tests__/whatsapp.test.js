@@ -220,6 +220,16 @@ describe('authkey.io transport', () => {
     expect(isConfigured()).toBe(false);
   });
 
+  it('needs no sender number, because the account implies it', async () => {
+    const { isConfigured } = await import('../lib/whatsapp.js');
+    delete process.env.WHATSAPP_NUMBER;
+
+    // authkey.io takes only the recipient; the sender is whatever number the
+    // account has registered, and it exposes no API to read it back. Demanding
+    // one here would leave every message silently skipped.
+    expect(isConfigured()).toBe(true);
+  });
+
   it('posts a template to requestjson.php with Basic auth', async () => {
     const { url, init, body } = await capture(() => sendTemplate('919876543210', '4821', ['The Leela']));
 
