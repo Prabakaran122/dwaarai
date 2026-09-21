@@ -153,8 +153,9 @@ router.get('/cards/:communityId/:code', async (req, res) => {
   // promptly to a dead end. What is disclosed is that a card code is
   // registered stock at a venue, to someone already holding the card.
   const row = await queryOne(
-    `SELECT c.wa_ref, t.session_token
+    `SELECT c.wa_ref, t.session_token, cm.name AS community_name
        FROM valet_cards c
+       JOIN communities cm ON cm.id = c.community_id
        LEFT JOIN valet_tickets t
          ON t.card_id = c.id
         AND t.status NOT IN ('final_closed', 'expired')
@@ -164,7 +165,14 @@ router.get('/cards/:communityId/:code', async (req, res) => {
   );
   if (!row) return notFound(res);
 
-  res.json({ waRef: row.wa_ref, sessionToken: row.session_token ?? null });
+  // The venue's name, because this is the first screen a guest sees after
+  // scanning and it said only "Your car is with us" over a code. They are
+  // standing in the place; naming it discloses nothing they cannot see.
+  res.json({
+    waRef: row.wa_ref,
+    sessionToken: row.session_token ?? null,
+    venueName: row.community_name ?? null,
+  });
 });
 
 /**
@@ -182,14 +190,16 @@ router.get('/claim/:code', async (req, res) => {
   if (code.length < 4) return notFound(res);
 
   const row = await queryOne(
-    `SELECT session_token FROM valet_tickets
-      WHERE claim_code = $1 AND status NOT IN ('final_closed', 'expired')
+    `SELECT t.session_token, c.name AS community_name
+       FROM valet_tickets t
+       JOIN communities c ON c.id = t.community_id
+      WHERE t.claim_code = $1 AND t.status NOT IN ('final_closed', 'expired')
       LIMIT 1`,
     [code]
   );
   if (!row) return notFound(res);
 
-  res.json({ sessionToken: row.session_token });
+  res.json({ sessionToken: row.session_token, venueName: row.community_name ?? null });
 });
 
 router.post('/tickets/:token/request', async (req, res) => {

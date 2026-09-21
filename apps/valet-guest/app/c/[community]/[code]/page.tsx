@@ -31,6 +31,7 @@ export default function CardPage() {
 
   const [state, setState] = useState<'resolving' | 'ready' | 'unknown'>('resolving');
   const [waRef, setWaRef] = useState<string | null>(null);
+  const [venueName, setVenueName] = useState<string | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,6 +47,7 @@ export default function CardPage() {
         const body = await res.json();
         if (cancelled) return;
         setWaRef(body.waRef ?? null);
+        setVenueName(body.venueName ?? null);
         setSessionToken(body.sessionToken ?? null);
         setState('ready');
       } catch {
@@ -73,7 +75,17 @@ export default function CardPage() {
 
         {state === 'ready' && (
           <>
-            <h1 className="text-lg font-semibold text-white">Your car is with us</h1>
+            {/* The venue, named. This is the first screen after a scan and it
+                carried no mark of the property the guest is standing in --
+                the one surface where a paying venue's identity vanished. */}
+            {venueName && (
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-300/80">
+                {venueName}
+              </p>
+            )}
+            <h1 className={`text-lg font-semibold text-white${venueName ? ' mt-2' : ''}`}>
+              Your car is with us
+            </h1>
             <p className="mt-5 text-sm text-white/50">Card</p>
             <p className="mt-1 font-mono text-3xl tracking-[0.3em] text-white">
               {code.toUpperCase()}

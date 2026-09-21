@@ -319,14 +319,21 @@ describe('GET /guest/cards/:communityId/:code (legacy shape)', () => {
     expect(res.body.sessionToken).toBe(SESSION_TOKEN);
   });
 
-  it('returns only the token, never the vehicle', async () => {
+  it('returns the token, the card reference and the venue -- and nothing else', async () => {
     // A card code is short and guessable in a way the session token is not,
     // so this endpoint must not become a way to read someone's car details.
-    queryOne.mockResolvedValueOnce({ session_token: SESSION_TOKEN });
+    //
+    // The venue's name is a considered exception: the page this feeds is the
+    // first thing a guest sees after scanning, and they are standing in the
+    // place being named. The vehicle is not, and the exact key list is
+    // asserted so adding a field is a decision rather than an accident.
+    queryOne.mockResolvedValueOnce({
+      session_token: SESSION_TOKEN, wa_ref: 'K7P2QM', community_name: 'The Leela Palace',
+    });
 
     const res = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A047`);
 
-    expect(Object.keys(res.body)).toEqual(['sessionToken']);
+    expect(Object.keys(res.body).sort()).toEqual(['sessionToken', 'venueName', 'waRef']);
     expect(res.body.plate).toBeUndefined();
   });
 
@@ -416,17 +423,19 @@ describe('GET /guest/claim/:code', () => {
     const res = await request(app, 'GET', '/guest/claim/4K7QP2');
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ sessionToken: 'tok-9' });
+    expect(res.body).toEqual({ sessionToken: 'tok-9', venueName: null });
   });
 
-  it('returns nothing but the token', async () => {
+  it('returns the token and the venue, and nothing about the vehicle', async () => {
     // The code is short and typed; it must never become a way to read a
-    // vehicle's details.
-    queryOne.mockResolvedValueOnce({ session_token: 'tok-9' });
+    // vehicle's details. The venue's name is the one addition, for the same
+    // reason as the card endpoint -- the guest is standing in it.
+    queryOne.mockResolvedValueOnce({ session_token: 'tok-9', community_name: 'The Leela Palace' });
 
     const res = await request(app, 'GET', '/guest/claim/4K7QP2');
 
-    expect(Object.keys(res.body)).toEqual(['sessionToken']);
+    expect(Object.keys(res.body).sort()).toEqual(['sessionToken', 'venueName']);
+    expect(res.body.plate).toBeUndefined();
   });
 
   it('only matches an open ticket', async () => {
@@ -751,5 +760,33 @@ describe('the collection window on the guest page', () => {
     const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
 
     expect(res.body.collectBySeconds).toBeNull();
+  });
+});
+
+describe('the venue a guest is standing in', () => {
+  it('names the venue when a card is resolved', async () => {
+    queryOne.mockResolvedValueOnce({
+      wa_ref: 'K7P2QM', session_token: null, community_name: 'The Leela Palace',
+    });
+
+    const res = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A001`);
+
+    // The card page and the tracking page are the first two screens a guest
+    // sees, and both said only "Your car is with us" over a code. Every other
+    // surface carries the venue's name; these did not, which is the one place
+    // a paying property's identity disappeared.
+    expect(res.status).toBe(200);
+    expect(res.body.venueName).toBe('The Leela Palace');
+  });
+
+  it('names the venue when a claim code is resolved', async () => {
+    queryOne.mockResolvedValueOnce({
+      session_token: 'tok', community_name: 'The Leela Palace',
+    });
+
+    const res = await request(app, 'GET', '/guest/claim/B73V5M');
+
+    expect(res.status).toBe(200);
+    expect(res.body.venueName).toBe('The Leela Palace');
   });
 });

@@ -405,6 +405,14 @@ export default function GuestPage() {
 
   const canRequest = ticket.status === 'parked' || ticket.status === 'parked_again';
 
+  // The collection window has run out, so the car may have been moved. Two
+  // places read this: the banner that says so, and the pickup card, which must
+  // not claim the car is at the kerb underneath it.
+  const expiredWindow =
+    ticket.status === 'arrived' &&
+    ticket.collectBySeconds !== null &&
+    ticket.collectBySeconds <= 0;
+
   // The job now exists from the moment the guard scans the card, so a prompt
   // guest lands here while plate and make are still being typed. Showing the
   // vehicle card with nothing in it reads as a broken page rather than a
@@ -520,8 +528,23 @@ export default function GuestPage() {
 
       {ticket.status === 'arrived' && !ticket.handedOver && (
         <section className="mt-5 rounded-2xl bg-white p-5 text-center">
-          <p className="text-[#0D2535] font-bold">Your car is here</p>
-          <p className="text-xs text-[#0D2535]/60 mt-1">Show this to the valet</p>
+          {/* Once the collection window has run out the car may have been
+              moved, and the banner above says so. Claiming "Your car is here"
+              directly beneath that contradicted it, and would send a guest to
+              the kerb for a car that is no longer on it. The code still has to
+              be shown -- it is how the desk identifies them -- so it stays,
+              under wording that matches what we actually know. */}
+          {expiredWindow ? (
+            <>
+              <p className="text-[#0D2535] font-bold">Show this at the valet desk</p>
+              <p className="text-xs text-[#0D2535]/60 mt-1">They will bring your car back round</p>
+            </>
+          ) : (
+            <>
+              <p className="text-[#0D2535] font-bold">Your car is here</p>
+              <p className="text-xs text-[#0D2535]/60 mt-1">Show this to the valet</p>
+            </>
+          )}
           {qr ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={qr.qrDataUrl} alt="Pickup QR code" className="mt-4 mx-auto w-56 h-56" />

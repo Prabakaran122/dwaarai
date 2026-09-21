@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { VALET_BASE } from '@/lib/api';
 
@@ -20,6 +20,28 @@ export default function WhatsAppDoorPage() {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [venueName, setVenueName] = useState<string | null>(null);
+
+  // Resolved on arrival purely to name the venue. The page otherwise waits for
+  // a tap before touching the API, but a guest should not be looking at an
+  // unbranded screen while deciding whether to trust it -- and a failure here
+  // changes nothing, because the name is the only thing being asked for.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${VALET_BASE}/guest/claim/${encodeURIComponent(code)}`, {
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const body = await res.json();
+        if (!cancelled) setVenueName(body.venueName ?? null);
+      } catch {
+        /* the page works without it */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [code]);
 
   const number = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '';
   const prefill = encodeURIComponent(
@@ -49,7 +71,14 @@ export default function WhatsAppDoorPage() {
   return (
     <main className="min-h-screen flex items-center justify-center px-6 py-12">
       <div className="w-full max-w-sm text-center">
-        <h1 className="text-lg font-semibold text-white">Your car is with us</h1>
+        {venueName && (
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-300/80">
+            {venueName}
+          </p>
+        )}
+        <h1 className={`text-lg font-semibold text-white${venueName ? ' mt-2' : ''}`}>
+          Your car is with us
+        </h1>
         <p className="mt-5 text-sm text-white/50">Ticket code</p>
         <p className="mt-1 font-mono text-3xl tracking-[0.3em] text-white">{code}</p>
 
