@@ -214,6 +214,17 @@ export function verifySignature(rawBody, signature) {
 export function normalizeInbound(body) {
   if (!body || typeof body !== 'object') return null;
 
+  // authkey.io: the message is nested under eventContent, and a delivery
+  // report arrives through the same webhook with eventContent.status instead.
+  // Observed from a real reply -- the flat shape inferred from MSG91's docs
+  // was wrong in every field.
+  const ak = body.eventContent?.message;
+  if (ak?.id) {
+    const t = ak.text;
+    const text = typeof t === 'string' ? t : (t?.body ?? t?.text ?? '');
+    return { id: String(ak.id), from: String(ak.from ?? ''), text: String(text) };
+  }
+
   const meta = Array.isArray(body.messages) ? body.messages[0] : null;
   if (meta?.id) {
     return { id: meta.id, from: String(meta.from ?? ''), text: meta.text?.body ?? '' };

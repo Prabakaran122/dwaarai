@@ -63,6 +63,28 @@ router.post('/whatsapp', async (req, res) => {
     return res.status(401).json({ error: 'bad_signature' });
   }
 
+  // Temporary, flag-gated, and off by default: WHATSAPP_DEBUG_INBOUND=1.
+  //
+  // Field *names* are what is needed to map a new provider's payload, so this
+  // logs the shape and deliberately not the contents -- every value is
+  // reported as its type and length. An inbound webhook carries a guest's
+  // phone number and whatever they wrote; dumping that into the journal for
+  // every message would be a privacy problem that outlives the question it
+  // was added to answer.
+  if (process.env.WHATSAPP_DEBUG_INBOUND === '1') {
+    const shape = (v, depth = 0) => {
+      if (v === null || v === undefined) return String(v);
+      if (Array.isArray(v)) return depth > 2 ? 'array' : `[${v.slice(0, 2).map((x) => shape(x, depth + 1)).join(', ')}]`;
+      if (typeof v === 'object') {
+        if (depth > 2) return 'object';
+        return `{${Object.entries(v).map(([k, val]) => `${k}: ${shape(val, depth + 1)}`).join(', ')}}`;
+      }
+      if (typeof v === 'string') return `string(${v.length})`;
+      return typeof v;
+    };
+    console.log('[wa-inbound] shape:', shape(req.body));
+  }
+
   // Normalised here rather than read inline: MSG91 and Meta disagree on the
   // shape, and this route should not know which provider is configured.
   const message = normalizeInbound(req.body);

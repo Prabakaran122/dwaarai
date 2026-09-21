@@ -319,3 +319,60 @@ describe('authkey.io response shapes', () => {
     expect(await withResponse({ something: 'else' })).toEqual({ status: 'failed' });
   });
 });
+
+/**
+ * The shape authkey.io actually posts, observed from a real guest reply.
+ *
+ * Nothing like the flat { messageId, from, content } I had inferred from
+ * MSG91's docs: the message is nested two levels down under eventContent,
+ * and the sender arrives with its country code attached.
+ */
+describe('authkey.io inbound', () => {
+  const real = (text) => ({
+    channel: 'wapp',
+    appDetails: { type: 'wapp' },
+    recipient: {},
+    events: { eventType: 'message_inbox', timestamp: '1789972928', date: '2026-09-21 07:42' },
+    eventContent: {
+      message: {
+        from: '919003143250',
+        id: 'wamid.HBgMOTE5MDAzMTQzMjUwFQIAEhggQTRCM0Q2RTgxRjJBNEM5RDhF',
+        text: { body: text },
+        to: '918895231035',
+        contentType: 'text',
+        messageType: 'text',
+        profileName: 'Prabakaran',
+        name: 'Prabakaran',
+      },
+    },
+    aCode: '91xxxxxxxxxxxx',
+    media_url: '',
+  });
+
+  it('reads the message out of eventContent', async () => {
+    const { normalizeInbound } = await import('../lib/whatsapp.js');
+    const msg = normalizeInbound(real('4K7QP2 CAR'));
+
+    expect(msg.id).toBe('wamid.HBgMOTE5MDAzMTQzMjUwFQIAEhggQTRCM0Q2RTgxRjJBNEM5RDhF');
+    expect(msg.from).toBe('919003143250');
+    expect(msg.text).toBe('4K7QP2 CAR');
+  });
+
+  it('copes if the text arrives as a bare string rather than { body }', async () => {
+    const { normalizeInbound } = await import('../lib/whatsapp.js');
+    const payload = real('x');
+    payload.eventContent.message.text = 'DWR042';
+
+    expect(normalizeInbound(payload).text).toBe('DWR042');
+  });
+
+  it('ignores a delivery report that carries no message', async () => {
+    const { normalizeInbound } = await import('../lib/whatsapp.js');
+
+    expect(normalizeInbound({
+      channel: 'wapp',
+      events: { eventType: 'message_status' },
+      eventContent: { status: { id: 'wamid.x', status: 'delivered' } },
+    })).toBeNull();
+  });
+});
