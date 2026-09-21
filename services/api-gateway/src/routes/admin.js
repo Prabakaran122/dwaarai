@@ -22,13 +22,23 @@ const createCommunitySchema = z.object({
 
 const updateCommunitySchema = createCommunitySchema.partial();
 
+/**
+ * A Location Manager holds one property; a Client Admin holds an account of
+ * several. Which one is being made is decided by which scope is supplied, and
+ * exactly one must be -- a group admin scoped to a single property would
+ * silently be a location manager with a misleading title.
+ */
 const createAdminSchema = z.object({
   name: z.string().min(1).max(200),
   username: z.string().min(3).max(100),
   password: z.string().min(6).max(200),
-  role: z.enum(['community_admin']),
-  community_id: z.string().uuid(),
-});
+  role: z.enum(['community_admin', 'client_admin']).default('community_admin'),
+  community_id: z.string().uuid().optional(),
+  account_id: z.string().uuid().optional(),
+}).refine(
+  (d) => (d.role === 'client_admin' ? !!d.account_id : !!d.community_id),
+  { message: 'client_admin needs an account_id; community_admin needs a community_id' }
+);
 
 const _time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/, 'HH:MM');
 
@@ -177,22 +187,28 @@ router.post('/admin/community-admins', superOnly, async (req, res) => {
     if (!parsed.success) {
       return error(res, 'Validation error', 400, parsed.error.issues);
     }
-    const { name, username, password, role, community_id } = parsed.data;
+    const { name, username, password, role, community_id, account_id } = parsed.data;
 
     // Check username uniqueness
     const existing = await queryOne('SELECT id FROM admins WHERE username = $1', [username]);
     if (existing) return error(res, 'Username already exists', 409);
 
-    // Verify community exists
-    const community = await queryOne('SELECT id FROM communities WHERE id = $1', [community_id]);
-    if (!community) return error(res, 'Community not found', 404);
+    if (role === 'client_admin') {
+      const account = await queryOne('SELECT id FROM accounts WHERE id = $1', [account_id]);
+      if (!account) return error(res, 'Account not found', 404);
+    } else {
+      const community = await queryOne('SELECT id FROM communities WHERE id = $1', [community_id]);
+      if (!community) return error(res, 'Community not found', 404);
+    }
 
     const password_hash = await bcrypt.hash(password, 10);
     const admin = await queryOne(
-      `INSERT INTO admins (name, username, password_hash, role, community_id)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, username, role, community_id, is_active, created_at`,
-      [name, username, password_hash, role, community_id]
+      `INSERT INTO admins (name, username, password_hash, role, community_id, account_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, name, username, role, community_id, account_id, is_active, created_at`,
+      [name, username, password_hash, role,
+       role === 'client_admin' ? null : community_id,
+       role === 'client_admin' ? account_id : null]
     );
     return success(res, { admin }, 201);
   } catch (err) {
@@ -683,5 +699,87 @@ router.delete('/admin/communities/:id', superOnly, async (req, res) => {
     return error(res, 'Internal server error', 500);
   } finally {
     if (client) client.release();
+  }
+});
+
+// -- Accounts (hotel groups) --------------------------------------------------
+
+const accountSchema = z.object({ name: z.string().min(1).max(200) });
+
+/**
+ * A group that owns several properties.
+ *
+ * 057 created this table and nothing ever wrote to it, so no account could
+ * exist, no admin could be scoped to one, and the Locations screen refused
+ * everybody with "this account holds a single property". These are the
+ * writers that were missing.
+ */
+router.post('/admin/accounts', superOnly, async (req, res) => {
+  try {
+    const parsed = accountSchema.safeParse(req.body);
+    if (!parsed.success) return error(res, 'Validation error', 400, parsed.error.issues);
+
+    const account = await queryOne(
+      'INSERT INTO accounts (name) VALUES ($1) RETURNING id, name, created_at',
+      [parsed.data.name]
+    );
+    return success(res, { account }, 201);
+  } catch (err) {
+    console.error('POST /admin/accounts error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+router.get('/admin/accounts', superOnly, async (req, res) => {
+  try {
+    const rows = await queryRows(
+      `SELECT a.id, a.name, a.created_at,
+              (SELECT count(*) FROM communities c WHERE c.account_id = a.id) AS property_count
+         FROM accounts a
+        ORDER BY a.name`
+    );
+    return success(res, {
+      accounts: rows.map((r) => ({
+        id: r.id, name: r.name, createdAt: r.created_at,
+        propertyCount: Number(r.property_count ?? 0),
+      })),
+    });
+  } catch (err) {
+    console.error('GET /admin/accounts error:', err);
+    return error(res, 'Internal server error', 500);
+  }
+});
+
+const assignAccountSchema = z.object({
+  accountId: z.string().uuid().nullable(),
+});
+
+/**
+ * Files a property under a group, or takes it back out.
+ *
+ * Null is a real value here, not a missing one: a property leaving a group
+ * must be able to stand alone again rather than be stranded in it.
+ */
+router.put('/admin/communities/:id/account', superOnly, async (req, res) => {
+  try {
+    const parsed = assignAccountSchema.safeParse(req.body);
+    if (!parsed.success) return error(res, 'Validation error', 400, parsed.error.issues);
+    const { accountId } = parsed.data;
+
+    if (accountId) {
+      const account = await queryOne('SELECT id FROM accounts WHERE id = $1', [accountId]);
+      if (!account) return error(res, 'Account not found', 404);
+    }
+
+    const community = await queryOne(
+      'UPDATE communities SET account_id = $2 WHERE id = $1 RETURNING id, name, account_id',
+      [req.params.id, accountId]
+    );
+    if (!community) return error(res, 'Community not found', 404);
+
+    return success(res, { community });
+  } catch (err) {
+    console.error('PUT /admin/communities/:id/account error:', err);
+    return error(res, 'Internal server error', 500);
   }
 });

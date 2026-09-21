@@ -501,7 +501,7 @@ router.post('/auth/admin-login', loginLimiter, async (req, res) => {
     const { username, password } = parsed.data;
 
     const admin = await queryOne(
-      'SELECT id, name, username, password_hash, role, community_id FROM admins WHERE username = $1 AND is_active = true',
+      'SELECT id, name, username, password_hash, role, community_id, account_id FROM admins WHERE username = $1 AND is_active = true',
       [username]
     );
 
@@ -518,6 +518,11 @@ router.post('/auth/admin-login', loginLimiter, async (req, res) => {
       sub: admin.id,
       role: admin.role,
       community_id: admin.community_id || null,
+      // A Client Admin is scoped by account the way a Location Manager is
+      // scoped by community. valet-service reads this to decide which
+      // properties they may see; without it every group admin is told their
+      // account holds a single property.
+      account_id: admin.account_id || null,
       name: admin.name,
     });
 
