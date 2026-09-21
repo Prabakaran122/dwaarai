@@ -24,8 +24,12 @@ PUBLIC_HOST="${PUBLIC_HOST:-dwaarai.com}"
 # the tokens api-gateway issues, so a mismatched secret would reject every guard
 # with a 401 that looks like a login bug.
 API_UNIT=/etc/systemd/system/communitygate-api.service
+VALET_UNIT=/etc/systemd/system/communitygate-valet.service
 JWT_SECRET="${JWT_SECRET:-$(sudo sed -n 's/^Environment=JWT_SECRET=//p' "$API_UNIT" 2>/dev/null)}"
 DATABASE_URL="${DATABASE_URL:-$(sudo sed -n 's/^Environment=DATABASE_URL=//p' "$API_UNIT" 2>/dev/null)}"
+# Read from the existing valet unit before this script rewrites it, so a key
+# set once on the box survives every later deploy without being re-supplied.
+MSG91_AUTH_KEY="${MSG91_AUTH_KEY:-$(sudo sed -n 's/^Environment=MSG91_AUTH_KEY=//p' "$VALET_UNIT" 2>/dev/null)}"
 # Inherited rather than set here: the gateway already points at a recogniser,
 # and valet must match faces against the same one the vectors were made by.
 # Two URLs would mean two vector spaces and every comparison failing.
@@ -140,6 +144,10 @@ Environment=CORS_ORIGIN=https://$PUBLIC_HOST
 # Off deliberately: the sweep runs from its own timer, below.
 Environment=VALET_RUN_SWEEP_IN_PROCESS=false
 Environment=WHATSAPP_PROVIDER=${WHATSAPP_PROVIDER:-}
+# Without this the provider is never "configured", so every guest message is
+# reported skipped and nothing is ever sent -- quietly, because skipped is a
+# success as far as the ticket is concerned. It was missing entirely.
+Environment=MSG91_AUTH_KEY=$MSG91_AUTH_KEY
 Environment=WHATSAPP_NUMBER=${WHATSAPP_NUMBER:-}
 Environment=WHATSAPP_WEBHOOK_SECRET=${WHATSAPP_WEBHOOK_SECRET:-}
 Environment=WHATSAPP_TEMPLATE_CAR_READY=${WHATSAPP_TEMPLATE_CAR_READY:-car_ready}

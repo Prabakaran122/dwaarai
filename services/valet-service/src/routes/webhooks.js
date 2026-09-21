@@ -1,6 +1,6 @@
 import { asyncRouter } from '../lib/async-router.js';
 import { query, queryOne } from '../db.js';
-import { verifySignature } from '../lib/whatsapp.js';
+import { verifySignature, normalizeInbound } from '../lib/whatsapp.js';
 import { notifyGuest, notifyCardHeld } from '../lib/whatsapp-guest.js';
 import { normalizeClaimCode } from '../lib/claim-code.js';
 import { logEvent } from '../lib/events.js';
@@ -56,7 +56,9 @@ router.post('/whatsapp', async (req, res) => {
     return res.status(401).json({ error: 'bad_signature' });
   }
 
-  const message = req.body?.messages?.[0];
+  // Normalised here rather than read inline: MSG91 and Meta disagree on the
+  // shape, and this route should not know which provider is configured.
+  const message = normalizeInbound(req.body);
   if (!message?.id) return res.status(200).json({ ok: true });
 
   // Checked before anything is acted on. The UNIQUE constraint is what makes
@@ -67,7 +69,7 @@ router.post('/whatsapp', async (req, res) => {
   );
   if (seen) return res.status(200).json({ ok: true, duplicate: true });
 
-  const code = extractCode(message.text?.body);
+  const code = extractCode(message.text);
   if (!code) {
     await recordInbound(message.id, null);
     return res.status(200).json({ ok: true, unmatched: true });
@@ -152,7 +154,7 @@ router.post('/whatsapp', async (req, res) => {
 
   // Acted on by status, not by wording. A guest asking for a car already on
   // its way must not summon a second valet for it.
-  if (REQUEST_PATTERN.test(message.text?.body || '') && REQUESTABLE.includes(ticket.status)) {
+  if (REQUEST_PATTERN.test(message.text || '') && REQUESTABLE.includes(ticket.status)) {
     await query(`UPDATE valet_tickets SET status = 'retrieval_requested' WHERE id = $1`, [ticket.id]);
     await logEvent(ticket.id, 'requested', { metadata: { via: 'whatsapp' } });
     await notifyGuest({ ...fresh, status: 'retrieval_requested' }, 'accepted');

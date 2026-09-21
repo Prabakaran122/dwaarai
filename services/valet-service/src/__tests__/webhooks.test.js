@@ -174,3 +174,33 @@ describe('a guest who was faster than the guard', () => {
     expect(notifyGuest).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }), 'bound');
   });
 });
+
+describe('an MSG91-shaped delivery', () => {
+  /** What MSG91 actually posts: its own fields, body as a JSON string. */
+  const msg91 = (text, { messageId = 'wamid.m1', from = '919876543210' } = {}) => ({
+    messageId, from, content: JSON.stringify({ text }),
+  });
+
+  it('requests the car, exactly as a Meta-shaped one would', async () => {
+    queryOne.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: 't1', claim_code: '4K7QP2', phone_number: '919876543210',
+      status: 'parked', community_name: 'The Leela', display_id: 'DWR-0042',
+    });
+
+    // Before the normaliser this parsed to nothing and answered "ok" -- every
+    // guest message on the configured provider silently ignored, with a 200
+    // telling MSG91 it had been handled.
+    await signedPost(msg91('4K7QP2 CAR'));
+
+    const sql = query.mock.calls.map((c) => c[0]).join(' ');
+    expect(sql).toMatch(/status\s*=\s*'retrieval_requested'/);
+    expect(notifyGuest).toHaveBeenCalledWith(expect.anything(), 'accepted');
+  });
+
+  it('still answers 200 for a delivery report carrying no message', async () => {
+    const res = await signedPost({ status: 'delivered', messageId: 'wamid.x' });
+
+    // No text to act on, but a 4xx would make MSG91 retry a report four times.
+    expect(res.status).toBe(200);
+  });
+});

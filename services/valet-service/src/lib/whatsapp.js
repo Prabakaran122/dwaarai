@@ -44,28 +44,49 @@ async function post(payload) {
   }
 }
 
+/**
+ * A free-form message, only legal inside the 24-hour customer-service window.
+ *
+ * The recipient goes inside `payload`, not beside it: MSG91's single-send
+ * shape reads payload.to, and a number at the top level is a number it never
+ * looks at -- the request is accepted and the message reaches nobody.
+ */
 export function sendText(waId, body) {
   return post({
     integrated_number: fromNumber(),
     content_type: 'text',
-    to: waId,
-    payload: { type: 'text', text: { body } },
+    payload: {
+      to: waId,
+      type: 'text',
+      messaging_product: 'whatsapp',
+      text: { body },
+    },
   });
 }
 
+/**
+ * An approved template, for when the window has closed.
+ *
+ * Shaped to MSG91's bulk endpoint, which pairs each recipient with its own
+ * variables in to_and_components rather than taking one `to` and one set of
+ * components. We only ever send to one person, so the array has one entry --
+ * but the field name is not optional.
+ *
+ * `language` is a bare string here. The { code: 'en' } form belongs to Meta's
+ * Cloud API; sending it to MSG91 is a different API's vocabulary.
+ */
 export function sendTemplate(waId, templateName, vars = []) {
   return post({
     integrated_number: fromNumber(),
     content_type: 'template',
-    to: waId,
     payload: {
       type: 'template',
       template: {
         name: templateName,
-        language: { code: 'en' },
-        components: [{
-          type: 'body',
-          parameters: vars.map((text) => ({ type: 'text', text })),
+        language: 'en',
+        to_and_components: [{
+          to: waId,
+          components: vars.map((text) => ({ type: 'text', text })),
         }],
       },
     },
@@ -90,4 +111,50 @@ export function verifySignature(rawBody, signature) {
   const b = Buffer.from(String(signature));
   // timingSafeEqual throws on a length mismatch, which is itself a rejection.
   return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * Flattens whatever the provider posted into { id, from, text }.
+ *
+ * MSG91 and Meta do not agree on the shape of an inbound message, and this
+ * file is where that difference is supposed to stop. MSG91 posts its own
+ * fields with the body as a JSON *string* in `content`; Meta nests everything
+ * under messages[]. The route previously read only Meta's shape, so a real
+ * MSG91 delivery would have parsed to nothing and been answered "ok" --
+ * silently, on every guest message.
+ *
+ * Which fields MSG91 forwards is configurable per webhook, so the id and the
+ * sender are each read from the few names they plausibly arrive under rather
+ * than one. Returns null when there is no message to act on, which the caller
+ * treats as a delivery report rather than an error.
+ */
+export function normalizeInbound(body) {
+  if (!body || typeof body !== 'object') return null;
+
+  const meta = Array.isArray(body.messages) ? body.messages[0] : null;
+  if (meta?.id) {
+    return { id: meta.id, from: String(meta.from ?? ''), text: meta.text?.body ?? '' };
+  }
+
+  const id = body.messageId ?? body.message_id ?? body.id;
+  if (!id) return null;
+
+  // `content` is a JSON envelope in MSG91's own docs, but a provider sending
+  // the bare text must not throw its way into a 500 and a retry storm.
+  let text = '';
+  const raw = body.content;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      text = typeof parsed === 'string' ? parsed : (parsed?.text ?? parsed?.body ?? '');
+    } catch {
+      text = raw;
+    }
+  } else if (raw && typeof raw === 'object') {
+    text = raw.text ?? raw.body ?? '';
+  } else {
+    text = body.text?.body ?? body.text ?? '';
+  }
+
+  return { id: String(id), from: String(body.from ?? body.mobile ?? body.sender ?? ''), text: String(text) };
 }
