@@ -7,7 +7,7 @@ import { newClaimCode } from '../lib/claim-code.js';
 import { newSessionToken, nextDisplayId } from '../lib/tokens.js';
 import bcrypt from 'bcryptjs';
 import { logEvent } from '../lib/events.js';
-import { vectorize } from '../lib/face.js';
+import { vectorize, isRecognitionConfigured } from '../lib/face.js';
 import { authenticateJWT } from '../middleware/auth.js';
 
 const router = asyncRouter();
@@ -1037,4 +1037,15 @@ router.post('/staff/:id/face', admin, async (req, res) => {
   );
 
   res.status(201).json({ enrolled: true });
+});
+
+/**
+ * Whether a photo taken here has anywhere to go.
+ *
+ * The staff page offered "Add photo" regardless of the deployment, and every
+ * press ended in a 503 -- the refusal is right, but a button that can only
+ * fail should not be offered. Asked once, so the page can explain instead.
+ */
+router.get('/face/status', admin, async (req, res) => {
+  res.json({ configured: isRecognitionConfigured() });
 });

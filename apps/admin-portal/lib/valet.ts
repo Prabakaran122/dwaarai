@@ -502,6 +502,10 @@ export const addStaff = (body: {
  * recogniser derives from it. Fails loudly when recognition is unavailable
  * rather than recording somebody as enrolled who is not.
  */
+/** Whether a recogniser exists to send a photo to. */
+export const faceStatus = () =>
+  valetFetch<{ configured: boolean }>('/admin/face/status');
+
 export const enrolStaffFace = (id: string, imageBase64: string) =>
   valetPost<{ enrolled: boolean }>(`/admin/staff/${id}/face`, { imageBase64 });
 

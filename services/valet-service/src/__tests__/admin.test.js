@@ -19,7 +19,7 @@ vi.mock('../lib/storage.js', () => ({
 
 import { query, queryOne, queryRows } from '../db.js';
 import { storage } from '../lib/storage.js';
-import { vectorize } from '../lib/face.js';
+import { vectorize, isRecognitionConfigured } from '../lib/face.js';
 import adminRoutes from '../routes/admin.js';
 import { createApp, request, guardToken, adminToken, COMMUNITY_ID } from './helpers.js';
 
@@ -1060,5 +1060,27 @@ describe('adding the first member of staff at a new property', () => {
     const floorParam = /floor/.test(unitInsert[0]) ? unitInsert[0] : '';
     expect(floorParam).not.toMatch(/'G'/);
     expect(res.status).toBe(201);
+  });
+});
+
+describe('whether face enrolment is even possible here', () => {
+  it('reports that recognition is available when it is configured', async () => {
+    vi.mocked(isRecognitionConfigured).mockReturnValueOnce(true);
+
+    const res = await request(app, 'GET', '/admin/face/status', { token: adminToken() });
+
+    expect(res.status).toBe(200);
+    expect(res.body.configured).toBe(true);
+  });
+
+  it('reports plainly when there is no recogniser to send a photo to', async () => {
+    vi.mocked(isRecognitionConfigured).mockReturnValueOnce(false);
+
+    const res = await request(app, 'GET', '/admin/face/status', { token: adminToken() });
+
+    // The staff page offered "Add photo" whatever the deployment looked like,
+    // and every press ended in a 503. Asking first lets it say why instead.
+    expect(res.status).toBe(200);
+    expect(res.body.configured).toBe(false);
   });
 });

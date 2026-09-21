@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import FaceCapture from '@/components/FaceCapture';
 import {
   ValetError, StaffMember, StaffRole, STAFF_ROLE_LABEL,
-  listStaff, addStaff, retireStaff, enrolStaffFace,
+  listStaff, addStaff, retireStaff, enrolStaffFace, faceStatus,
 } from '@/lib/valet';
 
 /**
@@ -25,11 +26,16 @@ export default function ValetStaffPage() {
   const [role, setRole] = useState<StaffRole>('valet_manager');
   const [until, setUntil] = useState('');
 
-  /* The picker is one hidden input reused by every row: which row is being
-     enrolled is held here, so a click lands on the person clicked rather than
-     whichever row rendered last. */
-  const filePicker = useRef<HTMLInputElement>(null);
-  const enrolling = useRef<string | null>(null);
+  /* Who the camera is open for. Null means it is closed. */
+  const [enrolling, setEnrolling] = useState<StaffMember | null>(null);
+  /* Whether a recogniser exists at all. Null while we are still asking. */
+  const [faceReady, setFaceReady] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    faceStatus()
+      .then((s) => setFaceReady(s.configured))
+      .catch(() => setFaceReady(false));
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -61,35 +67,18 @@ export default function ValetStaffPage() {
     }
   }
 
-  function onEnrol(m: StaffMember) {
-    enrolling.current = m.id;
-    filePicker.current?.click();
-  }
-
-  async function onPhotoChosen(file: File | undefined) {
-    const id = enrolling.current;
-    enrolling.current = null;
-    if (filePicker.current) filePicker.current.value = '';
-    if (!file || !id) return;
-
+  async function onCaptured(base64: string) {
+    const member = enrolling;
+    if (!member) return;
     setBusy(true);
     setError(null);
     try {
-      const b64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        // The data: prefix is metadata for the browser, not part of the image.
-        reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
-        reader.onerror = () => reject(new Error('unreadable'));
-        reader.readAsDataURL(file);
-      });
-      await enrolStaffFace(id, b64);
+      await enrolStaffFace(member.id, base64);
+      setEnrolling(null);
       await load();
     } catch (err) {
-      setError(
-        err instanceof ValetError
-          ? err.message
-          : 'Could not read that photo'
-      );
+      setEnrolling(null);
+      setError(err instanceof ValetError ? err.message : 'Could not enrol that photo');
     } finally {
       setBusy(false);
     }
@@ -132,7 +121,17 @@ export default function ValetStaffPage() {
         </div>
       )}
 
-      {unenrolled.length > 0 && (
+      {faceReady === false && (
+        /* The button used to be offered whatever the deployment looked like,
+           and every press ended in a 503. Saying so once is kinder than
+           letting somebody discover it per person. */
+        <div className="mb-4 px-4 py-3 rounded-lg bg-gray-50 text-gray-600 text-sm ring-1 ring-gray-200">
+          Face recognition is not configured on this deployment, so nobody can be
+          enrolled and shift-start checks will be skipped.
+        </div>
+      )}
+
+      {faceReady !== false && unenrolled.length > 0 && (
         /* Worth surfacing here rather than leaving to be discovered at 6am:
            somebody without a face on file cannot start a shift. */
         <div className="mb-4 px-4 py-3 rounded-lg bg-blue-50 text-blue-800 text-sm ring-1 ring-blue-200">
@@ -141,15 +140,6 @@ export default function ValetStaffPage() {
             : `${unenrolled.length} people have no face on file and cannot start a shift.`}
         </div>
       )}
-
-      <input
-        ref={filePicker}
-        type="file"
-        accept="image/*"
-        capture="user"
-        className="hidden"
-        onChange={(e) => onPhotoChosen(e.target.files?.[0])}
-      />
 
       <div className="rounded-xl border border-gray-200 bg-white p-5 mb-6">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Add someone</p>
@@ -224,10 +214,12 @@ export default function ValetStaffPage() {
                   <td className="px-4 py-2.5">
                     {m.faceEnrolled ? (
                       <span className="text-gray-500">On file</span>
+                    ) : faceReady === false ? (
+                      <span className="text-gray-300">—</span>
                     ) : (
-                      <button onClick={() => onEnrol(m)} disabled={busy}
+                      <button onClick={() => setEnrolling(m)} disabled={busy || faceReady === null}
                         className="text-xs font-semibold text-blue-600 hover:text-blue-800 disabled:opacity-40">
-                        Add photo
+                        Take photo
                       </button>
                     )}
                   </td>
@@ -242,6 +234,14 @@ export default function ValetStaffPage() {
             </tbody>
           </table>
         </div>
+      )}
+      {enrolling && (
+        <FaceCapture
+          name={enrolling.name}
+          busy={busy}
+          onCapture={onCaptured}
+          onCancel={() => setEnrolling(null)}
+        />
       )}
     </div>
   );
