@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiFetch, apiPost } from '@/lib/api';
+import { apiFetch, apiPost, apiDelete } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 interface Community {
@@ -27,6 +27,9 @@ export default function CommunitiesPage() {
   const [contactPhone, setContactPhone] = useState('');
   const { selectCommunity } = useAuth();
   const router = useRouter();
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchCommunities = async () => {
     try {
@@ -60,6 +63,29 @@ export default function CommunitiesPage() {
     router.push('/');
   };
 
+  /**
+   * Removing a property that should not have existed.
+   *
+   * The server refuses anything with residents, units, gates, vehicles or
+   * valet tickets, so this cannot take a live customer down -- but it can
+   * still take the wrong empty one, hence the confirm step naming it. The
+   * refusal message is shown verbatim because it carries the counts, which
+   * is the part somebody needs.
+   */
+  const handleDelete = async (c: Community) => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await apiDelete(`/admin/communities/${c.id}`);
+      setConfirming(null);
+      await fetchCommunities();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : `Could not remove ${c.name}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -88,10 +114,20 @@ export default function CommunitiesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {communities.map((c) => (
+            <div key={c.id} className="relative">
+              {/* Sits outside the card's own button: a button inside a button
+                  is not something a browser will lay out predictably. */}
+              <button
+                onClick={() => { setConfirming(c.id); setDeleteError(null); }}
+                title={`Remove ${c.name}`}
+                aria-label={`Remove ${c.name}`}
+                className="absolute top-3 right-3 z-10 h-7 w-7 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors"
+              >
+                ×
+              </button>
             <button
-              key={c.id}
               onClick={() => handleSelect(c)}
-              className="glass-panel glass-panel-hover p-6 text-left transition-all duration-300"
+              className="glass-panel glass-panel-hover p-6 text-left transition-all duration-300 w-full"
             >
               <h3 className="text-lg font-bold text-gray-900 mb-1">{c.name}</h3>
               {c.address && <p className="text-xs text-gray-400 mb-4">{c.address}</p>}
@@ -114,6 +150,35 @@ export default function CommunitiesPage() {
                 </div>
               </div>
             </button>
+
+            {confirming === c.id && (
+              <div className="absolute inset-0 z-20 rounded-xl bg-white/95 backdrop-blur-sm ring-1 ring-red-200 p-5 flex flex-col justify-center">
+                <p className="text-sm font-bold text-gray-900">Remove {c.name}?</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  This deletes the property and its logins. A property with any
+                  residents, units, gates, vehicles or valet tickets is refused.
+                </p>
+                {deleteError && (
+                  <p className="text-xs text-red-600 mt-2">{deleteError}</p>
+                )}
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => handleDelete(c)}
+                    disabled={deleting}
+                    className="px-3 py-1.5 text-xs font-bold bg-red-600 text-white rounded-lg disabled:opacity-50"
+                  >
+                    {deleting ? 'Removing…' : 'Remove'}
+                  </button>
+                  <button
+                    onClick={() => { setConfirming(null); setDeleteError(null); }}
+                    className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded-lg ring-1 ring-gray-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+            </div>
           ))}
         </div>
       )}

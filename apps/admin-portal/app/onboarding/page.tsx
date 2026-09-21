@@ -100,9 +100,12 @@ export default function OnboardingPage() {
       selectCommunity(res.data.communityId, res.data.communityName);
       setStep(4);
     } catch (err) {
+      // The server's message is the specific one ("Username already exists");
+      // the fallback matters because a failure here rolls everything back, and
+      // the person needs to know nothing was half-created.
       setError(
-        err instanceof Error && /409/.test(err.message)
-          ? 'That username is already taken'
+        err instanceof Error && err.message && !/^API error/.test(err.message)
+          ? err.message
           : 'Could not create the property. Nothing was saved.'
       );
     } finally {

@@ -169,3 +169,94 @@ describe('POST /admin/onboarding/valet — failures before the transaction', () 
     expect(status).toBe(500);
   });
 });
+
+describe('DELETE /admin/communities/:id', () => {
+  const empty = { residents: '0', units: '0', gates: '0', vehicles: '0', tickets: '0' };
+
+  it('refuses a community_admin', async () => {
+    const { status } = await request('DELETE', '/api/v1/admin/communities/c1', {
+      headers: { Authorization: `Bearer ${communityAdmin}` },
+    });
+    expect(status).toBe(403);
+  });
+
+  it('404s for a community that is not there', async () => {
+    queryOne.mockResolvedValueOnce(null);
+    const { status } = await request('DELETE', '/api/v1/admin/communities/nope', {
+      headers: { Authorization: `Bearer ${superAdmin}` },
+    });
+    expect(status).toBe(404);
+  });
+
+  it('removes an empty property along with what only exists because of it', async () => {
+    queryOne
+      .mockResolvedValueOnce({ id: 'c9', name: 'Onboarding Smoke Test' })
+      .mockResolvedValueOnce(empty);
+
+    const { status, json } = await request('DELETE', '/api/v1/admin/communities/c9', {
+      headers: { Authorization: `Bearer ${superAdmin}` },
+    });
+
+    expect(status).toBe(200);
+    const sql = sqlRun();
+    expect(sql[0]).toBe('BEGIN');
+    // The login and the entitlement row are not data the property accumulated;
+    // they were made for it and are meaningless without it.
+    expect(sql.some((s) => /DELETE FROM admins/.test(s))).toBe(true);
+    expect(sql.some((s) => /DELETE FROM community_entitlements/.test(s))).toBe(true);
+    expect(sql.some((s) => /DELETE FROM communities/.test(s))).toBe(true);
+    expect(sql[sql.length - 1]).toBe('COMMIT');
+    expect(json.data.deleted).toBe('Onboarding Smoke Test');
+  });
+
+  it('refuses a property that has real operational data, and says what', async () => {
+    queryOne
+      .mockResolvedValueOnce({ id: 'c1', name: 'Palm Meadows' })
+      .mockResolvedValueOnce({ residents: '25', units: '13', gates: '3', vehicles: '19', tickets: '0' });
+
+    const { status, json } = await request('DELETE', '/api/v1/admin/communities/c1', {
+      headers: { Authorization: `Bearer ${superAdmin}` },
+    });
+
+    // Deleting a live property is never what somebody meant by this button.
+    // Naming the counts is the difference between "no" and "no, because".
+    expect(status).toBe(409);
+    expect(json.error.message).toMatch(/25 residents/);
+    expect(json.error.message).toMatch(/13 units/);
+    expect(client.query).not.toHaveBeenCalled();
+  });
+
+  it('counts valet tickets too, so a valet-only property is protected', async () => {
+    queryOne
+      .mockResolvedValueOnce({ id: 'c2', name: 'The Leela' })
+      .mockResolvedValueOnce({ residents: '0', units: '0', gates: '0', vehicles: '0', tickets: '7' });
+
+    const { status, json } = await request('DELETE', '/api/v1/admin/communities/c2', {
+      headers: { Authorization: `Bearer ${superAdmin}` },
+    });
+
+    // A hotel has no residents or units at all -- counting only those would
+    // make every valet property look empty and freely deletable.
+    expect(status).toBe(409);
+    expect(json.error.message).toMatch(/7 valet tickets/);
+  });
+
+  it('rolls back if any part of the removal fails', async () => {
+    queryOne
+      .mockResolvedValueOnce({ id: 'c9', name: 'Test' })
+      .mockResolvedValueOnce(empty);
+    client.query.mockImplementation(async (sql) => {
+      if (/DELETE FROM communities/.test(sql)) throw new Error('fk violation');
+      return { rows: [], rowCount: 1 };
+    });
+
+    const { status } = await request('DELETE', '/api/v1/admin/communities/c9', {
+      headers: { Authorization: `Bearer ${superAdmin}` },
+    });
+
+    expect(status).toBe(500);
+    expect(sqlRun()).toContain('ROLLBACK');
+    expect(sqlRun()).not.toContain('COMMIT');
+    expect(client.release).toHaveBeenCalled();
+  });
+});

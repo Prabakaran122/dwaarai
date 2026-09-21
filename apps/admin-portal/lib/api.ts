@@ -33,7 +33,20 @@ export async function apiFetch<T = unknown>(path: string, options: RequestInit =
     throw new Error('Unauthorized');
   }
   if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
+    // The server's own message, when it sent one. A refusal like "still has 25
+    // residents, 13 units" is composed precisely so somebody does not have to
+    // go hunting for what is in the way, and throwing away the body to report
+    // "API error: 409 Conflict" discarded exactly that. Falls back to the
+    // status when the body is missing, unparseable, or carries no message.
+    let message = `API error: ${res.status} ${res.statusText}`;
+    try {
+      const body = await res.json();
+      if (body?.error?.message) message = body.error.message;
+      else if (typeof body?.message === 'string') message = body.message;
+    } catch {
+      /* non-JSON error body; the status line is all there is */
+    }
+    throw new Error(message);
   }
   return res.json();
 }

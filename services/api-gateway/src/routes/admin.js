@@ -611,3 +611,77 @@ router.post('/admin/onboarding/valet', superOnly, async (req, res) => {
     if (client) client.release();
   }
 });
+
+// -- DELETE /admin/communities/:id --------------------------------------------
+
+/** What a property has to be empty of before it can be removed. */
+const BLOCKING_COUNTS = [
+  ['residents', 'residents'],
+  ['units', 'units'],
+  ['gates', 'gates'],
+  ['vehicles', 'vehicles'],
+  ['tickets', 'valet tickets'],
+];
+
+/**
+ * Removes a property that should not have existed.
+ *
+ * This exists for the onboarding mistake -- the duplicate, the typo, the smoke
+ * test -- and deliberately not for retiring a live customer. Anything a
+ * property has actually accumulated blocks the delete and is named in the
+ * refusal, because "no" without the count sends somebody hunting through five
+ * screens to find out why.
+ *
+ * Valet tickets are counted alongside residents and units for a reason: a
+ * hotel has no residents or units at all, so counting only those would make
+ * every valet property look empty and freely deletable.
+ *
+ * What goes with it is only what was made for it and means nothing without
+ * it -- the entitlement row and the logins scoped to it. Everything else is
+ * the operational data that blocked the delete in the first place.
+ */
+router.delete('/admin/communities/:id', superOnly, async (req, res) => {
+  let client;
+  try {
+    const community = await queryOne('SELECT id, name FROM communities WHERE id = $1', [req.params.id]);
+    if (!community) return error(res, 'Community not found', 404);
+
+    const counts = await queryOne(
+      `SELECT
+         (SELECT count(*) FROM residents      WHERE community_id = $1) AS residents,
+         (SELECT count(*) FROM units          WHERE community_id = $1) AS units,
+         (SELECT count(*) FROM gates          WHERE community_id = $1) AS gates,
+         (SELECT count(*) FROM vehicles       WHERE community_id = $1) AS vehicles,
+         (SELECT count(*) FROM valet_tickets  WHERE community_id = $1) AS tickets`,
+      [community.id]
+    );
+
+    const blocking = BLOCKING_COUNTS
+      .map(([key, label]) => [Number(counts?.[key] ?? 0), label])
+      .filter(([n]) => n > 0)
+      .map(([n, label]) => `${n} ${label}`);
+
+    if (blocking.length) {
+      return error(
+        res,
+        `${community.name} still has ${blocking.join(', ')}. Remove those first, or deactivate the property instead.`,
+        409
+      );
+    }
+
+    client = await pool.connect();
+    await client.query('BEGIN');
+    await client.query('DELETE FROM admins WHERE community_id = $1', [community.id]);
+    await client.query('DELETE FROM community_entitlements WHERE community_id = $1', [community.id]);
+    await client.query('DELETE FROM communities WHERE id = $1', [community.id]);
+    await client.query('COMMIT');
+
+    return success(res, { deleted: community.name });
+  } catch (err) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    console.error('DELETE /admin/communities/:id error:', err);
+    return error(res, 'Internal server error', 500);
+  } finally {
+    if (client) client.release();
+  }
+});
