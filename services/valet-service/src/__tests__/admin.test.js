@@ -1084,3 +1084,46 @@ describe('whether face enrolment is even possible here', () => {
     expect(res.body.configured).toBe(false);
   });
 });
+
+describe('a client admin, who holds several properties and no single one', () => {
+  const clientAdminToken = () =>
+    adminToken({ role: 'client_admin', community_id: null, account_id: 'acc-1' });
+
+  it('reaches the account-scoped locations list without a community', async () => {
+    queryRows.mockResolvedValueOnce([
+      { id: 'c1', name: 'The Leela Palace', address: 'Old Airport Rd', plan: 'basic' },
+    ]);
+
+    const res = await request(app, 'GET', '/admin/locations', { token: clientAdminToken() });
+
+    // The middleware refused every token with no community_id, so the one
+    // endpoint built for a group admin was unreachable by a group admin.
+    expect(res.status).toBe(200);
+    expect(res.body.locations).toHaveLength(1);
+  });
+
+  it('may act on a property inside their own account', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'c1' });   // c1 belongs to acc-1
+    queryRows.mockResolvedValueOnce([]);
+
+    const res = await request(app, 'GET', '/admin/staff', {
+      token: clientAdminToken(),
+      headers: { 'x-community-id': 'c1' },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('may not act on a property outside it', async () => {
+    queryOne.mockResolvedValueOnce(null);           // not in this account
+
+    const res = await request(app, 'GET', '/admin/staff', {
+      token: clientAdminToken(),
+      headers: { 'x-community-id': 'someone-elses' },
+    });
+
+    // Without the ownership check, naming any community id in a header would
+    // hand a group admin somebody else's property.
+    expect(res.status).toBe(403);
+  });
+});
