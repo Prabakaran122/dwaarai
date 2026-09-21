@@ -36,6 +36,7 @@ tar czf /tmp/valet-full.tar.gz \
   pnpm-lock.yaml \
   services/api-gateway/migrations \
   services/api-gateway/src \
+  services/face-service \
   apps/valet-guest \
   apps/admin-portal \
   deploy

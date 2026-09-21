@@ -28,7 +28,13 @@ fi
 echo "  ${FREE_MB}MB free"
 
 say "Python environment"
-sudo dnf install -y python3.11 python3.11-pip >/dev/null 2>&1 || sudo yum install -y python3 python3-pip >/dev/null 2>&1 || true
+# gcc-c++ is not optional: insightface ships a Cython extension with no wheel
+# for this platform, so pip builds it from source and fails with a bare
+# "[Errno 2] No such file or directory: 'g++'" that says nothing about what
+# to install.
+sudo dnf install -y python3.11 python3.11-pip python3.11-devel gcc gcc-c++ make >/dev/null 2>&1 \
+  || sudo yum install -y python3 python3-pip python3-devel gcc gcc-c++ make >/dev/null 2>&1 || true
+command -v g++ >/dev/null || { echo "g++ is still missing; cannot build insightface" >&2; exit 1; }
 PY=$(command -v python3.11 || command -v python3)
 echo "  using $PY"
 [ -d "$VENV" ] || "$PY" -m venv "$VENV"
