@@ -86,9 +86,14 @@ export function notifyCardHeld(waId, venueName) {
  * just been handed over.
  */
 const TEMPLATE_FOR = {
+  // The car is with us.
   bound: () => process.env.WHATSAPP_TEMPLATE_CHECKED_IN,
-  accepted: () => process.env.WHATSAPP_TEMPLATE_ON_THE_WAY,
+  // We have the request; a valet is walking to the car.
+  accepted: () => process.env.WHATSAPP_TEMPLATE_REQUESTED
+    || process.env.WHATSAPP_TEMPLATE_ON_THE_WAY,
+  // The car is moving.
   en_route: () => process.env.WHATSAPP_TEMPLATE_ON_THE_WAY,
+  // It is at the kerb.
   arrived: () => process.env.WHATSAPP_TEMPLATE_CAR_READY || 'car_ready',
 };
 

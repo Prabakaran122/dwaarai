@@ -192,3 +192,40 @@ describe('on a provider with no free-form messages', () => {
     expect(sendText).toHaveBeenCalled();
   });
 });
+
+describe('the stages a guest is told about', () => {
+  const ticket = () => ({
+    phone_number: '919003143250',
+    community_name: 'Palm Meadows',
+    display_id: 'DWR-0010',
+    claim_code: 'B73V5M',
+    plate: 'TN09XY5678',
+    vehicle_make: 'Honda City',
+  });
+
+  beforeEach(() => {
+    process.env.WHATSAPP_PROVIDER = 'authkey';
+    process.env.WHATSAPP_TEMPLATE_CHECKED_IN = '49411';
+    process.env.WHATSAPP_TEMPLATE_REQUESTED = '49443';
+    process.env.WHATSAPP_TEMPLATE_ON_THE_WAY = '49442';
+    process.env.WHATSAPP_TEMPLATE_CAR_READY = '49385';
+  });
+
+  // Each stage is a different fact about where the car is, and a guest
+  // deciding when to walk to the kerb needs them apart: "we have your
+  // request" and "your car is moving" are minutes and a decision apart.
+  it.each([
+    ['bound', '49411'],
+    ['accepted', '49443'],
+    ['en_route', '49442'],
+    ['arrived', '49385'],
+  ])('tells a guest about %s with its own template', async (kind, wid) => {
+    await notifyGuest(ticket(), kind);
+    expect(sendTemplate).toHaveBeenCalledWith('919003143250', wid, expect.anything());
+  });
+
+  it('does not reuse the on-the-way wording for a request just received', async () => {
+    await notifyGuest(ticket(), 'accepted');
+    expect(sendTemplate).not.toHaveBeenCalledWith('919003143250', '49442', expect.anything());
+  });
+});
