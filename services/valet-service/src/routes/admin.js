@@ -924,7 +924,12 @@ router.post('/staff', admin, async (req, res) => {
   );
   if (!unit) {
     unit = await queryOne(
-      "INSERT INTO units (community_id, unit_number, floor, status) VALUES ($1, 'GUARD-POST', 'G', 'occupied') RETURNING id",
+      // floor stays NULL: the column is INT and a guard post is not on a
+      // floor. 'G' for "ground" read naturally and made Postgres reject the
+      // whole insert, so the first valet could never be added at a property
+      // that had no GUARD-POST unit yet -- which is every property the
+      // onboarding flow creates.
+      "INSERT INTO units (community_id, unit_number, floor, status) VALUES ($1, 'GUARD-POST', NULL, 'occupied') RETURNING id",
       [req.user.community_id]
     );
   }

@@ -1037,3 +1037,28 @@ describe('staff list', () => {
     expect(res.body.staff.map((s) => s.faceEnrolled)).toEqual([true, false]);
   });
 });
+
+describe('adding the first member of staff at a new property', () => {
+  it('does not put a letter in an integer column', async () => {
+    queryOne
+      .mockResolvedValueOnce(null)            // no existing guard with that mobile
+      .mockResolvedValueOnce(null)            // no GUARD-POST unit yet
+      .mockResolvedValueOnce({ id: 'u-new' }); // unit created
+    query.mockResolvedValue({});
+
+    const res = await request(app, 'POST', '/admin/staff', {
+      token: adminToken(),
+      body: { name: 'Test Valet', mobile: '9876500001', password: 'valet1234', role: 'valet_manager' },
+    });
+
+    // units.floor is INT. 'G' made Postgres reject the whole insert, so the
+    // first valet could never be added at a property with no GUARD-POST unit
+    // -- which is every property the onboarding flow creates. The mocks here
+    // accept anything, so only the column type tells the truth.
+    const unitInsert = queryOne.mock.calls.find((c) => /INSERT INTO units/.test(c[0]));
+    expect(unitInsert).toBeDefined();
+    const floorParam = /floor/.test(unitInsert[0]) ? unitInsert[0] : '';
+    expect(floorParam).not.toMatch(/'G'/);
+    expect(res.status).toBe(201);
+  });
+});
