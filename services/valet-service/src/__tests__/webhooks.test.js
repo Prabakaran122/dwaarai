@@ -251,3 +251,58 @@ describe('providers that cannot sign', () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe('a guest who replies exactly as we told them to', () => {
+  const ak = (text, from = '919003143250') => ({
+    channel: 'wapp',
+    eventContent: { message: { id: `wamid.${text}${from}`, from, text: { body: text } } },
+  });
+  const post = (b) => request(app, 'POST', '/webhooks/whatsapp?token=shh', { body: b });
+
+  it('finds their car from the phone number alone', async () => {
+    // "Reply CAR when you want it brought round" is what the welcome message
+    // says. CAR is three characters; the claim-code pattern needs six, so this
+    // resolved to nothing and the guest was ignored -- by the one instruction
+    // we actually gave them.
+    // No code in "CAR", so the code lookup never runs: dedup, then phone.
+    queryOne
+      .mockResolvedValueOnce(null)                                   // dedup
+      .mockResolvedValueOnce({                                       // by phone
+        id: 't1', claim_code: '4K7QP2', phone_number: '919003143250',
+        status: 'parked', community_name: 'The Leela', display_id: 'DWR-0042',
+      });
+
+    await post(ak('CAR'));
+
+    const sql = query.mock.calls.map((c) => c[0]).join(' ');
+    expect(sql).toMatch(/status\s*=\s*'retrieval_requested'/);
+    expect(notifyGuest).toHaveBeenCalledWith(expect.anything(), 'accepted');
+  });
+
+  it('still says nothing useful to a stranger with no ticket', async () => {
+    queryOne
+      .mockResolvedValueOnce(null)   // dedup
+      .mockResolvedValueOnce(null);  // by phone: nothing
+
+    const res = await post(ak('CAR', '910000000000'));
+
+    expect(res.body.unmatched).toBe(true);
+    expect(notifyGuest).not.toHaveBeenCalled();
+  });
+
+  it('prefers the code when one is given, over the phone lookup', async () => {
+    queryOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 't-code', claim_code: '4K7QP2', phone_number: '919003143250',
+        status: 'parked', community_name: 'The Leela', display_id: 'DWR-0042',
+      });
+
+    await post(ak('4K7QP2 CAR'));
+
+    // A guest holding a card for a different car must reach that car, not
+    // whichever ticket their number happens to be on.
+    const byPhone = queryOne.mock.calls.filter((c) => /phone_number\s*=/.test(c[0]));
+    expect(byPhone).toHaveLength(0);
+  });
+});

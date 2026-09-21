@@ -63,28 +63,6 @@ router.post('/whatsapp', async (req, res) => {
     return res.status(401).json({ error: 'bad_signature' });
   }
 
-  // Temporary, flag-gated, and off by default: WHATSAPP_DEBUG_INBOUND=1.
-  //
-  // Field *names* are what is needed to map a new provider's payload, so this
-  // logs the shape and deliberately not the contents -- every value is
-  // reported as its type and length. An inbound webhook carries a guest's
-  // phone number and whatever they wrote; dumping that into the journal for
-  // every message would be a privacy problem that outlives the question it
-  // was added to answer.
-  if (process.env.WHATSAPP_DEBUG_INBOUND === '1') {
-    const shape = (v, depth = 0) => {
-      if (v === null || v === undefined) return String(v);
-      if (Array.isArray(v)) return depth > 2 ? 'array' : `[${v.slice(0, 2).map((x) => shape(x, depth + 1)).join(', ')}]`;
-      if (typeof v === 'object') {
-        if (depth > 2) return 'object';
-        return `{${Object.entries(v).map(([k, val]) => `${k}: ${shape(val, depth + 1)}`).join(', ')}}`;
-      }
-      if (typeof v === 'string') return `string(${v.length})`;
-      return typeof v;
-    };
-    console.log('[wa-inbound] shape:', shape(req.body));
-  }
-
   // Normalised here rather than read inline: MSG91 and Meta disagree on the
   // shape, and this route should not know which provider is configured.
   const message = normalizeInbound(req.body);
@@ -99,9 +77,28 @@ router.post('/whatsapp', async (req, res) => {
   if (seen) return res.status(200).json({ ok: true, duplicate: true });
 
   const code = extractCode(message.text);
+
+  // No code is the normal case, not an error. The welcome message says
+  // "Reply CAR when you want it brought round", and CAR is three characters
+  // where the claim-code pattern needs six -- so following our own
+  // instruction resolved to nothing and the guest was ignored.
+  //
+  // WhatsApp guarantees the sender's number, and the number is already bound
+  // to the ticket, so it identifies them on its own. Most recent open ticket,
+  // because a returning guest may have several across a stay.
   if (!code) {
-    await recordInbound(message.id, null);
-    return res.status(200).json({ ok: true, unmatched: true });
+    const own = await queryOne(
+      `SELECT t.*, c.name AS community_name
+         FROM valet_tickets t
+         JOIN communities c ON c.id = t.community_id
+        WHERE t.phone_number = $1 AND t.status NOT IN ('final_closed', 'expired')
+        ORDER BY t.created_at DESC
+        LIMIT 1`,
+      [message.from]
+    );
+    await recordInbound(message.id, own?.id || null);
+    if (!own) return res.status(200).json({ ok: true, unmatched: true });
+    return handleTicket(res, own, message);
   }
 
   let ticket = await queryOne(
@@ -149,6 +146,20 @@ router.post('/whatsapp', async (req, res) => {
 
   if (!ticket) return res.status(200).json({ ok: true, unmatched: true });
 
+  return handleTicket(res, ticket, message);
+});
+
+export default router;
+
+
+/**
+ * Everything that happens once a ticket has been identified.
+ *
+ * Shared because there are now two ways to arrive here -- a claim code in
+ * the message, or the sender s own number when they wrote no code -- and
+ * the two must behave identically from this point on.
+ */
+async function handleTicket(res, ticket, message) {
   if (ticket.phone_number && ticket.phone_number !== message.from) {
     // The window still refreshes so we could answer them, but the ticket does
     // not move to whoever scanned the screen last.
@@ -192,6 +203,4 @@ router.post('/whatsapp', async (req, res) => {
 
   await notifyGuest(fresh, statusKind(ticket.status));
   return res.status(200).json({ ok: true });
-});
-
-export default router;
+}
