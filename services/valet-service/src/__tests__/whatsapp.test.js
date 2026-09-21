@@ -278,3 +278,44 @@ describe('authkey.io transport', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The send endpoint does not answer like the balance endpoint.
+ *
+ * getbalance.php returns { success: true }; requestjson.php returns
+ * { status: 'Success', LogID, Message }. Reading the send response for a
+ * `success` boolean called every real delivery a failure -- which, through
+ * the template fallback, means the guest is messaged twice.
+ */
+describe('authkey.io response shapes', () => {
+  function withResponse(payload) {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => payload });
+    vi.stubGlobal('fetch', fetchMock);
+    return sendTemplate('919876543210', '49385', ['a']);
+  }
+
+  beforeEach(() => {
+    process.env.WHATSAPP_PROVIDER = 'authkey';
+    process.env.AUTHKEY_API_KEY = 'testkey';
+  });
+
+  it('reads the real success shape from requestjson.php', async () => {
+    expect(await withResponse({
+      status: 'Success', LogID: 'fc80aafe', Message: 'Submitted Successfully',
+    })).toEqual({ status: 'sent' });
+  });
+
+  it('still accepts the boolean shape other endpoints use', async () => {
+    expect(await withResponse({ success: true })).toEqual({ status: 'sent' });
+  });
+
+  it('treats a failure status as failed', async () => {
+    expect(await withResponse({
+      status: 'failure', code: 446, desc: 'No template available',
+    })).toEqual({ status: 'failed' });
+  });
+
+  it('treats an unrecognised body as failed rather than guessing', async () => {
+    expect(await withResponse({ something: 'else' })).toEqual({ status: 'failed' });
+  });
+});

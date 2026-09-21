@@ -67,7 +67,14 @@ async function postAuthkey(body) {
       signal: AbortSignal.timeout(10000),
     });
     const data = await res.json().catch(() => null);
-    return data?.success === true ? { status: 'sent' } : { status: 'failed' };
+    // Two shapes, because authkey.io does not answer consistently across its
+    // own endpoints: requestjson.php returns { status: 'Success', LogID, ... }
+    // while getbalance.php returns { success: true }. Reading only the boolean
+    // reported every real delivery as failed -- and through the template
+    // fallback that means messaging the guest twice.
+    const ok = data?.success === true
+      || String(data?.status || '').toLowerCase() === 'success';
+    return ok ? { status: 'sent' } : { status: 'failed' };
   } catch {
     return { status: 'failed' };
   }
