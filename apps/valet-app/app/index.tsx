@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -9,6 +9,7 @@ import { useAppFonts } from '../src/lib/fonts';
 import ErrorBoundary from '../src/components/ErrorBoundary';
 import LoginScreen from '../src/screens/LoginScreen';
 import ValetFlow from '../src/screens/ValetFlow';
+import ShiftStartScreen from '../src/screens/ShiftStartScreen';
 import { installAuthRefresh } from '../src/api/valet';
 
 /**
@@ -21,6 +22,25 @@ import { installAuthRefresh } from '../src/api/valet';
  */
 export default function App() {
   const { token, restoring, restore } = useAuthStore();
+  /**
+   * BRD Screen 1b sits between sign-in and the queue, once per shift.
+   *
+   * Held in memory on purpose. A restored token means the app was reopened
+   * mid-shift -- backgrounded between two cars -- and asking for the selfie
+   * again there would be a photograph every few minutes rather than once. So
+   * the check belongs to a fresh sign-in, which is what starting a shift
+   * actually is.
+   */
+  const [shiftChecked, setShiftChecked] = useState(false);
+
+  // A token that was already in storage when the app opened means the shift
+  // is underway and the app was merely backgrounded between two cars. Asking
+  // for the selfie there would mean a photograph every few minutes instead of
+  // one per shift, so the check is skipped and belongs to a fresh sign-in --
+  // which is what starting a shift actually is.
+  useEffect(() => {
+    if (!restoring && useAuthStore.getState().token) setShiftChecked(true);
+  }, [restoring]);
   const rehydrateLang = useLangStore((s) => s.rehydrate);
 
   // Every screen styles text through font(), which returns a fontFamily of
@@ -50,10 +70,12 @@ export default function App() {
           <View style={styles.center}>
             <ActivityIndicator color={colors.actionPrimary} />
           </View>
-        ) : token ? (
+        ) : !token ? (
+          <LoginScreen />
+        ) : shiftChecked ? (
           <ValetFlow />
         ) : (
-          <LoginScreen />
+          <ShiftStartScreen onDone={() => setShiftChecked(true)} />
         )}
       </View>
     </SafeAreaProvider>

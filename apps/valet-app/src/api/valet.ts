@@ -195,6 +195,23 @@ export const lookupPlate = (plate: string) =>
 export const acceptTicket = (token: string, etaMinutes: number | null) =>
   valet.post(`/guard/tickets/${token}/accept`, etaMinutes ? { etaMinutes } : {});
 
+/**
+ * Starts the shift, and records whether the face check passed.
+ *
+ * Never a lock-out: the response always says the shift started. A bad light
+ * at six in the morning must not strand a real attendant, so the outcome is
+ * recorded and a manager decides -- which is also why the screen can be
+ * skipped when there is no camera.
+ */
+export const startShift = (imageBase64?: string) =>
+  valet.post<{
+    started: boolean;
+    photo: boolean;
+    verified: boolean;
+    confidence: number | null;
+    reason: string | null;
+  }>('/guard/shift/start', imageBase64 ? { imageBase64 } : {}).then((r) => r.data);
+
 export const markArrived = (token: string) =>
   valet.post(`/guard/tickets/${token}/arrived`);
 
