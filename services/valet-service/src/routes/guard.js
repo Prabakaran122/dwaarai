@@ -423,8 +423,12 @@ router.post('/tickets/:token/complete', guard, async (req, res) => {
     `UPDATE valet_tickets
         SET plate = $2, plate_normalized = $3, vehicle_make = $4, stay_end_at = $5,
             slot_id = $6, guest_name = $7, car_type = $8, is_premium = $9,
-            phone_number = COALESCE(phone_number, $10),
-            phone_consent_at = CASE WHEN $10 IS NULL THEN phone_consent_at
+            phone_number = COALESCE(phone_number, $10::text),
+            -- Cast for the same reason as the insert above. This one happens
+            -- to resolve, because COALESCE against the column gives Postgres
+            -- a type to infer from first, but relying on statement order for
+            -- that is how the insert came to fail.
+            phone_consent_at = CASE WHEN $10::text IS NULL THEN phone_consent_at
                                     ELSE COALESCE(phone_consent_at, NOW()) END,
             status = 'parked'
       WHERE id = $1`,
@@ -617,7 +621,13 @@ router.post('/tickets', guard, async (req, res) => {
           vehicle_make, stay_end_at, status, created_by_guard_id, card_id, card_code, claim_code,
           phone_number, phone_consent_at, slot_id, guest_name, car_type, is_premium)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'parked', $8, $9, $10, $11,
-               $12, CASE WHEN $12 IS NULL THEN NULL ELSE NOW() END, $13, $14, $15, $16)
+               -- Cast, because $12 also appears inside a CASE that gives
+               -- Postgres nothing to infer a type from. Without it the
+               -- statement fails to prepare -- "could not determine data type
+               -- of parameter $12" -- every time, whatever the value, so this
+               -- whole route answered 500 and the app said only "that action
+               -- failed, try again".
+               $12::text, CASE WHEN $12::text IS NULL THEN NULL ELSE NOW() END, $13, $14, $15, $16)
        RETURNING id`,
       [communityId, displayId, sessionToken, plate, normalizePlate(plate), vehicleMake, stayEnd.toISOString(), req.user.sub,
        card ? card.id : null, card ? card.code : null, claimCode, phoneNumber, slotId,

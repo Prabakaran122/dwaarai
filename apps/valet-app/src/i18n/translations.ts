@@ -33,6 +33,12 @@ export const translations: Dict = {
   valetArrived: { en: 'Arrived at pickup', hi: 'पिकअप पर पहुंचा', kn: 'ಪಿಕಪ್‌ಗೆ ಬಂದಿದೆ' },
   valetScanQr: { en: 'Scan guest QR', hi: 'मेहमान का QR स्कैन करें', kn: 'ಅತಿಥಿ QR ಸ್ಕ್ಯಾನ್ ಮಾಡಿ' },
   valetDisputed: { en: 'Disputed', hi: 'विवादित', kn: 'ವಿವಾದಿತ' },
+  // The three states the lifecycle rename added. Without these the queue
+  // showed a valet the raw key -- VALETSTATUS_PARKING_IN_PROGRESS -- during
+  // every intake, in all three languages.
+  valetStatus_accepted: { en: 'Taken', hi: 'लिया गया', kn: 'ತೆಗೆದುಕೊಂಡಿದೆ' },
+  valetStatus_parking_in_progress: { en: 'Parking', hi: 'पार्क हो रहा है', kn: 'ಪಾರ್ಕ್ ಆಗುತ್ತಿದೆ' },
+  valetStatus_retrieval_requested: { en: 'Car requested', hi: 'कार मांगी गई', kn: 'ಕಾರ್ ಕೇಳಲಾಗಿದೆ' },
   valetStatus_parked: { en: 'Parked', hi: 'पार्क किया', kn: 'ಪಾರ್ಕ್ ಆಗಿದೆ' },
   valetStatus_requested: { en: 'Requested', hi: 'अनुरोध किया', kn: 'ವಿನಂತಿಸಲಾಗಿದೆ' },
   valetStatus_en_route: { en: 'On the way', hi: 'रास्ते में', kn: 'ದಾರಿಯಲ್ಲಿದೆ' },
