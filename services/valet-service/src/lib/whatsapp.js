@@ -157,19 +157,35 @@ export function sendText(waId, body) {
  * `language` is a bare string here. The { code: 'en' } form belongs to Meta's
  * Cloud API; sending it to MSG91 is a different API's vocabulary.
  */
-export function sendTemplate(waId, templateName, vars = []) {
+export function sendTemplate(waId, templateName, vars = [], opts = {}) {
   if (provider() === 'authkey') {
     // `wid` is a numeric template id from the authkey.io console, not a name.
     // Variables are named var1..varN there, in the order the template declares
     // its {#placeholders#}.
     const bodyValues = {};
     vars.forEach((v, i) => { bodyValues[`var${i + 1}`] = v; });
-    return postAuthkey({
+
+    const payload = {
       ...splitNumber(waId),
       wid: String(templateName),
       type: 'text',
       bodyValues,
-    });
+    };
+
+    // Only when an image was asked for. A template approved as text must not
+    // start declaring itself media: the header is part of what Meta approved,
+    // and the two shapes are not interchangeable.
+    if (opts.headerImageUrl) {
+      payload.template_type = 'media';
+      payload.headerValues = {
+        // authkey.io fetches this URL itself, so it has to be publicly
+        // reachable -- which is what /valet/t/<claim code> exists for.
+        headerData: opts.headerImageUrl,
+        headerFileName: opts.headerFileName || 'status.png',
+      };
+    }
+
+    return postAuthkey(payload);
   }
   return post({
     integrated_number: fromNumber(),

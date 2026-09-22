@@ -23,6 +23,26 @@ const baseUrl = () => process.env.VALET_GUEST_BASE_URL || 'https://dwaarai.com/v
  */
 const trackUrl = (t) => `${baseUrl()}/w/${t.claim_code}`;
 
+/**
+ * The status card a media template carries as its header.
+ *
+ * Rendered per request, so a message sent at 9:04 shows where the car was at
+ * 9:04 -- which is the only reason a picture beats the words, given the words
+ * are fixed by whatever Meta approved. Claim code, not session token, like
+ * every other guest link.
+ */
+const timelineUrl = (t) => `${baseUrl()}/t/${t.claim_code}`;
+
+/**
+ * Whether the approved templates carry an image header.
+ *
+ * Off by default and deliberately explicit: declaring media against a
+ * template Meta approved as text makes the provider reject every send, which
+ * is worse than a plain message. It flips only once the media templates are
+ * approved and their ids are configured.
+ */
+const mediaTemplates = () => process.env.WHATSAPP_TEMPLATE_MEDIA === '1';
+
 function compose(t, kind) {
   switch (kind) {
     case 'bound':
@@ -118,7 +138,10 @@ export async function notifyGuest(ticket, kind) {
     // it is still being fetched sends them to the kerb for a car that is not
     // there, and the tracking link they already hold is live either way.
     if (!wid) return { status: 'skipped', reason: 'no_template_for_kind' };
-    return sendTemplate(ticket.phone_number, wid, templateVars(ticket, kind));
+    const opts = mediaTemplates() && ticket.claim_code
+      ? { headerImageUrl: timelineUrl(ticket), headerFileName: 'status.png' }
+      : {};
+    return sendTemplate(ticket.phone_number, wid, templateVars(ticket, kind), opts);
   }
 
   if (withinWindow(ticket)) {

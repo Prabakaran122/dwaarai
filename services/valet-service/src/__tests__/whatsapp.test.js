@@ -376,3 +376,42 @@ describe('authkey.io inbound', () => {
     })).toBeNull();
   });
 });
+
+/**
+ * A media template carries an image header. authkey.io takes it as a URL it
+ * fetches itself -- headerValues.headerData -- so the image has to be
+ * publicly reachable, which is what /valet/t/<claim code> is for.
+ */
+describe('sending the timeline image with the message', () => {
+  function capture(fn) {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ status: 'Success' }) });
+    vi.stubGlobal('fetch', fetchMock);
+    return fn().then(() => JSON.parse(fetchMock.mock.calls[0][1].body));
+  }
+
+  beforeEach(() => {
+    process.env.WHATSAPP_PROVIDER = 'authkey';
+    process.env.AUTHKEY_API_KEY = 'testkey';
+  });
+
+  it('attaches the image as a header when one is given', async () => {
+    const body = await capture(() =>
+      sendTemplate('919003143250', '49500', ['Palm Meadows', 'DWR-0011', 'https://dwaarai.com/valet/w/URK3DH'], {
+        headerImageUrl: 'https://dwaarai.com/valet/t/URK3DH',
+      }));
+
+    expect(body.template_type).toBe('media');
+    expect(body.headerValues.headerData).toBe('https://dwaarai.com/valet/t/URK3DH');
+    expect(body.headerValues.headerFileName).toBeTruthy();
+  });
+
+  it('stays a plain text template when no image is given', async () => {
+    const body = await capture(() => sendTemplate('919003143250', '49385', ['a', 'b', 'c']));
+
+    // An approved text template must not start claiming to be a media one:
+    // the header is part of what Meta approved, and the two are not
+    // interchangeable.
+    expect(body.template_type).toBeUndefined();
+    expect(body.headerValues).toBeUndefined();
+  });
+});

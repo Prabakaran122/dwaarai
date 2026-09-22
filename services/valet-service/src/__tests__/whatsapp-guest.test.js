@@ -167,12 +167,12 @@ describe('on a provider with no free-form messages', () => {
     // the fallback told a guest whose car had just been parked that it was
     // ready for collection.
     expect(sendText).not.toHaveBeenCalled();
-    expect(sendTemplate).toHaveBeenCalledWith('919003143250', '49411', expect.anything());
+    expect(sendTemplate).toHaveBeenCalledWith('919003143250', '49411', expect.anything(), expect.anything());
   });
 
   it('uses the ready template when the car has actually arrived', async () => {
     await notifyGuest(ticket({ status: 'arrived' }), 'arrived');
-    expect(sendTemplate).toHaveBeenCalledWith('919003143250', '49385', expect.anything());
+    expect(sendTemplate).toHaveBeenCalledWith('919003143250', '49385', expect.anything(), expect.anything());
   });
 
   it('says nothing rather than something untrue when no template fits', async () => {
@@ -221,11 +221,48 @@ describe('the stages a guest is told about', () => {
     ['arrived', '49385'],
   ])('tells a guest about %s with its own template', async (kind, wid) => {
     await notifyGuest(ticket(), kind);
-    expect(sendTemplate).toHaveBeenCalledWith('919003143250', wid, expect.anything());
+    expect(sendTemplate).toHaveBeenCalledWith('919003143250', wid, expect.anything(), expect.anything());
   });
 
   it('does not reuse the on-the-way wording for a request just received', async () => {
     await notifyGuest(ticket(), 'accepted');
-    expect(sendTemplate).not.toHaveBeenCalledWith('919003143250', '49442', expect.anything());
+    expect(sendTemplate).not.toHaveBeenCalledWith('919003143250', '49442', expect.anything(), expect.anything());
+  });
+});
+
+describe('the picture that goes with the message', () => {
+  const ticket = () => ({
+    phone_number: '919003143250', community_name: 'Palm Meadows',
+    display_id: 'DWR-0011', claim_code: 'URK3DH',
+    plate: 'KA01ME9999', vehicle_make: 'BMW 5 Series',
+  });
+
+  beforeEach(() => {
+    process.env.WHATSAPP_PROVIDER = 'authkey';
+    process.env.WHATSAPP_TEMPLATE_CAR_READY = '49385';
+    process.env.VALET_GUEST_BASE_URL = 'https://dwaarai.com/valet';
+    delete process.env.WHATSAPP_TEMPLATE_MEDIA;
+  });
+
+  it('sends the timeline image when the template is a media one', async () => {
+    process.env.WHATSAPP_TEMPLATE_MEDIA = '1';
+
+    await notifyGuest(ticket(), 'arrived');
+
+    // Rendered per request, so a message sent now shows where the car is now.
+    // Addressed by claim code like every other guest link.
+    expect(sendTemplate).toHaveBeenCalledWith(
+      '919003143250', '49385', expect.anything(),
+      expect.objectContaining({ headerImageUrl: 'https://dwaarai.com/valet/t/URK3DH' })
+    );
+  });
+
+  it('sends no header while the approved templates are still text', async () => {
+    await notifyGuest(ticket(), 'arrived');
+
+    const opts = vi.mocked(sendTemplate).mock.calls[0][3];
+    // Declaring media against a text-approved template would have the
+    // provider reject every send, which is worse than a plain message.
+    expect(opts?.headerImageUrl).toBeUndefined();
   });
 });
