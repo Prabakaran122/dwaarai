@@ -7,8 +7,10 @@ import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
 import { type } from '../theme/typography';
 import * as api from '../api/valet';
+import { uploadOrQueue } from '../lib/conditionQueue';
 import { useT } from '../store/langStore';
 import { takePhoto, openAppSettings } from '../lib/camera';
+import { CONDITION_ANGLES, nextAngle } from '../lib/conditionAngles';
 
 /**
  * Handing a car back: scan the guest's rotating QR, compare their face against
@@ -19,8 +21,6 @@ import { takePhoto, openAppSettings } from '../lib/camera';
  * capture is refused server-side if it is missing — so the screen enforces the
  * same order the API does rather than letting a valet discover it as an error.
  */
-
-const ANGLES = ['front', 'back', 'left', 'right'] as const;
 
 /**
  * Hides the last four digits of a plate.
@@ -57,6 +57,10 @@ export default function ValetHandoverScreen({
   const [ticket, setTicket] = useState<api.TicketDetail | null>(null);
   const [verification, setVerification] = useState<api.Verification>('photo');
   const [cameraBlocked, setCameraBlocked] = useState(false);
+  // The photo's own load state, never inferred. 'none' means the service has
+  // no photo to sign a link for (declined at intake, or already deleted).
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoState, setPhotoState] = useState<'idle' | 'loading' | 'loaded' | 'failed' | 'none'>('idle');
   // Latched in a ref, not state: a real camera fires onBarcodeScanned many
   // times per second, far faster than React re-renders, so a state flag would
   // still be `true` for every call in the same frame and the same code would
@@ -95,7 +99,24 @@ export default function ValetHandoverScreen({
     }
   }
 
-  async function captureReturn(angle: (typeof ANGLES)[number]) {
+  async function loadPhoto() {
+    setPhotoState('loading');
+    setPhotoUrl(null);
+    try {
+      setPhotoUrl(await api.guestPhotoUrl(sessionToken));
+      // Stays 'loading' until the <Image> itself reports onLoad or onError.
+    } catch (err) {
+      const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setPhotoState(code === 'no_photo' ? 'none' : 'failed');
+    }
+  }
+
+  const expectsPhoto = !(ticket && !ticket.hasPhoto);
+  useEffect(() => {
+    if (stage === 'compare' && expectsPhoto && photoState === 'idle') void loadPhoto();
+  }, [stage, expectsPhoto, photoState]);
+
+  async function captureReturn(angle: (typeof CONDITION_ANGLES)[number]) {
     // Never throws — see lib/camera. The same await used to sit outside this
     // try/catch, so a picker error silently did nothing.
     const res = await takePhoto();
@@ -111,7 +132,10 @@ export default function ValetHandoverScreen({
 
     setBusy(true);
     try {
-      await api.uploadCondition(sessionToken, res.uri, 'return', 'photo', angle);
+      // Queues rather than failing when the server cannot be reached.
+      // Condition media is evidence, and the bays where it is captured
+      // are exactly where the signal is not.
+      await uploadOrQueue(sessionToken, res.uri, 'return', 'photo', angle);
       setCaptured((prev) => [...prev, angle]);
       setError(null);
     } catch {
@@ -137,6 +161,35 @@ export default function ValetHandoverScreen({
       setBusy(false);
     }
   }
+
+  function renderVehicleCheck() {
+    return (
+      <>
+        <Text style={styles.hint}>{t('valetConfirmVehicleHint')}</Text>
+        <View style={styles.detailBox}>
+          <Text style={styles.detailLabel}>{t('valetMake')}</Text>
+          <Text style={styles.detailValue} testID="handover-vehicle">{ticket?.vehicleMake ?? ''}</Text>
+          <Text style={styles.detailLabel}>{t('valetPlate')}</Text>
+          {/* Partly masked: reading the full plate aloud tells the person
+              the answer they are supposed to be producing. */}
+          <Text style={styles.detailValue} testID="handover-plate">{maskPlate(ticket?.plate ?? '')}</Text>
+        </View>
+
+        <Pressable
+          testID="handover-vehicle-confirmed"
+          style={styles.cta}
+          onPress={() => { setVerification('vehicle_confirmed'); setStage('condition'); }}
+        >
+          <Text style={styles.ctaText}>{t('valetGuestConfirmed')}</Text>
+        </Pressable>
+        <Pressable testID="handover-hold" style={styles.ghost} onPress={onDone}>
+          <Text style={styles.ghostText}>{t('valetCannotConfirm')}</Text>
+        </Pressable>
+      </>
+    );
+  }
+
+  const next = nextAngle(captured);
 
   return (
     <View style={styles.container}>
@@ -178,7 +231,7 @@ export default function ValetHandoverScreen({
         )}
 
         {stage === 'compare' && (
-          ticket && !ticket.hasPhoto ? (
+          !expectsPhoto || photoState === 'none' ? (
             <>
               {/* No photo was taken at intake — a guest may decline it, and a
                   denied camera must not strand a parked car. Saying so beats
@@ -188,46 +241,52 @@ export default function ValetHandoverScreen({
                 <MaterialCommunityIcons name="account-question-outline" size={22} color={colors.warning} />
                 <Text style={styles.noPhotoTitle}>{t('valetNoPhotoTaken')}</Text>
               </View>
-
-              <Text style={styles.hint}>{t('valetConfirmVehicleHint')}</Text>
-              <View style={styles.detailBox}>
-                <Text style={styles.detailLabel}>{t('valetMake')}</Text>
-                <Text style={styles.detailValue} testID="handover-vehicle">{ticket.vehicleMake}</Text>
-                <Text style={styles.detailLabel}>{t('valetPlate')}</Text>
-                {/* Partly masked: reading the full plate aloud tells the person
-                    the answer they are supposed to be producing. */}
-                <Text style={styles.detailValue} testID="handover-plate">{maskPlate(ticket.plate)}</Text>
-              </View>
-
-              <Pressable
-                testID="handover-vehicle-confirmed"
-                style={styles.cta}
-                onPress={() => { setVerification('vehicle_confirmed'); setStage('condition'); }}
-              >
-                <Text style={styles.ctaText}>{t('valetGuestConfirmed')}</Text>
-              </Pressable>
-              <Pressable testID="handover-hold" style={styles.ghost} onPress={onDone}>
-                <Text style={styles.ghostText}>{t('valetCannotConfirm')}</Text>
-              </Pressable>
+              {renderVehicleCheck()}
             </>
           ) : (
             <>
               <Text style={styles.label}>{t('valetCompareGuest')}</Text>
-              <Image
-                testID="handover-guest-photo"
-                source={api.guestPhotoSource(sessionToken)}
-                style={styles.guestPhoto}
-                resizeMode="cover"
-              />
-              {/* No face-matching model runs. A human compares and decides. */}
-              <Text style={styles.hint}>{t('valetCompareHint')}</Text>
-              <Pressable
-                testID="handover-match"
-                style={styles.cta}
-                onPress={() => { setVerification('photo'); setStage('condition'); }}
-              >
-                <Text style={styles.ctaText}>{t('valetMatches')}</Text>
-              </Pressable>
+              {photoUrl && photoState !== 'failed' && (
+                <Image
+                  testID="handover-guest-photo"
+                  source={{ uri: photoUrl }}
+                  style={styles.guestPhoto}
+                  resizeMode="cover"
+                  onLoad={() => setPhotoState('loaded')}
+                  onError={() => setPhotoState('failed')}
+                />
+              )}
+              {photoState === 'loading' && <ActivityIndicator color={colors.actionPrimary} />}
+
+              {photoState === 'failed' ? (
+                <>
+                  {/* An image that never rendered is not a check. The match
+                      button is withheld and the guard is given the vehicle
+                      check instead, recorded as exactly that. */}
+                  <View style={styles.noPhotoBox} testID="handover-photo-failed">
+                    <MaterialCommunityIcons name="image-broken-variant" size={22} color={colors.warning} />
+                    <Text style={styles.noPhotoTitle}>{t('valetPhotoFailed')}</Text>
+                  </View>
+                  <Pressable testID="handover-photo-retry" style={styles.ghost} onPress={() => void loadPhoto()}>
+                    <Text style={styles.ghostText}>{t('valetRetry')}</Text>
+                  </Pressable>
+                  {renderVehicleCheck()}
+                </>
+              ) : (
+                <>
+                  {/* No face-matching model runs. A human compares and decides. */}
+                  <Text style={styles.hint}>{t('valetCompareHint')}</Text>
+                  {photoState === 'loaded' && (
+                    <Pressable
+                      testID="handover-match"
+                      style={styles.cta}
+                      onPress={() => { setVerification('photo'); setStage('condition'); }}
+                    >
+                      <Text style={styles.ctaText}>{t('valetMatches')}</Text>
+                    </Pressable>
+                  )}
+                </>
+              )}
             </>
           )
         )}
@@ -236,14 +295,17 @@ export default function ValetHandoverScreen({
           <>
             <Text style={styles.label}>{t('valetConditionReturn')}</Text>
             <View style={styles.angleGrid}>
-              {ANGLES.map((angle) => {
+              {CONDITION_ANGLES.map((angle) => {
                 const done = captured.includes(angle);
+                // Same views, same order as intake -- see lib/conditionAngles.
+                const isNext = angle === next;
                 return (
                   <Pressable
                     key={angle}
                     testID={`handover-angle-${angle}`}
+                    disabled={!isNext || busy}
                     onPress={() => captureReturn(angle)}
-                    style={[styles.angleTile, done && styles.angleTileDone]}
+                    style={[styles.angleTile, done && styles.angleTileDone, !isNext && !done && styles.angleTileLocked]}
                   >
                     <MaterialCommunityIcons
                       name={done ? 'check-circle' : 'camera-outline'}
@@ -256,17 +318,17 @@ export default function ValetHandoverScreen({
               })}
             </View>
 
-            {captured.length === 0 && (
+            {next !== null && (
               <Text style={styles.hint} testID="handover-condition-hint">
-                {t('valetConditionRequired')}
+                {t('valetConditionAllFour')}
               </Text>
             )}
 
             <Pressable
               testID="handover-to-confirm"
-              disabled={captured.length === 0}
+              disabled={next !== null}
               onPress={() => setStage('confirm')}
-              style={[styles.cta, captured.length === 0 && styles.ctaDisabled]}
+              style={[styles.cta, next !== null && styles.ctaDisabled]}
             >
               <Text style={styles.ctaText}>{t('done')}</Text>
             </Pressable>
@@ -337,5 +399,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', gap: spacing.xs,
   },
   angleTileDone: { borderColor: colors.teal, backgroundColor: colors.successBg },
+  angleTileLocked: { opacity: 0.35 },
   angleText: { color: colors.textSecondary, fontSize: 12, textTransform: 'capitalize' },
 });

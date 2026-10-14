@@ -52,6 +52,7 @@ describe('GET /entitlements', () => {
       fastag: true, anpr: true, face: false, aiAnomaly: false,
       tier: 'Basic', updatedAt: '2026-08-01T00:00:00.000Z',
       modules: ['gate', 'community', 'valet'],
+      communityName: null,
     });
   });
 
@@ -63,6 +64,7 @@ describe('GET /entitlements', () => {
       fastag: true, anpr: false, face: false, aiAnomaly: false,
       tier: 'Starter', updatedAt: null,
       modules: ['gate', 'community', 'valet'],
+      communityName: null,
     });
   });
 });
@@ -130,6 +132,14 @@ describe('PUT /entitlements/:communityId', () => {
     });
     expect(status).toBe(400);
   });
+});
+
+// The header names the property it is showing. Read from communities, not
+// derived from the admin's display name.
+it('names the property alongside its entitlements', async () => {
+  queryOne.mockResolvedValueOnce(null).mockResolvedValueOnce({ name: 'Palm Meadows' });
+  const { json } = await request('GET', '/api/v1/entitlements', { headers: { Authorization: `Bearer ${guard}` } });
+  expect(json.data.communityName).toBe('Palm Meadows');
 });
 
 describe('which products a property bought', () => {

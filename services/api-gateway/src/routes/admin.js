@@ -411,8 +411,10 @@ router.post('/admin/guards', adminOnly, async (req, res) => {
       [community_id]
     );
     if (!guardUnit) {
+      // floor is INT: 'G' made Postgres reject the insert, so the first guard
+      // of every community 500'd. Same fix as valet-service's staff route.
       guardUnit = await queryOne(
-        "INSERT INTO units (community_id, unit_number, floor, status) VALUES ($1, 'GUARD-POST', 'G', 'occupied') RETURNING id",
+        "INSERT INTO units (community_id, unit_number, floor, status) VALUES ($1, 'GUARD-POST', NULL, 'occupied') RETURNING id",
         [community_id]
       );
     }

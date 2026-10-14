@@ -25,7 +25,14 @@ const ticket = (over = {}) => ({
   ...over,
 });
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Everything below this line is about *how* a message is composed and sent
+  // -- window vs template, which template, what fills its variables. Which
+  // stages a venue pays for is a separate question, tested in its own block,
+  // so these keep all five enabled rather than silently testing the default.
+  process.env.WHATSAPP_NOTIFY_STAGES = 'bound,accepted,en_route,arrived,closed';
+});
 
 describe('choosing free-form or template', () => {
   it('sends free-form inside the 24-hour window', async () => {
@@ -54,8 +61,8 @@ describe('choosing free-form or template', () => {
   });
 
   it('sends nothing at all to a ticket with no number', async () => {
-    expect(await notifyGuest(ticket({ phone_number: null }), 'arrived'))
-      .toEqual({ status: 'skipped' });
+    expect((await notifyGuest(ticket({ phone_number: null }), 'arrived')).status)
+      .toBe('skipped');
     expect(sendText).not.toHaveBeenCalled();
     expect(sendTemplate).not.toHaveBeenCalled();
   });
@@ -264,5 +271,121 @@ describe('the picture that goes with the message', () => {
     // Declaring media against a text-approved template would have the
     // provider reject every send, which is worse than a plain message.
     expect(opts?.headerImageUrl).toBeUndefined();
+  });
+});
+
+describe('which stages are worth paying for', () => {
+  beforeEach(() => {
+    delete process.env.WHATSAPP_NOTIFY_STAGES;
+    delete process.env.WHATSAPP_PROVIDER;
+  });
+
+  // Every send is billed. The two that carry information a guest does not
+  // already have are the welcome (they have just handed over a car) and the
+  // acknowledgement of their request (proof the CAR they typed landed, plus
+  // the link). The rest restate what that link shows live.
+  it.each(['bound', 'accepted'])('still sends %s by default', async (kind) => {
+    const res = await notifyGuest(ticket(), kind);
+    expect(res.status).not.toBe('skipped');
+  });
+
+  it.each(['en_route', 'arrived', 'closed'])('stays quiet on %s by default', async (kind) => {
+    const res = await notifyGuest(ticket(), kind);
+    expect(res).toEqual({ status: 'skipped', reason: 'stage_muted' });
+    expect(sendText).not.toHaveBeenCalled();
+    expect(sendTemplate).not.toHaveBeenCalled();
+  });
+
+  it('turns a stage back on without a deploy', async () => {
+    // 'arrived' is the one worth reconsidering: a guest sitting in a lobby is
+    // not watching the page, and that message is what sends them outside.
+    process.env.WHATSAPP_NOTIFY_STAGES = 'bound,accepted,arrived';
+    const res = await notifyGuest(ticket(), 'arrived');
+    expect(res.status).not.toBe('skipped');
+  });
+
+  it('reads an explicit list as the whole truth, not as an addition', async () => {
+    process.env.WHATSAPP_NOTIFY_STAGES = 'arrived';
+    expect((await notifyGuest(ticket(), 'bound')).status).toBe('skipped');
+    expect((await notifyGuest(ticket(), 'arrived')).status).not.toBe('skipped');
+  });
+
+  it('tolerates the spacing and casing a human types into an env file', async () => {
+    process.env.WHATSAPP_NOTIFY_STAGES = ' Bound , ARRIVED ';
+    expect((await notifyGuest(ticket(), 'bound')).status).not.toBe('skipped');
+    expect((await notifyGuest(ticket(), 'arrived')).status).not.toBe('skipped');
+  });
+
+  it('silences everything when set to none', async () => {
+    process.env.WHATSAPP_NOTIFY_STAGES = 'none';
+    for (const k of ['bound', 'accepted', 'en_route', 'arrived', 'closed']) {
+      expect((await notifyGuest(ticket(), k)).status).toBe('skipped');
+    }
+  });
+
+  it('treats an empty value as "unset", not as "silence everything"', async () => {
+    // An env var that exists but is blank is almost always a deploy accident.
+    // Reading it as "send nothing" would take the product silent with no
+    // error anywhere -- the exact failure the 24-hour window notes warn about.
+    process.env.WHATSAPP_NOTIFY_STAGES = '';
+    expect((await notifyGuest(ticket(), 'bound')).status).not.toBe('skipped');
+  });
+
+  it('distinguishes a muted stage from a guest we have no number for', async () => {
+    // Both return 'skipped', and an operator staring at a silent thread needs
+    // to know which. Muted is a pricing decision; a missing number is a gap
+    // in intake, and only one of those is worth chasing.
+    process.env.WHATSAPP_NOTIFY_STAGES = 'arrived';
+    const noNumber = await notifyGuest(ticket({ phone_number: null }), 'arrived');
+    expect(noNumber).toEqual({ status: 'skipped', reason: 'no_phone_number' });
+
+    const muted = await notifyGuest(ticket(), 'closed');
+    expect(muted).toEqual({ status: 'skipped', reason: 'stage_muted' });
+  });
+});
+
+describe('the welcome carries a tracking link', () => {
+  beforeEach(() => {
+    process.env.WHATSAPP_PROVIDER = 'authkey';
+    process.env.WHATSAPP_TEMPLATE_CHECKED_IN = '49411';
+    process.env.WHATSAPP_NOTIFY_STAGES = 'bound,accepted';
+  });
+
+  // The approved body is:
+  //   {{1}}.\n\n{{2}}\nTicket {{3}}\n\nReply CAR here whenever you want it...
+  // Three variables, all spoken for, and no slot for a URL -- so the one
+  // message every guest is guaranteed to get first was the only one without
+  // a way to reach the timeline. Every other stage sends the link as {{3}}.
+  //
+  // Until the template gains a fourth variable this rides along with the
+  // ticket number. A parameter may not contain a newline, so it goes on the
+  // same line separated by a middot.
+  it('puts the link in a variable the approved template actually has', async () => {
+    await notifyGuest(ticket(), 'bound');
+
+    const [, wid, vars] = sendTemplate.mock.calls[0];
+    expect(wid).toBe('49411');
+    expect(vars[2]).toContain('DWR-0042');
+    expect(vars[2]).toContain('/track/4K7QP2');
+  });
+
+  it('keeps the vehicle in its own variable, unchanged', async () => {
+    await notifyGuest(ticket(), 'bound');
+    const [, , vars] = sendTemplate.mock.calls[0];
+    expect(vars[1]).toBe('Maruti Swift - KA 03 NJ 0435');
+  });
+
+  it('sends no newline inside a parameter, which Meta rejects', async () => {
+    await notifyGuest(ticket(), 'bound');
+    for (const v of sendTemplate.mock.calls[0][2]) {
+      expect(String(v)).not.toMatch(/[\n\r\t]/);
+    }
+  });
+
+  it('falls back to the bare ticket number when there is no claim code', async () => {
+    // A ticket with no claim code has nothing to link to; "DWR-0042 · " with
+    // a dangling separator is worse than the number on its own.
+    await notifyGuest(ticket({ claim_code: null }), 'bound');
+    expect(sendTemplate.mock.calls[0][2][2]).toBe('DWR-0042');
   });
 });

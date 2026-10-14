@@ -3,9 +3,14 @@ import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl, TextInpu
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import OfflineBanner from '../components/OfflineBanner';
+import { subscribeToReconnect } from '../lib/onReconnect';
+import { flushConditionQueue } from '../lib/conditionQueue';
 import { spacing, radius } from '../theme/spacing';
 import { type } from '../theme/typography';
-import { useValetStore, NEEDS_ACTION, forParking, forDelivery } from '../store/valetStore';
+import { useAuthStore } from "../store/authStore";
+import { useValetStore, NEEDS_ACTION, forParking, forDelivery, forWithGuest } from '../store/valetStore';
+import * as api from '../api/valet';
 import type { ValetTicket, ValetStatus } from '../api/valet';
 import { useT } from '../store/langStore';
 
@@ -31,6 +36,7 @@ const STATUS_COLOR: Record<ValetStatus, string> = {
   en_route: colors.info,
   parked: colors.textTertiary,
   parked_again: colors.textTertiary,
+  with_guest: colors.info,
   final_closed: colors.textTertiary,
   expired: colors.danger,
 };
@@ -40,10 +46,11 @@ function minutesSince(iso: string) {
 }
 
 export default function ValetQueueScreen({
-  onOpenTicket, onNewTicket,
+  onOpenTicket, onNewTicket, onCheckIn,
 }: {
   onOpenTicket?: (token: string) => void;
   onNewTicket?: () => void;
+  onCheckIn?: (token: string) => void;
 }) {
   const insets = useSafeAreaInsets();
   const t = useT();
@@ -54,15 +61,35 @@ export default function ValetQueueScreen({
   // Two halves of a shift, not one list. Walking out to park a car and
   // walking back to fetch one are different jobs, and mixing them makes a
   // queue nobody can read at a busy porch.
-  const [tab, setTab] = useState<'parking' | 'delivery'>('delivery');
+  const hydrate = useValetStore((s) => s.hydrate);
+  const logout = useAuthStore((s) => s.logout);
+  // Confirmed, not immediate. Signing out mid-shift costs a re-login and
+  // another face verification, possibly with a car already in hand.
+  const [endingShift, setEndingShift] = useState(false);
+  const [tab, setTab] = useState<'parking' | 'delivery' | 'withGuest'>('delivery');
   const parking = forParking(all);
   const delivery = forDelivery(all);
-  const tickets = tab === 'parking' ? parking : delivery;
+  const withGuest = forWithGuest(all);
+  const tickets = tab === 'parking' ? parking : tab === 'withGuest' ? withGuest : delivery;
 
   useEffect(() => {
+    // Disk first, then the network. A cold start in a basement otherwise
+    // shows an empty lot until a poll that may never succeed; hydrate() bows
+    // out the moment live data has landed, so this cannot walk the queue
+    // backwards.
+    void hydrate();
     fetch();
     const timer = setInterval(fetch, POLL_MS);
-    return () => clearInterval(timer);
+
+    // The instant the server answers again: pull the queue rather than waiting
+    // up to a full tick, and push whatever condition media was captured while
+    // there was nowhere to send it.
+    const stop = subscribeToReconnect(() => {
+      fetch();
+      void flushConditionQueue();
+    });
+
+    return () => { clearInterval(timer); stop(); };
   }, []);
 
   const waiting = waitingCount();
@@ -77,6 +104,20 @@ export default function ValetQueueScreen({
           onPress={() => acceptIntake(item.sessionToken)}
         >
           <Text style={styles.primaryBtnText}>{t('valetTakeJob')}</Text>
+        </Pressable>
+      );
+    }
+
+    // Out with a multi-day guest. Nothing to do until they bring it back, and
+    // then it is checked in again rather than simply marked parked.
+    if (item.status === 'with_guest') {
+      return (
+        <Pressable
+          testID={`checkin-${item.id}`}
+          style={styles.primaryBtn}
+          onPress={() => onCheckIn?.(item.sessionToken)}
+        >
+          <Text style={styles.primaryBtnText}>{t('valetCarBack')}</Text>
         </Pressable>
       );
     }
@@ -155,12 +196,53 @@ export default function ValetQueueScreen({
               {waiting > 0 ? t('valetWaiting').replace('{n}', String(waiting)) : t('valetNobodyWaiting')}
             </Text>
           </View>
+          {/* The stand phone passes between attendants at every shift change,
+              and the cached queue and media outbox carry this shift's plates
+              and guest names. Until now there was no way to hand it over:
+              logout existed in the store and nothing called it. */}
+          <Pressable
+            testID="valet-end-shift"
+            style={styles.endShiftBtn}
+            onPress={() => setEndingShift(true)}
+            hitSlop={10}
+          >
+            <MaterialCommunityIcons name="logout-variant" size={22} color={colors.textSecondary} />
+          </Pressable>
           <Pressable testID="new-valet-ticket" style={styles.newBtn} onPress={onNewTicket}>
             <MaterialCommunityIcons name="plus" size={20} color={colors.bgPrimary} />
             <Text style={styles.newBtnText}>{t('valetNewTicket')}</Text>
           </Pressable>
         </View>
       </View>
+
+      {endingShift && (
+        <View style={styles.endShiftCard} testID="valet-end-shift-sheet">
+          <Text style={styles.endShiftTitle}>{t('valetEndShiftTitle')}</Text>
+          <Text style={styles.endShiftBody}>{t('valetEndShiftBody')}</Text>
+          <Pressable
+            testID="valet-end-shift-confirm"
+            style={styles.endShiftGo}
+            onPress={async () => {
+              setEndingShift(false);
+              // Tell the server first, while the token is still valid. A
+              // failure here must not trap an attendant in the app: the sweep
+              // closes a shift nobody ended, and being unable to leave at the
+              // end of a shift is the worse outcome.
+              try { await api.endShift(); } catch { /* sweep will close it */ }
+              void logout();
+            }}
+          >
+            <Text style={styles.endShiftGoText}>{t('valetEndShiftConfirm')}</Text>
+          </Pressable>
+          <Pressable
+            testID="valet-end-shift-cancel"
+            style={styles.endShiftCancel}
+            onPress={() => setEndingShift(false)}
+          >
+            <Text style={styles.endShiftCancelText}>{t('valetCancel')}</Text>
+          </Pressable>
+        </View>
+      )}
 
       <View style={styles.searchWrap}>
         <MaterialCommunityIcons name="magnify" size={18} color={colors.textTertiary} />
@@ -180,10 +262,17 @@ export default function ValetQueueScreen({
         )}
       </View>
 
+      {/* Above the tabs, below the search: the first thing read when the list
+          looks wrong, and it renders nothing at all while things work. */}
+      <OfflineBanner />
+
       <View style={styles.tabRow}>
         {([
-          ['delivery', t('valetTabDelivery'), delivery.length],
+          // In the order a car moves through them: dropped at the porch,
+          // parked, driven away by the guest.
           ['parking', t('valetTabParking'), parking.length],
+          ['delivery', t('valetTabDelivery'), delivery.length],
+          ['withGuest', t('valetTabWithGuest'), withGuest.length],
         ] as const).map(([key, label, count]) => (
           <Pressable
             key={key}
@@ -197,6 +286,11 @@ export default function ValetQueueScreen({
           </Pressable>
         ))}
       </View>
+      {/* One line saying what the open tab holds: the labels alone were
+          read three different ways at the porch. */}
+      <Text style={styles.tabHint} testID="valet-tab-hint">
+        {t(tab === 'parking' ? 'valetTabParkingHint' : tab === 'withGuest' ? 'valetTabWithGuestHint' : 'valetTabDeliveryHint')}
+      </Text>
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -206,7 +300,7 @@ export default function ValetQueueScreen({
           <View style={styles.empty} testID="valet-empty">
             <MaterialCommunityIcons name="car-outline" size={40} color={colors.textTertiary} />
             <Text style={styles.emptyText}>
-              {search ? t('valetNoMatch') : t('valetEmpty')}
+              {search ? t('valetNoMatch') : t(tab === 'parking' ? 'valetEmptyParking' : tab === 'withGuest' ? 'valetEmptyWithGuest' : 'valetEmptyDelivery')}
             </Text>
           </View>
         )}
@@ -271,10 +365,28 @@ const styles = StyleSheet.create({
   },
   newBtnText: { color: colors.bgPrimary, fontWeight: '700', fontSize: 13 },
   tabRow: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
+  endShiftBtn: {
+    padding: spacing.md, marginRight: spacing.sm,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+  },
+  endShiftCard: {
+    margin: spacing.lg, padding: spacing.lg, borderRadius: radius.lg,
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+  },
+  endShiftTitle: { color: colors.textPrimary, fontWeight: '700', fontSize: 16 },
+  endShiftBody: { color: colors.textSecondary, fontSize: 13, marginTop: 6 },
+  endShiftGo: {
+    marginTop: spacing.lg, paddingVertical: spacing.lg, borderRadius: radius.md,
+    backgroundColor: colors.danger, alignItems: 'center',
+  },
+  endShiftGoText: { color: colors.bgPrimary, fontWeight: '700', fontSize: 15 },
+  endShiftCancel: { marginTop: spacing.sm, paddingVertical: spacing.md, alignItems: 'center' },
+  endShiftCancelText: { color: colors.textSecondary, fontWeight: '600', fontSize: 14 },
   tab: { flex: 1, paddingVertical: spacing.sm, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
   tabActive: { backgroundColor: colors.surfaceHover, borderColor: colors.teal },
   tabText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
   tabTextActive: { color: colors.textPrimary },
+  tabHint: { color: colors.textTertiary, fontSize: 12, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
   content: { padding: spacing.lg, gap: spacing.md },
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,

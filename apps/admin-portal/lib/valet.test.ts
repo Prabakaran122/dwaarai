@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { valetFetch, valetPost, ValetError, STATUS_LABEL, NEEDS_ACTION, ValetStatus, formatStay,
   previewRange, listCards, registerCards, setCardActive, searchPlates,
-  groupSlots } from './valet';
+  groupSlots, dayRangeToInstants, rupees } from './valet';
 
 const originalFetch = global.fetch;
 
@@ -124,7 +124,7 @@ describe('valetPost', () => {
 describe('status vocabulary', () => {
   const ALL: ValetStatus[] = [
     'parked', 'retrieval_requested', 'en_route', 'arrived',
-    'parked_again', 'final_closed', 'expired',
+    'parked_again', 'with_guest', 'final_closed', 'expired',
   ];
 
   it('labels every state the service can return, so none renders as raw jargon', () => {
@@ -268,5 +268,77 @@ describe('groupSlots', () => {
     expect(grouped).toHaveLength(1);
     expect(grouped[0].zones.map((z) => z.zone)).toEqual(['A', 'B']);
     expect(grouped[0].zones[0].slots).toHaveLength(2);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// dayRangeToInstants — the Vehicle log's custom date range
+//
+// The whole reason this function exists is the timezone. `new Date('2026-08-20')`
+// is UTC midnight, which in India is half past five on the morning of the 20th:
+// a manager asking for Saturday night would get the wrong end of two different
+// days. These tests are written against a fixed offset so they say something
+// on any machine that runs them.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('dayRangeToInstants', () => {
+  it('reads the typed dates in the browser’s own zone, not UTC', () => {
+    const r = dayRangeToInstants('2026-08-20', '2026-08-22')!;
+
+    // Whatever the runner's zone, the start is local midnight on the 20th and
+    // the end is the last millisecond of the 22nd.
+    const start = new Date(r.from);
+    const end = new Date(r.to);
+    expect(start.getFullYear()).toBe(2026);
+    expect(start.getMonth()).toBe(7);
+    expect(start.getDate()).toBe(20);
+    expect(start.getHours()).toBe(0);
+    expect(end.getDate()).toBe(22);
+    expect(end.getHours()).toBe(23);
+    expect(end.getMinutes()).toBe(59);
+  });
+
+  // A range of "20th to 22nd" that stopped at the start of the 22nd would drop
+  // a whole day, and it is the quiet kind of wrong: nobody notices until they
+  // count the rows against the till.
+  it('includes the whole of the end day', () => {
+    const r = dayRangeToInstants('2026-08-20', '2026-08-20')!;
+
+    expect(new Date(r.to).getTime() - new Date(r.from).getTime())
+      .toBe(24 * 60 * 60 * 1000 - 1);
+  });
+
+  it('returns null until both dates are filled in', () => {
+    expect(dayRangeToInstants('', '2026-08-22')).toBe(null);
+    expect(dayRangeToInstants('2026-08-20', '')).toBe(null);
+    expect(dayRangeToInstants('not-a-date', '2026-08-22')).toBe(null);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// rupees — money on a rate card
+//
+// The browser formats paise and does no arithmetic; the server owns every
+// total. What this has to get right is how a figure READS, because these end
+// up next to each other on an invoice.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('rupees', () => {
+  // "₹1.5" on a rate card reads as a typo, and "₹2,000.00" beside it is noise.
+  it('shows paise only when there are any', () => {
+    expect(rupees(150)).toBe('₹1.50');
+    expect(rupees(200000)).toBe('₹2,000');
+    expect(rupees(135000)).toBe('₹1,350');
+    expect(rupees(59)).toBe('₹0.59');
+  });
+
+  it('groups in the Indian system, because the invoice is in rupees', () => {
+    expect(rupees(10000000)).toBe('₹1,00,000');
+  });
+
+  // Nothing agreed is not the same as nothing owed, and a zero would read as
+  // "free" rather than "no rate set".
+  it('says nothing rather than zero when there is no figure', () => {
+    expect(rupees(null)).toBe('—');
+    expect(rupees(undefined)).toBe('—');
+    expect(rupees(0)).toBe('₹0');
   });
 });

@@ -23,6 +23,9 @@ import { VALET_BASE } from '@/lib/api';
  * globally: a box of cards starts at A001 everywhere, and a bare code would
  * resolve against whichever property the database returned first.
  */
+const POLL_MS = 5000;
+const POLL_LIMIT = 120; // ten minutes
+
 export default function CardPage() {
   const params = useParams();
   const router = useRouter();
@@ -36,8 +39,10 @@ export default function CardPage() {
 
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let polls = 0;
 
-    (async () => {
+    const resolve = async () => {
       try {
         const res = await fetch(
           `${VALET_BASE}/guest/cards/${encodeURIComponent(community)}/${encodeURIComponent(code)}`,
@@ -50,12 +55,18 @@ export default function CardPage() {
         setVenueName(body.venueName ?? null);
         setSessionToken(body.sessionToken ?? null);
         setState('ready');
+        // No ticket on the card yet: keep asking, so a guest who scanned while
+        // the valet was still photographing the car is offered the browser
+        // the moment check-in completes. Capped -- a card nobody is checking
+        // in (one kept after checkout) must not poll forever.
+        if (!body.sessionToken && polls++ < POLL_LIMIT) timer = setTimeout(resolve, POLL_MS);
       } catch {
         if (!cancelled) setState('unknown');
       }
-    })();
+    };
+    void resolve();
 
-    return () => { cancelled = true; };
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [code, community]);
 
   const number = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '';
@@ -83,9 +94,20 @@ export default function CardPage() {
                 {venueName}
               </p>
             )}
+            {/* Only a card with a ticket on it may say the car is here. A free
+                card said "Your car is with us" to a guest who had already
+                checked out and kept it, and to one who scanned before the
+                valet had finished checking the car in. */}
             <h1 className={`text-lg font-semibold text-white${venueName ? ' mt-2' : ''}`}>
-              Your car is with us
+              {sessionToken ? 'Your car is with us' : 'No car is on this card yet'}
             </h1>
+            {!sessionToken && (
+              <p className="mt-3 text-sm leading-relaxed text-white/60">
+                If you have just handed over your keys, the valet is still checking
+                your car in. This page updates by itself. If you have already
+                collected your car, please return the card to the valet desk.
+              </p>
+            )}
             <p className="mt-5 text-sm text-white/50">Card</p>
             <p className="mt-1 font-mono text-3xl tracking-[0.3em] text-white">
               {code.toUpperCase()}

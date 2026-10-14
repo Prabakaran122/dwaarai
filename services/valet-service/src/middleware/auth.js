@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { queryOne } from '../db.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'test' ? 'test-only-secret' : '');
+export const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'test' ? 'test-only-secret' : '');
 if (!JWT_SECRET) {
   throw new Error('JWT_SECRET environment variable is required. Set it before starting the server.');
 }

@@ -1,3 +1,5 @@
+import { clearQueue } from '../lib/queueCache';
+import { clearOutbox } from '../lib/outbox';
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
@@ -74,6 +76,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: async () => {
     clearValetAuthToken();
     await clearSession();
+    // The cached queue carries plates and guest names, and a stand phone
+    // passes between attendants at every shift change. Dropping the token
+    // while leaving the list behind hands the next person this shift's guests.
+    await clearQueue();
+    await clearOutbox();
     set({ token: null, user: null, sessionExpired: false });
   },
 
@@ -82,6 +89,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   // valet is stuck on and tells them what to do about it.
   expireSession: () => {
     clearValetAuthToken();
+    // Same reasoning as logout. An expired session is still the end of that
+    // attendant's access, and it is the more common of the two.
+    void clearQueue();
+    void clearOutbox();
     set({ token: null, user: null, sessionExpired: true });
   },
 

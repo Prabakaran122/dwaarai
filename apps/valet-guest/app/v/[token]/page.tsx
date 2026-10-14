@@ -4,11 +4,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLang } from '@/lib/i18n';
 import { useParams } from 'next/navigation';
 import GuardBadgeModal from '@/components/GuardBadgeModal';
+import Timeline from '@/components/Timeline';
 import {
   getTicket, requestCar, getRotatingQr, claimDiscount, venueLogoUrl,
   submitFeedback, REASON_LABEL, FeedbackReason,
   isValidIndianMobile, formatCountdown,
   GuestTicket, RotatingQr, GuestError,
+  promoImageUrl, recordPromo,
 } from '@/lib/api';
 
 /**
@@ -38,6 +40,64 @@ const POLL_MS = 4000;
  */
 const CANCEL_WINDOW_MS = 3000;
 const ROTATE_REFRESH_MARGIN_MS = 2000;
+
+/**
+ * The venue's banner, under the goodbye and never above it.
+ *
+ * A view is recorded once, on mount, and the server counts it once per valet
+ * ticket however many times this page is reopened -- the guest polls and
+ * comes back through WhatsApp, so anything else would inflate one guest into
+ * dozens.
+ */
+function PromoBanner({
+  token, promo,
+}: {
+  token: string;
+  promo: Extract<GuestTicket['promo'], { headline: string }>;
+}) {
+  useEffect(() => {
+    recordPromo(token, promo.id, 'view');
+  }, [token, promo.id]);
+
+  return (
+    <section
+      data-testid="venue-promo-banner"
+      className="mt-5 rounded-2xl bg-white overflow-hidden ring-1 ring-white/10"
+    >
+      {promo.hasImage && (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img src={promoImageUrl(promo.id)} alt="" className="w-full block" />
+      )}
+      <div className="p-5">
+        <p className="text-base font-bold text-[#0D2535]">{promo.headline}</p>
+        {promo.body && <p className="mt-1 text-sm text-[#0D2535]/70">{promo.body}</p>}
+
+        {promo.guestCode && (
+          /* Their own copy of the code. Shown big because it is read off a
+             phone across a restaurant counter. */
+          <p className="mt-3 text-xs text-[#0D2535]/60">
+            Code{' '}
+            <span className="font-mono text-sm font-bold tracking-wider text-[#0D2535]">
+              {promo.guestCode}
+            </span>
+          </p>
+        )}
+
+        {promo.buttonUrl && (
+          <a
+            href={promo.buttonUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => recordPromo(token, promo.id, 'tap')}
+            className="mt-4 block w-full py-3 rounded-xl bg-amber-500 text-center text-sm font-bold text-[#0D2535]"
+          >
+            {promo.buttonLabel || 'Find out more'}
+          </a>
+        )}
+      </div>
+    </section>
+  );
+}
 
 function Shell({ children }: { children: React.ReactNode }) {
   return <main className="min-h-screen px-5 py-8 max-w-md mx-auto">{children}</main>;
@@ -441,6 +501,25 @@ export default function GuestPage() {
     <Shell>
       <VehicleCard ticket={ticket} onViewBadge={setBadgeFor} />
 
+      {/* Above the status blocks, not inside one: the blocks each speak for a
+          single moment, and the question this answers -- how far from the
+          kerb am I -- outlives all of them. It is also what a guest arriving
+          from a WhatsApp link came to see. */}
+      {ticket.status !== 'with_guest' && <Timeline status={ticket.status} />}
+
+      {/* Out with a multi-day guest. This read "Parked for 29 min" over a
+          Request button -- to the guest who was driving the car. The card
+          stays with them: they are coming back. */}
+      {ticket.status === 'with_guest' && (
+        <section className="mt-5 rounded-2xl bg-[#1B3A4B] p-5 ring-1 ring-white/10 text-center">
+          <p className="text-white font-semibold">Your car is with you</p>
+          <p className="text-sm text-white/60 mt-2 leading-relaxed">
+            When you are back, hand the keys and your card to the valet desk.
+            This page stays live for the rest of your stay.
+          </p>
+        </section>
+      )}
+
       {pending && (
         <section className="mt-5 rounded-2xl bg-amber-500/10 p-5 ring-1 ring-amber-500/30 text-center">
           <p className="text-white font-semibold">Requesting your car…</p>
@@ -622,9 +701,9 @@ export default function GuestPage() {
               </a>
             </p>
           </section>
-          {ticket.promo && (
-            /* The venue's own promo, not an ad marketplace. One line, under
-               the goodbye, never above it. */
+          {ticket.promo && 'label' in ticket.promo && (
+            /* The original single line of config text. Plenty of venues still
+               use it, and it costs nothing to keep working. */
             <section
               data-testid="venue-promo"
               className="mt-5 rounded-2xl bg-[#1B3A4B] p-5 text-center ring-1 ring-white/10"
@@ -644,6 +723,10 @@ export default function GuestPage() {
                 <p className="text-sm font-semibold text-amber-400">{ticket.promo.label}</p>
               )}
             </section>
+          )}
+
+          {ticket.promo && 'headline' in ticket.promo && (
+            <PromoBanner token={token} promo={ticket.promo} />
           )}
 
           {ticket.status === 'final_closed' && <Feedback token={token} />}

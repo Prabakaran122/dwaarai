@@ -20,8 +20,14 @@ const baseUrl = () => process.env.VALET_GUEST_BASE_URL || 'https://dwaarai.com/v
  * The claim code, never the session token. The code stops resolving the
  * moment the ticket closes; the token would keep working for anyone the
  * message was forwarded to.
+ *
+ * `/track/`, not `/w/`. The latter is the door the intake QR opens, where a
+ * guest who has not picked a channel is offered WhatsApp or the browser --
+ * which is the wrong question to ask somebody who is reading this link
+ * *inside WhatsApp*, having just replied CAR. `/track/` resolves the same
+ * code and goes straight to the live timeline.
  */
-const trackUrl = (t) => `${baseUrl()}/w/${t.claim_code}`;
+const trackUrl = (t) => `${baseUrl()}/track/${t.claim_code}`;
 
 /**
  * The status card a media template carries as its header.
@@ -49,6 +55,10 @@ function compose(t, kind) {
       return `${t.community_name}: your car is with us.\n`
         + `${t.plate} · ${t.vehicle_make}\nTicket ${t.display_id}\n\n`
         + `Reply CAR when you want it brought round, or track it here: ${trackUrl(t)}`;
+
+    case 'with_guest':
+      return `${t.community_name}: your car (${t.plate}) is with you.\n`
+        + 'When you bring it back, hand the keys and your valet card to the valet desk.';
 
     case 'accepted':
       return `${t.community_name}: a valet is getting your car (${t.plate}).\n`
@@ -122,13 +132,67 @@ function templateVars(t, kind) {
   const venue = t.community_name || 'Your venue';
   if (kind === 'bound') {
     const car = [t.vehicle_make, t.plate].filter(Boolean).join(' - ');
-    return [venue, car || 'Your vehicle', t.display_id || ''];
+    // The link rides along with the ticket number.
+    //
+    // The approved body is "{{1}}.\n\n{{2}}\nTicket {{3}}\n\nReply CAR
+    // here ..." -- three variables, all spoken for, and no slot for a URL. So
+    // the one message every guest is guaranteed to receive first was the only
+    // one they could not reach the timeline from, while accepted / en_route /
+    // arrived all send it as {{3}}.
+    //
+    // Same line, middot separated: a template parameter may not contain a
+    // newline and Meta rejects the send outright if it does.
+    //
+    // The proper fix is a fourth variable on the template and a re-approval,
+    // at which point this collapses back to `t.display_id` and the URL moves
+    // to its own slot.
+    const ticketCell = t.claim_code
+      ? `${t.display_id || ''} · ${trackUrl(t)}`.trim()
+      : (t.display_id || '');
+    return [venue, car || 'Your vehicle', ticketCell];
   }
   return [venue, t.display_id || '', trackUrl(t)];
 }
 
+
+/**
+ * Which stages are worth a billed message.
+ *
+ * Every send costs, and three of the five stages only restate what the
+ * tracking link already shows live: "on its way" tells a guest who just asked
+ * that their request landed, and "thank you" arrives after they have driven
+ * away carrying nothing at all. Those are off.
+ *
+ * `arrived` is off too, by instruction, and it is the one to reconsider
+ * first: a guest waiting in a lobby is not watching the page, and that
+ * message is what sends them outside. Turning it back on is
+ *
+ *     WHATSAPP_NOTIFY_STAGES=bound,accepted,arrived
+ *
+ * -- an env change, not a release, because the cost of being wrong here is a
+ * car blocking the porch while its owner reads a magazine.
+ *
+ * The list is absolute, not additive: what it names is exactly what sends.
+ */
+const NOTIFY_DEFAULT = ['bound', 'accepted'];
+
+function enabledStages() {
+  const raw = process.env.WHATSAPP_NOTIFY_STAGES;
+  // Unset *or blank*. A variable that exists but is empty is a deploy
+  // accident far more often than a deliberate vow of silence, and reading it
+  // as "send nothing" would take every guest notification down with no error
+  // raised anywhere.
+  if (!raw || !raw.trim()) return NOTIFY_DEFAULT;
+  if (raw.trim().toLowerCase() === 'none') return [];
+  return raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+
 export async function notifyGuest(ticket, kind) {
-  if (!ticket?.phone_number) return { status: 'skipped' };
+  // Checked first, and reported with its own reason: an operator looking at a
+  // quiet thread needs to tell "this stage is muted" from "we never had a
+  // number for this guest".
+  if (!enabledStages().includes(kind)) return { status: 'skipped', reason: 'stage_muted' };
+  if (!ticket?.phone_number) return { status: 'skipped', reason: 'no_phone_number' };
 
   // Asked up front rather than discovered by a failed send, because it
   // changes what may be said and not merely how.

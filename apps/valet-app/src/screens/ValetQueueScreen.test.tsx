@@ -1,10 +1,11 @@
 jest.mock('../api/valet');
 
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import * as api from '../api/valet';
 import ValetQueueScreen from './ValetQueueScreen';
 import { useValetStore } from '../store/valetStore';
+import { useAuthStore } from '../store/authStore';
 import type { ValetTicket } from '../api/valet';
 
 function ticket(overrides: Partial<ValetTicket> = {}): ValetTicket {
@@ -35,6 +36,52 @@ beforeEach(() => {
   (api.acceptTicket as jest.Mock).mockResolvedValue({});
   (api.markArrived as jest.Mock).mockResolvedValue({});
   useValetStore.setState({ tickets: [], loading: false, error: null });
+});
+
+describe('cars out with their guest', () => {
+  it('lists them under their own tab, not on the lot', () => {
+    useValetStore.setState({ tickets: [ticket({ id: 'w', status: 'with_guest', plate: 'KA05MN4321' })] });
+
+    const screen = render(<ValetQueueScreen />);
+
+    expect(screen.queryByText('KA05MN4321')).toBeNull();          // default tab: parked
+    fireEvent.press(screen.getByTestId('valet-tab-withGuest'));
+    expect(screen.getByText('KA05MN4321')).toBeTruthy();
+  });
+
+  it('offers to check the car back in when the guest returns it', () => {
+    const onCheckIn = jest.fn();
+    useValetStore.setState({ tickets: [ticket({ id: 'w', status: 'with_guest', sessionToken: 'tok-w' })] });
+
+    const screen = render(<ValetQueueScreen onCheckIn={onCheckIn} />);
+    fireEvent.press(screen.getByTestId('valet-tab-withGuest'));
+    fireEvent.press(screen.getByTestId('checkin-w'));
+
+    expect(onCheckIn).toHaveBeenCalledWith('tok-w');
+  });
+});
+
+// "On the lot / To park / With guests" was read three different ways. Each
+// tab now says what it holds, and an empty tab says which cars are missing
+// rather than "no open tickets" while cars sit under another tab.
+describe('the queue tabs', () => {
+  it('run in the order a car moves through them', () => {
+    const screen = render(<ValetQueueScreen />);
+    const labels = screen.getAllByText(/^(Arriving|Parked|Taken out)$/).map((n) => [n.props.children].flat().join(""));
+    expect(labels).toEqual(['Arriving', 'Parked', 'Taken out']);
+  });
+
+  it('explains the open tab and names what is missing when it is empty', async () => {
+    (api.listTickets as jest.Mock).mockResolvedValue({ data: { tickets: [ticket({ id: 'w', status: 'with_guest' })] } });
+    const screen = render(<ValetQueueScreen />);
+
+    expect(screen.getByTestId('valet-tab-hint').props.children).toMatch(/in the parking/i);
+    expect(await screen.findByText('No cars parked')).toBeTruthy();
+    expect(screen.queryByText('No open valet tickets')).toBeNull();
+
+    fireEvent.press(screen.getByTestId('valet-tab-withGuest'));
+    expect(screen.getByTestId('valet-tab-hint').props.children).toMatch(/bring them back/i);
+  });
 });
 
 describe('ValetQueueScreen', () => {
@@ -269,5 +316,76 @@ describe('finding the code a guest was given', () => {
     const { getByText } = render(<ValetQueueScreen />);
 
     expect(getByText(/DWR-0001/)).toBeTruthy();
+  });
+});
+
+describe('handing the phone to the next attendant', () => {
+  it('offers a way to end the shift', async () => {
+    // The stand phone passes between attendants and there was no sign-out at
+    // all -- logout existed in the store and no screen called it. The cached
+    // queue and the media outbox carry this shift's plates and guest names.
+    const screen = render(<ValetQueueScreen onNewTicket={jest.fn()} />);
+    expect(screen.getByTestId('valet-end-shift')).toBeTruthy();
+  });
+
+  it('asks before signing out, rather than doing it on a stray tap', async () => {
+    // Signing out mid-shift costs a re-login AND another face verification,
+    // with a car possibly already in hand.
+    const screen = render(<ValetQueueScreen onNewTicket={jest.fn()} />);
+    fireEvent.press(screen.getByTestId('valet-end-shift'));
+
+    expect(screen.getByTestId('valet-end-shift-confirm')).toBeTruthy();
+  });
+
+  it('can be backed out of', async () => {
+    const screen = render(<ValetQueueScreen onNewTicket={jest.fn()} />);
+    fireEvent.press(screen.getByTestId('valet-end-shift'));
+    fireEvent.press(screen.getByTestId('valet-end-shift-cancel'));
+
+    expect(screen.queryByTestId('valet-end-shift-confirm')).toBeNull();
+  });
+
+  it('signs out on confirmation', async () => {
+    const logout = jest.fn().mockResolvedValue(undefined);
+    useAuthStore.setState({ logout } as never);
+
+    const screen = render(<ValetQueueScreen onNewTicket={jest.fn()} />);
+    fireEvent.press(screen.getByTestId('valet-end-shift'));
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-end-shift-confirm')); });
+
+    expect(logout).toHaveBeenCalled();
+  });
+});
+
+describe('ending a shift actually ends it', () => {
+  it('closes the shift server-side before signing out', async () => {
+    // The button cleared the token and the caches and never told the server.
+    // The shift stayed open, so "Staff and shifts" showed the attendant on
+    // duty indefinitely and the shift log said "Still on shift" for somebody
+    // who had gone home hours ago.
+    (api.endShift as jest.Mock).mockResolvedValue({ ended: true });
+    const logout = jest.fn().mockResolvedValue(undefined);
+    useAuthStore.setState({ logout } as never);
+
+    const screen = render(<ValetQueueScreen onNewTicket={jest.fn()} />);
+    fireEvent.press(screen.getByTestId('valet-end-shift'));
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-end-shift-confirm')); });
+
+    expect(api.endShift).toHaveBeenCalled();
+    expect(logout).toHaveBeenCalled();
+  });
+
+  it('still signs out when the server cannot be reached', async () => {
+    // An attendant finishing in a basement must not be trapped in the app.
+    // The sweep closes a shift nobody ended; being unable to leave is worse.
+    (api.endShift as jest.Mock).mockRejectedValue(new Error('Network Error'));
+    const logout = jest.fn().mockResolvedValue(undefined);
+    useAuthStore.setState({ logout } as never);
+
+    const screen = render(<ValetQueueScreen onNewTicket={jest.fn()} />);
+    fireEvent.press(screen.getByTestId('valet-end-shift'));
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-end-shift-confirm')); });
+
+    expect(logout).toHaveBeenCalled();
   });
 });

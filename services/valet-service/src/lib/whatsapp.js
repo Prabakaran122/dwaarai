@@ -160,10 +160,18 @@ export function sendText(waId, body) {
 export function sendTemplate(waId, templateName, vars = [], opts = {}) {
   if (provider() === 'authkey') {
     // `wid` is a numeric template id from the authkey.io console, not a name.
-    // Variables are named var1..varN there, in the order the template declares
-    // its {#placeholders#}.
+    //
+    // bodyValues is keyed "1", "2", "3" -- matching {{1}}, {{2}}, {{3}} in the
+    // approved body -- and NOT var1..varN, which is what this sent for weeks.
+    //
+    // The provider accepts both and answers "Submitted Successfully" to
+    // either, so nothing here or in any log looked wrong. The difference is
+    // only visible on the handset: keyed var1, nothing is substituted and the
+    // guest receives the template's own sample text instead of their car,
+    // their ticket and their tracking link. A 200 from this API means the
+    // request was well formed, never that the message said anything true.
     const bodyValues = {};
-    vars.forEach((v, i) => { bodyValues[`var${i + 1}`] = v; });
+    vars.forEach((v, i) => { bodyValues[String(i + 1)] = v; });
 
     const payload = {
       ...splitNumber(waId),

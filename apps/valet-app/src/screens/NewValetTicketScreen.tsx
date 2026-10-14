@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, ScrollView, StyleSheet, Pressable, Image, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, ScrollView, StyleSheet, Pressable, Image, ActivityIndicator, Switch } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -8,9 +8,11 @@ import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
 import { type } from '../theme/typography';
 import * as api from '../api/valet';
+import { uploadOrQueue } from '../lib/conditionQueue';
 import { useT } from '../store/langStore';
 import { parseCardCode } from '../lib/cardCode';
 import { takePhoto, openAppSettings } from '../lib/camera';
+import { CONDITION_ANGLES as ANGLES } from '../lib/conditionAngles';
 
 /**
  * Taking a car in: plate and make, optionally a printed card, then the guest
@@ -26,10 +28,9 @@ import { takePhoto, openAppSettings } from '../lib/camera';
  */
 
 /** Walking once round the car, in the order the BRD specifies. */
-const ANGLES = ['front', 'right', 'back', 'left'] as const;
 const PLATE_LOOKUP_DEBOUNCE_MS = 400;
 
-type Step = 'details' | 'card' | 'photo' | 'condition' | 'done';
+type Step = 'details' | 'plate' | 'card' | 'photo' | 'condition' | 'done';
 
 /** Drops the scheme so the address reads as something to type, not a link. */
 export function prettyUrl(url?: string | null): string {
@@ -39,11 +40,19 @@ export function prettyUrl(url?: string | null): string {
 /**
  * What the guest leaves with.
  *
- * With a card bound, the plastic IS the ticket — telling a valet to show a
- * screen QR would have them hand over nothing, and the guest would be left
- * with a card they were never told to keep. The screen QR is still rendered
- * underneath so a guest who would rather use their own phone can, but the
- * instruction leads with the card.
+ * With a card bound, the plastic IS the ticket, and the app draws no QR at
+ * all. One printed QR gets scanned twice by two people: the guard scans the
+ * card to start intake, then turns it round and the guest scans that same
+ * card, which opens WhatsApp. The card is what marries the two.
+ *
+ * A second, different QR on the guard's screen is not the one the guest is
+ * meant to use. Showing it invites them to scan the screen instead of the
+ * card they are holding -- and then walk away with a card nobody told them
+ * mattered.
+ *
+ * The cardless branch below still renders one, because a venue with no
+ * printed stock has nothing to hand over and the screen is the only way into
+ * WhatsApp there.
  */
 function TicketHandout({
   created, t,
@@ -58,7 +67,6 @@ function TicketHandout({
         <Text style={styles.bigCard} testID="valet-handout-code">
           {created.cardCode}
         </Text>
-        <Image source={{ uri: created.qrDataUrl }} style={styles.qrSmall} />
         <Text style={styles.qrCode}>{created.displayId}</Text>
       </View>
     );
@@ -125,6 +133,15 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
   // camera fires onBarcodeScanned many times a second, far faster than React
   // re-renders, so a state flag would still read stale within a frame.
   const scanning = useRef(true);
+
+  // Plate reading ships as a separate service and a venue can run without it.
+  // Hidden rather than shown-and-failing: see GET /guard/capabilities.
+  const [plateScan, setPlateScan] = useState(false);
+  // True only while the field holds a machine reading no human has touched.
+  // The attendant must be able to see the difference, or they stop checking.
+  const [plateSuggested, setPlateSuggested] = useState(false);
+  const [plateUnreadable, setPlateUnreadable] = useState(false);
+  const plateCam = useRef<CameraView>(null);
 
   const [returning, setReturning] = useState<api.PlateLookup | null>(null);
   const [created, setCreated] = useState<api.CreatedTicket | null>(null);
@@ -211,6 +228,9 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
       const errCode = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       if (errCode === 'card_in_use') setError(t('valetCardInUse'));
       else if (errCode === 'unknown_card') setError(t('valetCardUnknown'));
+      // The card is mandatory server-side. Without this the attendant reads
+      // "that failed" and has no idea the fix is in their other hand.
+      else if (errCode === 'card_required') setError(t('valetCardRequired'));
       else setError(t('valetFailed'));
       setCardCode(null);
       setBusy(false);
@@ -258,8 +278,59 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
         setFloors(res?.data?.floors ?? []);
       })
       .catch(() => { if (!cancelled) setSlotsEnabled(false); });
+
+    // Same shape and the same reasoning: a venue we cannot ask is treated as
+    // a venue without the feature. A capabilities endpoint having a bad day
+    // must not be able to stop cars being taken in.
+    Promise.resolve()
+      .then(() => api.getCapabilities())
+      .then((c) => { if (!cancelled) setPlateScan(!!c?.plateScan); })
+      .catch(() => { if (!cancelled) setPlateScan(false); });
     return () => { cancelled = true; };
   }, []);
+
+  function openPlateScanner() {
+    setError(null);
+    setPlateUnreadable(false);
+    // Asked on the way in, like the card scanner: a viewfinder that opens onto
+    // a permission notice reads as a camera that simply does not work.
+    if (permission && !permission.granted && permission.canAskAgain) requestPermission();
+    setStep('plate');
+  }
+
+  /**
+   * One frame, one suggestion.
+   *
+   * Everything here is deliberately unable to block intake. A refused camera,
+   * a failed capture, a reader that is down, a frame with no plate in it and a
+   * reading the service judged too weak all end the same way: back at the form
+   * with the field ready to type into. That is what the attendant did before
+   * any of this existed, and it stays one tap away.
+   */
+  async function capturePlate() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const shot = await plateCam.current?.takePictureAsync({ base64: true, quality: 0.5 });
+      const b64 = shot?.base64;
+      if (!b64) { setPlateUnreadable(true); return; }
+
+      const res = await api.scanPlate(b64);
+      if (res?.plate) {
+        setPlate(res.plate);
+        setPlateSuggested(true);
+      } else {
+        // Never clears what is already there. An attendant who typed the plate
+        // and then tried the camera out of curiosity must not lose their work.
+        setPlateUnreadable(true);
+      }
+    } catch {
+      setPlateUnreadable(true);
+    } finally {
+      setBusy(false);
+      setStep('details');
+    }
+  }
 
   async function submitDetails() {
     if (!plate.trim() || !vehicleMake.trim()) return;
@@ -299,6 +370,7 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
       const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       if (code === 'card_in_use') setError(t('valetCardInUse'));
       else if (code === 'unknown_card') setError(t('valetCardUnknown'));
+      else if (code === 'card_required') setError(t('valetCardRequired'));
       else if (code === 'invalid_phone') setError(t('valetPhoneInvalid'));
       else setError(t('valetFailed'));
     } finally {
@@ -328,7 +400,10 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
     if (!uri) return;
     setBusy(true);
     try {
-      await api.uploadCondition(created.sessionToken, uri, 'intake', 'photo', angle);
+      // Queues rather than failing when the server cannot be reached.
+      // Condition media is evidence, and the bays where it is captured
+      // are exactly where the signal is not.
+      await uploadOrQueue(created.sessionToken, uri, 'intake', 'photo', angle);
       setCaptured((prev) => [...prev, angle]);
       setError(null);
     } catch {
@@ -359,15 +434,45 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
         {step === 'details' && (
           <>
             <Text style={styles.label}>{t('valetPlate')}</Text>
-            <TextInput
-              testID="valet-plate-input"
-              value={plate}
-              onChangeText={setPlate}
-              autoCapitalize="characters"
-              placeholder="KA 03 NJ 0435"
-              placeholderTextColor={colors.textTertiary}
-              style={styles.input}
-            />
+            <View style={styles.plateRow}>
+              <TextInput
+                testID="valet-plate-input"
+                value={plate}
+                onChangeText={(v) => {
+                  setPlate(v);
+                  // The instant a human edits, this is theirs, not a reading.
+                  setPlateSuggested(false);
+                  setPlateUnreadable(false);
+                }}
+                autoCapitalize="characters"
+                placeholder="KA 03 NJ 0435"
+                placeholderTextColor={colors.textTertiary}
+                style={[styles.input, styles.plateInput]}
+              />
+              {plateScan && (
+                <Pressable
+                  testID="valet-scan-plate"
+                  onPress={openPlateScanner}
+                  style={styles.plateScanBtn}
+                  hitSlop={8}
+                >
+                  <MaterialCommunityIcons name="camera-outline" size={22} color={colors.teal} />
+                </Pressable>
+              )}
+            </View>
+
+            {/* Shown, not hidden. A reading the attendant cannot tell from
+                their own typing is a reading they stop proofreading. */}
+            {plateSuggested && (
+              <Text style={styles.plateSuggested} testID="valet-plate-suggested">
+                {t('valetPlateSuggested')}
+              </Text>
+            )}
+            {plateUnreadable && (
+              <Text style={styles.hint} testID="plate-unreadable">
+                {t('valetPlateUnreadable')}
+              </Text>
+            )}
 
             {/* Informational only. It never blocks or changes ticket creation,
                 and nothing about it is shown to the guest. */}
@@ -414,16 +519,27 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
                   </Text>
                 </Pressable>
               ))}
-              <Pressable
-                testID="valet-premium"
-                onPress={() => setIsPremium((p) => !p)}
-                style={[styles.dayChip, isPremium && styles.dayChipActive]}
-              >
-                <Text style={[styles.dayChipText, isPremium && styles.dayChipTextActive]}>
-                  {t('valetPremium')}
-                </Text>
-              </Pressable>
             </View>
+
+            {/* Its own row, not a fourth chip: premium is a property of the
+                car, not a body style, and a chip in a pick-one row reads as
+                "Hatchback, Sedan, SUV or Premium". A premium SUV is both. */}
+            <Pressable
+              testID="valet-premium-row"
+              style={styles.switchRow}
+              onPress={() => setIsPremium((p) => !p)}
+            >
+              <Text style={styles.switchLabel}>{t('valetPremium')}</Text>
+              <Switch
+                testID="valet-premium"
+                accessibilityRole="switch"
+                accessibilityLabel={t('valetPremium')}
+                value={isPremium}
+                onValueChange={setIsPremium}
+                trackColor={{ false: colors.border, true: colors.actionPrimary }}
+                thumbColor={colors.white}
+              />
+            </Pressable>
 
             <Text style={styles.label}>{t('valetStayEnd')}</Text>
             <View style={styles.dayRow}>
@@ -554,6 +670,32 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
           </>
         )}
 
+        {step === 'plate' && (
+          <>
+            {permission?.granted ? (
+              <CameraView ref={plateCam} testID="plate-camera" style={styles.scanner} facing="back" />
+            ) : (
+              <View style={styles.permissionBox}>
+                <Text style={styles.hint}>{t('valetCameraDenied')}</Text>
+                <Pressable testID="plate-grant" style={styles.cta} onPress={requestPermission}>
+                  <Text style={styles.ctaText}>{t('valetGrantCamera')}</Text>
+                </Pressable>
+              </View>
+            )}
+            <Text style={styles.hint}>{t('valetPlateAim')}</Text>
+            <Pressable testID="plate-capture" style={styles.cta} onPress={capturePlate} disabled={busy}>
+              {busy
+                ? <ActivityIndicator color={colors.bgPrimary} />
+                : <Text style={styles.ctaText}>{t('valetPlateRead')}</Text>}
+            </Pressable>
+            {/* Always reachable. The attendant must never be stuck in a
+                viewfinder because the reader is having a bad day. */}
+            <Pressable testID="plate-cancel" style={styles.ghost} onPress={() => setStep('details')}>
+              <Text style={styles.ghostText}>{t('valetPlateTypeInstead')}</Text>
+            </Pressable>
+          </>
+        )}
+
         {step === 'card' && (
           <>
             {permission?.granted ? (
@@ -651,7 +793,7 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
 
             {captured.length < ANGLES.length && (
               <Text style={styles.hint} testID="valet-condition-hint">
-                {t('valetConditionRequired')}
+                {t('valetConditionAllFour')}
               </Text>
             )}
 
@@ -700,6 +842,11 @@ const styles = StyleSheet.create({
   },
   returningText: { color: colors.teal, fontSize: 13, fontWeight: '600', flex: 1 },
   dayRow: { flexDirection: 'row', gap: spacing.sm },
+  switchRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: spacing.md,
+  },
+  switchLabel: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
   dayChip: {
     paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
     borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border,
@@ -715,6 +862,13 @@ const styles = StyleSheet.create({
   ctaText: { color: colors.bgPrimary, fontWeight: '700', fontSize: 16 },
   ghost: { paddingVertical: spacing.md, alignItems: 'center' },
   ghostText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
+  plateRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  plateInput: { flex: 1 },
+  plateScanBtn: {
+    padding: spacing.md, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card,
+  },
+  plateSuggested: { color: colors.teal, fontSize: 12, fontWeight: '600', marginTop: 6 },
   qrCard: {
     backgroundColor: colors.white, borderRadius: radius.xl,
     padding: spacing.xl, alignItems: 'center', gap: spacing.md,

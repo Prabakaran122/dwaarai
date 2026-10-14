@@ -58,7 +58,16 @@ function shape(row) {
 router.get('/entitlements', authenticateJWT(), async (req, res) => {
   try {
     const row = await queryOne('SELECT * FROM community_entitlements WHERE community_id = $1', [req.user.community_id]);
-    return success(res, shape(row));
+    // The property's own name, so the portal header can say which one it is
+    // showing. Neither the token nor the login response carries it, and the
+    // admin's display name ("Palm Meadows Admin") only looks like it does --
+    // deriving a property from a person's name would break the first time
+    // somebody was called something else.
+    let community = null;
+    try {
+      community = await queryOne('SELECT name FROM communities WHERE id = $1', [req.user.community_id]);
+    } catch { /* the name is a courtesy; entitlements still answer without it */ }
+    return success(res, { ...shape(row), communityName: community?.name ?? null });
   } catch (err) {
     console.error('GET /entitlements error:', err);
     return error(res, 'Internal server error', 500);

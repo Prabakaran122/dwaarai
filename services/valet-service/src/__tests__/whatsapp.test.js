@@ -252,10 +252,14 @@ describe('authkey.io transport', () => {
     expect(body.mobile).toBe('9876543210');
   });
 
-  it('names the variables var1..varN, which is how the template reads them', async () => {
+  // Was var1..varN. Both shapes are accepted by the API and both answer
+  // "Submitted Successfully"; only the handset shows the difference, where a
+  // var1-keyed payload substitutes nothing and the guest reads the template's
+  // sample text instead of their own car.
+  it('keys the variables numerically, which is how the template reads them', async () => {
     const { body } = await capture(() => sendTemplate('919876543210', '4821', ['The Leela', 'DWR-0042']));
 
-    expect(body.bodyValues).toEqual({ var1: 'The Leela', var2: 'DWR-0042' });
+    expect(body.bodyValues).toEqual({ 1: 'The Leela', 2: 'DWR-0042' });
   });
 
   it('reports failure when the provider says the send failed', async () => {
@@ -413,5 +417,41 @@ describe('sending the timeline image with the message', () => {
     // interchangeable.
     expect(body.template_type).toBeUndefined();
     expect(body.headerValues).toBeUndefined();
+  });
+});
+
+describe('how template variables reach authkey', () => {
+  beforeEach(() => {
+    process.env.WHATSAPP_PROVIDER = 'authkey';
+    process.env.AUTHKEY_API_KEY = 'k';
+    global.fetch = vi.fn(async () => ({
+      ok: true, status: 200, json: async () => ({ status: 'Success' }),
+    }));
+  });
+
+  // The keys are numeric strings, not var1..varN.
+  //
+  // Both shapes are accepted by the API and both answer "Submitted
+  // Successfully" -- the difference only shows up on the handset, where a
+  // payload keyed var1 arrives with nothing substituted and the guest sees
+  // the template's own sample text instead of their car. A 200 from this
+  // provider says the request was well formed, not that the message said
+  // anything true.
+  it('keys bodyValues numerically', async () => {
+    await sendTemplate('919003143250', '49411', ['Palm Meadows', 'Nexon - KA03NJ8345', 'DWR-0017']);
+
+    const body = JSON.parse(vi.mocked(global.fetch).mock.calls[0][1].body);
+    expect(body.bodyValues).toEqual({
+      1: 'Palm Meadows',
+      2: 'Nexon - KA03NJ8345',
+      3: 'DWR-0017',
+    });
+    expect(Object.keys(body.bodyValues)).not.toContain('var1');
+  });
+
+  it('keeps them in the order the template declares them', async () => {
+    await sendTemplate('919003143250', '49443', ['A', 'B', 'https://x/track/C']);
+    const body = JSON.parse(vi.mocked(global.fetch).mock.calls[0][1].body);
+    expect(body.bodyValues['3']).toBe('https://x/track/C');
   });
 });

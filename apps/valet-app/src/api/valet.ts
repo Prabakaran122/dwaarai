@@ -54,7 +54,7 @@ export function installAuthRefresh() {
 export type ValetStatus =
   | 'requested' | 'accepted' | 'parking_in_progress'
   | 'parked' | 'retrieval_requested' | 'en_route' | 'arrived'
-  | 'parked_again' | 'final_closed' | 'expired';
+  | 'parked_again' | 'with_guest' | 'final_closed' | 'expired';
 
 export interface ValetTicket {
   id: string;
@@ -203,17 +203,69 @@ export const acceptTicket = (token: string, etaMinutes: number | null) =>
  * recorded and a manager decides -- which is also why the screen can be
  * skipped when there is no camera.
  */
-export const startShift = (imageBase64?: string) =>
+export const startShift = (imageBase64?: string, valetPoint?: string) =>
   valet.post<{
     started: boolean;
     photo: boolean;
     verified: boolean;
     confidence: number | null;
     reason: string | null;
-  }>('/guard/shift/start', imageBase64 ? { imageBase64 } : {}).then((r) => r.data);
+  }>('/guard/shift/start', {
+    ...(imageBase64 ? { imageBase64 } : {}),
+    // Which door they are working. Omitted rather than sent empty when a
+    // venue has defined no points -- plenty have one entrance and never will.
+    ...(valetPoint ? { valetPoint } : {}),
+  }).then((r) => r.data);
+
+/**
+ * What this venue's deployment can do.
+ *
+ * Asked once when intake opens. Plate reading ships as a separate service and
+ * a venue can run the whole product without it, so the button is hidden on a
+ * false rather than shown and left to fail.
+ */
+export const getCapabilities = () =>
+  valet.get<{ plateScan: boolean }>('/guard/capabilities').then((r) => r.data);
+
+/**
+ * Reading a plate off a photo of the car.
+ *
+ * A suggestion and nothing more -- the attendant's typed value is what gets
+ * submitted. `plate: null` covers every way this can come back empty: no
+ * reader configured, nothing found in the frame, or a reading the service
+ * itself judged too weak to offer. The caller treats all three the same,
+ * because the attendant's next action is identical in all three: type it.
+ */
+export const scanPlate = (imageBase64: string) =>
+  valet.post<{ plate: string | null; confidence: number | null; suggestionOnly: boolean }>(
+    '/guard/plate-scan', { imageBase64 }
+  ).then((r) => r.data);
+
+/**
+ * Closes the open shift.
+ *
+ * Called when an attendant deliberately ends their shift. Not called on a 401
+ * expiry: the token is already dead by then, so the request could only fail,
+ * and the sweep closes a shift nobody ended.
+ */
+export const endShift = () =>
+  valet.post<{ ended: boolean; startedAt: string | null; endedAt: string | null }>(
+    '/guard/shift/end', {}
+  ).then((r) => r.data);
+
+/** The doors a shift can be started at. Empty when a venue has defined none. */
+export const listValetPoints = () =>
+  valet.get<{ points: { id: string; name: string }[] }>('/guard/points').then((r) => r.data);
 
 export const markArrived = (token: string) =>
   valet.post(`/guard/tickets/${token}/arrived`);
+
+/**
+ * A multi-day guest has brought the car back. The service refuses this until
+ * the four intake-stage condition photos taken since the handover exist.
+ */
+export const checkInReturned = (token: string) =>
+  valet.post<ValetTicket>(`/guard/tickets/${token}/returned`);
 
 export const scanPickup = (token: string, rotatingToken: string) =>
   valet.post(`/guard/tickets/${token}/scan`, { rotatingToken });
@@ -253,7 +305,15 @@ export function uploadCondition(
   uri: string,
   stage: 'intake' | 'return',
   mediaType: 'photo' | 'video',
-  angle?: 'front' | 'back' | 'left' | 'right'
+  angle?: 'front' | 'back' | 'left' | 'right' | 'plate',
+  /**
+   * Set when this upload came out of the outbox.
+   *
+   * The server dedupes on it, so a reply lost on a flaky reconnect replays
+   * without the photo being stored and counted twice. Absent on a first
+   * attempt, where there is nothing to deduplicate against.
+   */
+  idempotencyKey?: string
 ) {
   const form = new FormData();
   // Order matters: the server reads these fields while streaming the
@@ -268,7 +328,10 @@ export function uploadCondition(
   } as unknown as Blob);
 
   return valet.post(`/guard/tickets/${token}/condition`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: {
+      'Content-Type': 'multipart/form-data',
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+    },
   });
 }
 
@@ -280,17 +343,21 @@ export function uploadCondition(
  * answered 401 and rendered an empty frame. For every ticket, photo or not:
  * the guard was asked to compare a face against nothing.
  *
- * React Native's Image honours a headers map on a network source, so the
- * native loader keeps the caching and memory handling rather than pulling a
- * multi-megabyte photo through JS as base64. Whether a photo exists at all is
- * a separate question, answered by the ticket's hasPhoto — never by waiting
- * for this to fail.
+ * Putting the header on the <Image> source did not fix it on a device: the
+ * native loader dropped it (seen in Expo Go, which runs the New Architecture),
+ * the request still arrived anonymous, and the frame was still empty -- while
+ * a Jest test asserting the header was on the source props passed.
+ *
+ * So the image carries no credential at all. This asks the service, with the
+ * guard's token, for a link signed for this one photo that expires in two
+ * minutes, and the <Image> loads that plain URL. The native loader keeps its
+ * caching and memory handling; nothing goes through JS as base64. Whether a
+ * photo exists at all is still answered by the ticket's hasPhoto, and whether
+ * it loaded by the <Image>'s own onLoad -- never assumed.
  */
-export const guestPhotoSource = (token: string) => ({
-  uri: `${VALET_BASE}/guard/tickets/${token}/photo`,
-  headers: {
-    Authorization: valet.defaults.headers.common['Authorization'] as string,
-  },
-});
+export async function guestPhotoUrl(token: string): Promise<string> {
+  const res = await valet.post<{ url: string }>(`/guard/tickets/${token}/photo-link`);
+  return `${VALET_BASE}${res.data.url}`;
+}
 
 export default valet;

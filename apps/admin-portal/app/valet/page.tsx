@@ -26,6 +26,7 @@ const STATUS_STYLE: Record<ValetStatus, string> = {
   arrived: 'bg-teal-50 text-teal-700 ring-teal-200',
   parked: 'bg-gray-50 text-gray-600 ring-gray-200',
   parked_again: 'bg-gray-50 text-gray-600 ring-gray-200',
+  with_guest: 'bg-violet-50 text-violet-700 ring-violet-200',
   final_closed: 'bg-gray-50 text-gray-400 ring-gray-200',
   expired: 'bg-orange-50 text-orange-700 ring-orange-200',
 };

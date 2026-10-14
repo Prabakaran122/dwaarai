@@ -31,12 +31,18 @@ const b = await pool.query(`INSERT INTO blocks (community_id,name) VALUES ($1,'A
 const u = await pool.query(`INSERT INTO units (community_id,block_id,unit_number) VALUES ($1,$2,'U') RETURNING id`, [cid, b.rows[0].id]);
 const g = await pool.query(`INSERT INTO residents (community_id,unit_id,name,mobile,type) VALUES ($1,$2,'Ramesh','9000000601','guard') RETURNING id`, [cid, u.rows[0].id]);
 const token = jwt.sign({ sub: g.rows[0].id, role: 'guard', community_id: cid, name: 'Ramesh' }, SECRET);
+const admin = jwt.sign({ sub: g.rows[0].id, role: 'community_admin', community_id: cid, name: 'M' }, SECRET);
+
+// The card IS the ticket: intake refuses to start without one, and only stock
+// an operator registered can be scanned. Each ticket below takes the next card.
+let nextCard = 1;
+const card = () => `V${String(nextCard++).padStart(3, '0')}`;
 
 /** Drives a ticket to the point a pickup can be confirmed. */
 async function readyTicket(plate) {
   const t = (await api('/guard/tickets', {
     method: 'POST', token,
-    body: { plate, vehicleMake: 'Swift', stayEndAt: new Date(Date.now() + 864e5).toISOString() },
+    body: { plate, vehicleMake: 'Swift', stayEndAt: new Date(Date.now() + 864e5).toISOString(), cardCode: card() },
   })).body;
   await api(`/guest/tickets/${t.sessionToken}/request`, { method: 'POST' });
   await api(`/guard/tickets/${t.sessionToken}/accept`, { method: 'POST', token, body: {} });
@@ -76,6 +82,9 @@ async function metadataOf(sessionToken, eventType) {
 // script once left four throwaway venues sitting in the production
 // database, which is exactly what seeding-and-deleting is meant to avoid.
 try {
+  const stock = await api('/admin/cards', { method: 'POST', token: admin, body: { prefix: 'V', from: 1, to: 10, width: 3 } });
+  check('operator registers card stock', stock.status === 201, JSON.stringify(stock.body));
+
   console.log('\n--- a ticket with no intake photo ---');
   const noPhoto = await readyTicket('KA 01 NP 1111');
   const detail = await api(`/guard/tickets/${noPhoto}`, { token });
@@ -133,12 +142,40 @@ try {
   // 404 here only because the scratch row points at a key with no stored bytes;
   // what matters is that the token gets past the guard rather than 401ing.
   check('an authenticated one gets past auth', authed.status !== 401, String(authed.status));
+
+  console.log('\n--- a signed photo link needs no header ---');
+  // React Native's image loader drops the Authorization header, so the
+  // handover screen loads the photo through a short-lived signed URL instead.
+  // Needs real stored bytes, so the photo goes in through the API this time.
+  const linked = (await api('/guard/tickets', {
+    method: 'POST', token,
+    body: { plate: 'KA 04 PL 4444', vehicleMake: 'Swift', stayEndAt: new Date(Date.now() + 864e5).toISOString(), cardCode: card() },
+  })).body;
+  const form = new FormData();
+  form.append('consentAck', 'true');
+  form.append('photo', new Blob([Buffer.from('fake-jpeg-bytes')], { type: 'image/jpeg' }), 'guest.jpg');
+  const up = await fetch(`${BASE}/guard/tickets/${linked.sessionToken}/photo`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form,
+  });
+  check('an intake photo uploads', up.status === 201, String(up.status));
+
+  const link = await api(`/guard/tickets/${linked.sessionToken}/photo-link`, { method: 'POST', token });
+  check('a guard gets a signed link',
+    link.status === 200 && String(link.body?.url).startsWith('/guard/photo-links/') && link.body?.expiresIn > 0,
+    JSON.stringify(link.body));
+  const viaLink = await fetch(`${BASE}${link.body?.url}`);
+  check('the link serves the photo with no Authorization header',
+    viaLink.status === 200 && viaLink.headers.get('content-type') === 'image/jpeg',
+    `${viaLink.status} ${viaLink.headers.get('content-type')}`);
+  const garbage = await fetch(`${BASE}/guard/photo-links/not-a-real-signature`);
+  check('a garbage signature 404s', garbage.status === 404, String(garbage.status));
 } finally {
   await pool.query('DELETE FROM valet_ticket_events WHERE ticket_id IN (SELECT id FROM valet_tickets WHERE community_id=$1)', [cid]);
   await pool.query('DELETE FROM valet_condition_records WHERE ticket_id IN (SELECT id FROM valet_tickets WHERE community_id=$1)', [cid]);
   await pool.query('DELETE FROM valet_photos WHERE ticket_id IN (SELECT id FROM valet_tickets WHERE community_id=$1)', [cid]);
   await pool.query('DELETE FROM valet_rotating_tokens WHERE ticket_id IN (SELECT id FROM valet_tickets WHERE community_id=$1)', [cid]);
   await pool.query('DELETE FROM valet_tickets WHERE community_id=$1', [cid]);
+  await pool.query('DELETE FROM valet_cards WHERE community_id=$1', [cid]);
   await pool.query('DELETE FROM residents WHERE community_id=$1', [cid]);
   await pool.query('DELETE FROM units WHERE community_id=$1', [cid]);
   await pool.query('DELETE FROM blocks WHERE community_id=$1', [cid]);

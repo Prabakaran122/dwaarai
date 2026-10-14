@@ -108,3 +108,72 @@ describe('shift start, once recognition is wired', () => {
     expect(storage.put).not.toHaveBeenCalled();
   });
 });
+
+describe('a shift as a record, not a timestamp', () => {
+  // residents.shift_started_at was overwritten on every sign-in and read by
+  // nothing, so "who is on duty now" and "who was on duty at 7pm yesterday"
+  // were both unanswerable -- and the verification the route computes so
+  // carefully was returned to the app and then dropped.
+  it('opens a shift row carrying what the recogniser concluded', async () => {
+    vi.mocked(matchAttendant).mockResolvedValueOnce({
+      available: true, verified: true, confidence: 0.93,
+    });
+    queryOne.mockResolvedValueOnce({ vector: Buffer.from('v') });
+
+    await request(app, 'POST', '/guard/shift/start', { token, body: { imageBase64: 'aGk=' } });
+
+    const insert = query.mock.calls.find((c) => /INSERT INTO valet_shifts/i.test(c[0]));
+    expect(insert).toBeTruthy();
+    expect(insert[1]).toContain(true);     // verified
+    expect(insert[1]).toContain(0.93);     // confidence
+  });
+
+  it('records WHY an unverified shift was unverified', async () => {
+    // "Not verified" alone is useless to a manager: a missing photo, an
+    // unenrolled attendant and a face that did not match are three different
+    // conversations, and only one is about the person in front of them.
+    vi.mocked(matchAttendant).mockResolvedValueOnce({ available: false });
+
+    await request(app, 'POST', '/guard/shift/start', { token, body: {} });
+
+    const insert = query.mock.calls.find((c) => /INSERT INTO valet_shifts/i.test(c[0]));
+    expect(insert[1]).toContain('no_photo');
+  });
+
+  it('still starts the shift when the insert fails', async () => {
+    // Bookkeeping must never be what strands an attendant at six in the
+    // morning. The response says the shift started because it did.
+    vi.mocked(matchAttendant).mockResolvedValueOnce({ available: false });
+    query.mockRejectedValue(new Error('relation does not exist'));
+
+    const res = await request(app, 'POST', '/guard/shift/start', { token, body: {} });
+
+    expect(res.status).toBe(201);
+    expect(res.body.started).toBe(true);
+  });
+});
+
+describe('ending a shift', () => {
+  it('closes the open row', async () => {
+    queryOne.mockResolvedValueOnce({ id: 's1' });
+
+    const res = await request(app, 'POST', '/guard/shift/end', { token, body: {} });
+
+    expect(res.status).toBe(200);
+    const sql = queryOne.mock.calls.at(-1)[0];
+    expect(sql).toMatch(/UPDATE valet_shifts/i);
+    expect(sql).toMatch(/ended_at = NOW\(\)/i);
+    expect(sql).toMatch(/ended_at IS NULL/i);
+  });
+
+  it('is harmless when no shift was open', async () => {
+    // Signing out twice, or after the sweep already closed it, is not an
+    // error worth showing an attendant who is trying to go home.
+    queryOne.mockResolvedValueOnce(null);
+
+    const res = await request(app, 'POST', '/guard/shift/end', { token, body: {} });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ended).toBe(false);
+  });
+});

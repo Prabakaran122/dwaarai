@@ -6,7 +6,11 @@ import { disconnectSocket } from './socket';
 interface AuthUser {
   id: string;
   name: string;
-  role: 'super_admin' | 'community_admin';
+  // client_admin was missing: the gateway has issued these since migration 057
+  // for a group that holds several hotels, so any `role === 'client_admin'`
+  // check in the portal was a type error against a value the server really
+  // sends.
+  role: 'super_admin' | 'client_admin' | 'community_admin';
   communityId: string | null;
 }
 
@@ -23,6 +27,25 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+/**
+ * Which community a fresh login starts on, written through to localStorage.
+ *
+ * A login scoped to one community gets that one. Anyone else starts with
+ * nothing selected: a selection left by an earlier session that never logged
+ * out (an expired token, a closed tab) used to survive, so a super admin
+ * opened the portal "viewing" a property that was not theirs -- or did not
+ * exist on this backend -- with every valet call scoped to it.
+ */
+export function selectionAfterLogin(user: AuthUser): { id: string | null; name: string | null } {
+  localStorage.removeItem('cg_selected_community_name');
+  if (user.communityId) {
+    localStorage.setItem('cg_selected_community_id', user.communityId);
+    return { id: user.communityId, name: null };
+  }
+  localStorage.removeItem('cg_selected_community_id');
+  return { id: null, name: null };
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -55,10 +78,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(newUser);
     localStorage.setItem('cg_admin_token', newToken);
     localStorage.setItem('cg_admin_user', JSON.stringify(newUser));
-    if (newUser.communityId) {
-      setSelectedCommunityId(newUser.communityId);
-      localStorage.setItem('cg_selected_community_id', newUser.communityId);
-    }
+    const selection = selectionAfterLogin(newUser);
+    setSelectedCommunityId(selection.id);
+    setSelectedCommunityName(selection.name);
   }, []);
 
   const logout = useCallback(() => {

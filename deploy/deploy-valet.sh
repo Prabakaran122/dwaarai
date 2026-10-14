@@ -31,11 +31,57 @@ DATABASE_URL="${DATABASE_URL:-$(sudo sed -n 's/^Environment=DATABASE_URL=//p' "$
 # set once on the box survives every later deploy without being re-supplied.
 MSG91_AUTH_KEY="${MSG91_AUTH_KEY:-$(sudo sed -n 's/^Environment=MSG91_AUTH_KEY=//p' "$VALET_UNIT" 2>/dev/null)}"
 AUTHKEY_API_KEY="${AUTHKEY_API_KEY:-$(sudo sed -n 's/^Environment=AUTHKEY_API_KEY=//p' "$VALET_UNIT" 2>/dev/null)}"
+# Extra CORS origins -- a laptop running the Expo web build against this box,
+# usually. Inherited from the existing unit for the same reason the keys are:
+# this file REWRITES the unit on every deploy, so anything added by hand to
+# the live service is destroyed the next time anyone ships. That is exactly
+# how the local origin granted for testing disappeared, twice, with the
+# symptom showing up as "Login failed" in an app that was working an hour
+# earlier. Supply it once and it survives.
+CORS_EXTRA_ORIGINS="${CORS_EXTRA_ORIGINS:-$(sudo sed -n 's/^Environment=CORS_EXTRA_ORIGINS=//p' "$VALET_UNIT" 2>/dev/null)}"
+# Same inheritance as the API key above, and for the same reason: this file
+# REWRITES the unit on every deploy, so a secret not re-supplied on the command
+# line is destroyed. That is not hypothetical -- it happened, the value was
+# blanked, and every inbound WhatsApp message started returning 401 while the
+# deploy reported six green health checks. Nothing the deploy tests covers the
+# webhook, so the only symptom was a guest replying CAR and nothing happening.
+WHATSAPP_WEBHOOK_SECRET="${WHATSAPP_WEBHOOK_SECRET:-$(sudo sed -n 's/^Environment=WHATSAPP_WEBHOOK_SECRET=//p' "$VALET_UNIT" 2>/dev/null)}"
+# The rest of the WhatsApp configuration, inherited for exactly the same
+# reason and after one more round of the same bug. WHATSAPP_PROVIDER is the
+# dangerous one: isConfigured() returns false without it, so a deploy that
+# blanks it reports every send "skipped" -- a success, as far as the ticket is
+# concerned -- and no guest hears anything again. WHATSAPP_NUMBER is the
+# number printed on the card and baked into the guest build, so losing it
+# removes the WhatsApp button from the door page and leaves the browser
+# fallback standing alone.
+#
+# Inheriting is right rather than merely convenient: the live unit is the only
+# record of what this box is configured with. A laptop that has forgotten the
+# values must not be able to overwrite them with nothing.
+for v in WHATSAPP_PROVIDER WHATSAPP_NUMBER WHATSAPP_COUNTRY_CODE \
+         WHATSAPP_NOTIFY_STAGES WHATSAPP_DEBUG_INBOUND \
+         WHATSAPP_TEMPLATE_CAR_READY WHATSAPP_TEMPLATE_CHECKED_IN \
+         WHATSAPP_TEMPLATE_ON_THE_WAY WHATSAPP_TEMPLATE_REQUESTED \
+         COLLECTION_WINDOW_MINUTES ANPR_SERVICE_URL; do
+  if [ -z "${!v:-}" ]; then
+    printf -v "$v" '%s' "$(sudo sed -n "s/^Environment=$v=//p" "$VALET_UNIT" 2>/dev/null)"
+  fi
+done
 # Inherited rather than set here: the gateway already points at a recogniser,
 # and valet must match faces against the same one the vectors were made by.
 # Two URLs would mean two vector spaces and every comparison failing.
 FACE_RECOGNITION_URL="${FACE_RECOGNITION_URL:-$(sudo sed -n 's/^Environment=FACE_RECOGNITION_URL=//p' "$API_UNIT" 2>/dev/null)}"
 FACE_MATCH_THRESHOLD="${FACE_MATCH_THRESHOLD:-$(sudo sed -n 's/^Environment=FACE_MATCH_THRESHOLD=//p' "$API_UNIT" 2>/dev/null)}"
+# A key with no provider is the worst of the possible states: isConfigured()
+# is false, so every send returns "skipped", which the ticket treats as a
+# success. Nothing logs, nothing 500s, and no guest is ever messaged again.
+# Refuse rather than ship it.
+if { [ -n "$AUTHKEY_API_KEY" ] || [ -n "$MSG91_AUTH_KEY" ]; } && [ -z "$WHATSAPP_PROVIDER" ]; then
+  echo "WHATSAPP_PROVIDER is empty but a provider key is set -- every guest message would be silently skipped." >&2
+  echo "Pass WHATSAPP_PROVIDER=authkey (or msg91) once; it is inherited from the unit afterwards." >&2
+  exit 1
+fi
+
 [ -n "$JWT_SECRET" ]   || { echo "could not read JWT_SECRET from $API_UNIT"; exit 1; }
 [ -n "$DATABASE_URL" ] || { echo "could not read DATABASE_URL from $API_UNIT"; exit 1; }
 
@@ -141,10 +187,11 @@ Environment=VALET_STORAGE=local
 Environment=VALET_UPLOAD_DIR=$APP_DIR/uploads/valet
 Environment=ROTATING_TOKEN_TTL_SECONDS=18
 Environment=PHOTO_RETENTION_HOURS=24
-Environment=CORS_ORIGIN=https://$PUBLIC_HOST
+Environment=CORS_ORIGIN=https://$PUBLIC_HOST${CORS_EXTRA_ORIGINS:+,$CORS_EXTRA_ORIGINS}
+Environment=CORS_EXTRA_ORIGINS=$CORS_EXTRA_ORIGINS
 # Off deliberately: the sweep runs from its own timer, below.
 Environment=VALET_RUN_SWEEP_IN_PROCESS=false
-Environment=WHATSAPP_PROVIDER=${WHATSAPP_PROVIDER:-}
+Environment=WHATSAPP_PROVIDER=$WHATSAPP_PROVIDER
 # Without this the provider is never "configured", so every guest message is
 # reported skipped and nothing is ever sent -- quietly, because skipped is a
 # success as far as the ticket is concerned. It was missing entirely.
@@ -152,14 +199,17 @@ Environment=MSG91_AUTH_KEY=$MSG91_AUTH_KEY
 Environment=AUTHKEY_API_KEY=$AUTHKEY_API_KEY
 Environment=WHATSAPP_COUNTRY_CODE=${WHATSAPP_COUNTRY_CODE:-91}
 Environment=WHATSAPP_DEBUG_INBOUND=${WHATSAPP_DEBUG_INBOUND:-0}
-Environment=WHATSAPP_NUMBER=${WHATSAPP_NUMBER:-}
-Environment=WHATSAPP_WEBHOOK_SECRET=${WHATSAPP_WEBHOOK_SECRET:-}
+# Named explicitly so it can be inherited at all. It was in the forward list
+# and in no unit, so setting it on the command line changed nothing.
+Environment=WHATSAPP_NOTIFY_STAGES=$WHATSAPP_NOTIFY_STAGES
+Environment=WHATSAPP_NUMBER=$WHATSAPP_NUMBER
+Environment=WHATSAPP_WEBHOOK_SECRET=$WHATSAPP_WEBHOOK_SECRET
 Environment=WHATSAPP_TEMPLATE_CAR_READY=${WHATSAPP_TEMPLATE_CAR_READY:-car_ready}
-Environment=WHATSAPP_TEMPLATE_CHECKED_IN=${WHATSAPP_TEMPLATE_CHECKED_IN:-}
-Environment=WHATSAPP_TEMPLATE_ON_THE_WAY=${WHATSAPP_TEMPLATE_ON_THE_WAY:-}
-Environment=WHATSAPP_TEMPLATE_REQUESTED=${WHATSAPP_TEMPLATE_REQUESTED:-}
+Environment=WHATSAPP_TEMPLATE_CHECKED_IN=$WHATSAPP_TEMPLATE_CHECKED_IN
+Environment=WHATSAPP_TEMPLATE_ON_THE_WAY=$WHATSAPP_TEMPLATE_ON_THE_WAY
+Environment=WHATSAPP_TEMPLATE_REQUESTED=$WHATSAPP_TEMPLATE_REQUESTED
 Environment=COLLECTION_WINDOW_MINUTES=${COLLECTION_WINDOW_MINUTES:-5}
-Environment=ANPR_SERVICE_URL=${ANPR_SERVICE_URL:-}
+Environment=ANPR_SERVICE_URL=$ANPR_SERVICE_URL
 Environment=FACE_RECOGNITION_URL=$FACE_RECOGNITION_URL
 Environment=FACE_MATCH_THRESHOLD=${FACE_MATCH_THRESHOLD:-0.85}
 ExecStart=/usr/bin/node src/index.js

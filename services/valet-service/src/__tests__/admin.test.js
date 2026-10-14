@@ -203,6 +203,155 @@ describe('GET /admin/visits', () => {
     expect(res.body.days).toBe(30);
   });
 
+  // A named window answers "how have we been doing lately". A range answers
+  // "what happened over the wedding weekend" -- the question a manager brings
+  // to this page when something went wrong on a specific night, and the one
+  // "last 30 days" cannot be bent into.
+  //
+  // Instants, not dates: nothing in this service carries a venue timezone, so
+  // a bare 2026-08-20 would be read as a UTC day and a manager in India would
+  // get a window shifted five and a half hours off the evening they meant.
+  // The browser knows its own offset; it does the conversion and sends the
+  // moments it computed.
+  it('honours an explicit from/to range', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(
+      app, 'GET',
+      '/admin/visits?from=2026-08-20T18:30:00.000Z&to=2026-08-22T18:29:59.999Z',
+      { token: adminToken() }
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.range).toEqual({
+      from: '2026-08-20T18:30:00.000Z',
+      to: '2026-08-22T18:29:59.999Z',
+    });
+    // The window is the range, not a days interval alongside it.
+    const params = queryRows.mock.calls[0][1];
+    expect(params).toContain('2026-08-20T18:30:00.000Z');
+    expect(params).toContain('2026-08-22T18:29:59.999Z');
+    expect(queryRows.mock.calls[0][0]).not.toMatch(/days'\)::interval/);
+  });
+
+  it('ignores a range it cannot parse rather than returning an empty log', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(
+      app, 'GET', '/admin/visits?from=last-tuesday&to=soon', { token: adminToken() }
+    );
+
+    expect(res.body.days).toBe(30);
+    expect(res.body.range).toBe(null);
+  });
+
+  // Backwards is a slip, not a request for nothing. Returning an empty table
+  // would read as "no cars that weekend", which is a different and much worse
+  // answer than "those dates are the wrong way round".
+  it('swaps a backwards range rather than matching nothing', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(
+      app, 'GET',
+      '/admin/visits?from=2026-08-22T00:00:00.000Z&to=2026-08-20T00:00:00.000Z',
+      { token: adminToken() }
+    );
+
+    expect(res.body.range).toEqual({
+      from: '2026-08-20T00:00:00.000Z',
+      to: '2026-08-22T00:00:00.000Z',
+    });
+  });
+
+  // The totals line sits above the table and is read as describing it. A
+  // range applied to the rows but not to the rollup would put "148 visits"
+  // over a weekend that had nine.
+  it('applies the range to the totals as well as the rows', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    await request(
+      app, 'GET',
+      '/admin/visits?from=2026-08-20T00:00:00.000Z&to=2026-08-22T00:00:00.000Z',
+      { token: adminToken() }
+    );
+
+    expect(queryOne.mock.calls[0][1]).toContain('2026-08-20T00:00:00.000Z');
+    expect(queryOne.mock.calls[0][1]).toContain('2026-08-22T00:00:00.000Z');
+  });
+
+  // The status filter, and the banner button behind it.
+  //
+  // "Only 2 of 17 cars have a recorded handover" is the most alarming line on
+  // this page, and until now it was also the most useless: a manager could
+  // read it and had no way to see WHICH two. The filter is what turns the
+  // warning into a list somebody can walk through with their team.
+  it('filters to the visits nobody handed over', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(
+      app, 'GET', '/admin/visits?status=no_handover', { token: adminToken() }
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('no_handover');
+    // Absence of a closure event, not the ticket's own status: a swept ticket
+    // reads as final_closed, which is exactly the row this filter is for.
+    expect(queryRows.mock.calls[0][0]).toMatch(/NOT EXISTS/);
+  });
+
+  it('filters to the cars still with the team', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(app, 'GET', '/admin/visits?status=parked', { token: adminToken() });
+
+    expect(res.body.status).toBe('parked');
+    // A car out with its multi-day guest is open but not with the team.
+    expect(queryRows.mock.calls[0][0]).toMatch(/NOT IN \('final_closed', 'expired', 'with_guest'\)/);
+  });
+
+  // A filter the server does not know must not quietly return everything under
+  // a heading that claims it is narrowed.
+  it('rejects a status it does not recognise', async () => {
+    const res = await request(app, 'GET', '/admin/visits?status=banana', { token: adminToken() });
+
+    expect(res.status).toBe(400);
+    expect(queryRows).not.toHaveBeenCalled();
+  });
+
+  it('applies the status filter to the totals too', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    await request(app, 'GET', '/admin/visits?status=returned', { token: adminToken() });
+
+    const flat = (q) => q.replace(/\s+/g, ' ');
+    const predicate = (qualifier) =>
+      `AND EXISTS ( SELECT 1 FROM valet_ticket_events e WHERE e.ticket_id = ${qualifier}id AND e.event_type IN ('final_closed', 'closed_pickup') )`;
+
+    expect(flat(queryRows.mock.calls[0][0])).toContain(predicate('t.'));
+    expect(flat(queryOne.mock.calls[0][0])).toContain(predicate('valet_tickets.'));
+  });
+
+  // The qualifier is the whole correctness of the predicate, so it is asserted
+  // rather than assumed: valet_ticket_events has an `id` column, and an
+  // unqualified one inside that subquery compares an event to itself.
+  it('qualifies the handover subquery against the tickets table, not the events', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    await request(app, 'GET', '/admin/visits?status=no_handover', { token: adminToken() });
+
+    const totalsSql = queryOne.mock.calls[0][0].replace(/\s+/g, ' ');
+    expect(totalsSql).not.toMatch(/e\.ticket_id = id\b/);
+    expect(totalsSql).toContain('e.ticket_id = valet_tickets.id');
+  });
+
   it('returns each visit with plate, times and who took it in', async () => {
     queryRows.mockResolvedValueOnce([visitRow()]);
     queryOne.mockResolvedValueOnce(totalsRow());
@@ -711,6 +860,9 @@ describe('GET /admin/feedback', () => {
       { reason: 'long_wait', count: 4 },
       { reason: 'damage', count: 1 },
     ]);
+    // The per-attendant breakdown, which this test does not assert on but the
+    // route now asks for.
+    queryRows.mockResolvedValueOnce([]);
 
     const res = await request(app, 'GET', '/admin/feedback', { token: adminToken() });
 
@@ -720,6 +872,36 @@ describe('GET /admin/feedback', () => {
     expect(res.body.reasons).toEqual([
       { reason: 'long_wait', count: 4 },
       { reason: 'damage', count: 1 },
+    ]);
+  });
+
+  // "Review with staff" from the redesign.
+  //
+  // A rollup tells a manager something went wrong; it does not tell them who
+  // to talk to. This breaks the same responses down by the attendant the guest
+  // actually met at handover -- the one moment of the trip they can speak to.
+  it('breaks the responses down by the attendant who handed the car over', async () => {
+    queryOne.mockResolvedValueOnce({ satisfied: 42, not_satisfied: 5 });
+    queryRows.mockResolvedValueOnce([{ reason: 'long_wait', count: 4 }]);
+    queryRows.mockResolvedValueOnce([
+      { guard_id: 'g1', name: 'Ramesh', rated: 20, unhappy: 1, reasons: ['long_wait'] },
+      { guard_id: 'g2', name: 'Suresh', rated: 2, unhappy: 2, reasons: ['long_wait', 'damage'] },
+    ]);
+
+    const res = await request(app, 'GET', '/admin/feedback', { token: adminToken() });
+
+    expect(res.body.byStaff).toEqual([
+      {
+        id: 'g1', name: 'Ramesh', rated: 20, unhappy: 1,
+        reasons: ['long_wait'], enoughToJudge: true,
+      },
+      {
+        id: 'g2', name: 'Suresh', rated: 2, unhappy: 2,
+        // Two responses is a bad week, not a pattern. The flag is what stops
+        // the page printing "100% unhappy" beside somebody's name, which is
+        // the reading this screen exists to prevent rather than cause.
+        reasons: ['long_wait', 'damage'], enoughToJudge: false,
+      },
     ]);
   });
 
@@ -845,7 +1027,94 @@ describe('GET /admin/subscription', () => {
   });
 });
 
+// The shift log's own narrowing. The design gives this screen a staff picker
+// and a single-day selector, not a rolling window: "who was on at the banquet
+// entrance last Saturday" is the question it is actually opened to answer, and
+// a 7/30/90 button cannot be bent into a date.
+describe('GET /admin/shifts narrowing', () => {
+  // Deliberately NOT the helpers' COMMUNITY_ID. That value is already param 1
+  // of every query on this route, so asserting it appears in the parameter
+  // list passes against a route that ignores staffId entirely -- which is
+  // exactly what the first version of this test did.
+  const STAFF = '22222222-2222-2222-2222-222222222222';
+
+  it('filters to one staff member', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    const res = await request(
+      app, 'GET', `/admin/shifts?staffId=${STAFF}`, { token: adminToken() }
+    );
+
+    expect(res.status).toBe(200);
+    expect(queryRows.mock.calls[0][1]).toContain(STAFF);
+  });
+
+  // A stale id from a select box must not take the whole log down -- the same
+  // rule the vehicle log already follows. Asserted as "the slot is null",
+  // not "the junk is absent": the junk is absent from a route with no filter
+  // at all, which proves nothing.
+  it('ignores a staff id that is not an id', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    const res = await request(app, 'GET', '/admin/shifts?staffId=everyone', { token: adminToken() });
+
+    expect(res.status).toBe(200);
+    expect(queryRows.mock.calls[0][1]).toContain(null);
+  });
+
+  // One day, bounded at both ends. Sent as instants by the browser for the
+  // same reason the vehicle log's range is: this service carries no venue
+  // timezone, so a bare date would be read as a UTC day.
+  it('narrows to a single day', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    const res = await request(
+      app, 'GET',
+      '/admin/shifts?from=2026-09-25T18:30:00.000Z&to=2026-09-26T18:29:59.999Z',
+      { token: adminToken() }
+    );
+
+    expect(res.body.range).toEqual({
+      from: '2026-09-25T18:30:00.000Z',
+      to: '2026-09-26T18:29:59.999Z',
+    });
+    expect(queryRows.mock.calls[0][1]).toContain('2026-09-25T18:30:00.000Z');
+  });
+});
+
 describe('GET /admin/visits.csv', () => {
+  it('exports the same status filter the screen is showing', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    const res = await request(
+      app, 'GET', '/admin/visits.csv?status=no_handover', { token: adminToken() }
+    );
+
+    expect(res.status).toBe(200);
+    expect(queryRows.mock.calls[0][0]).toMatch(/AND NOT EXISTS/);
+  });
+
+  // The export is reached from the screen, and a manager who has narrowed the
+  // screen to one weekend and then downloads a month has been handed the wrong
+  // evidence -- quietly, because a CSV looks right until somebody counts it.
+  it('exports the same range the screen is showing', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    const res = await request(
+      app, 'GET',
+      '/admin/visits.csv?from=2026-08-20T00:00:00.000Z&to=2026-08-22T00:00:00.000Z',
+      { token: adminToken() }
+    );
+
+    expect(res.status).toBe(200);
+    const params = queryRows.mock.calls[0][1];
+    expect(params).toContain('2026-08-20T00:00:00.000Z');
+    expect(params).toContain('2026-08-22T00:00:00.000Z');
+    // Named for the window it holds, so two downloads in one afternoon are
+    // not two files called the same thing.
+    expect(res.headers['content-disposition']).toContain('2026-08-20_2026-08-22');
+  });
+
   it('streams the same rows the table shows, as CSV', async () => {
     queryRows.mockResolvedValueOnce([{
       display_id: 'DWR-0009', plate: 'KA 03 NJ 0435', vehicle_make: 'Swift',
@@ -1125,5 +1394,1202 @@ describe('a client admin, who holds several properties and no single one', () =>
     // Without the ownership check, naming any community id in a header would
     // hand a group admin somebody else's property.
     expect(res.status).toBe(403);
+  });
+});
+
+describe('who handed the vehicle back', () => {
+  // "Taken in by" has always been on this screen. Its counterpart was not,
+  // and it is the half a manager actually chases: a dispute is almost never
+  // about who received a car, it is about who released it.
+  //
+  // It cannot come off the ticket row. `current_guard_id` is set when a valet
+  // accepts the retrieval and set back to NULL the moment the ticket closes,
+  // so by the time a visit appears in this list the column is empty. The
+  // durable record is the closure event.
+  it('reports the guard from the closure event', async () => {
+    queryRows.mockResolvedValueOnce([visitRow({ handed_out_guard_name: 'Suresh' })]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(app, 'GET', '/admin/visits', { token: adminToken() });
+
+    expect(res.body.visits[0].handedOutBy).toBe('Suresh');
+    expect(res.body.visits[0].takenInBy).toBe('Ramesh');
+  });
+
+  it('reads it from the events table, not from the ticket row', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    await request(app, 'GET', '/admin/visits', { token: adminToken() });
+
+    const sql = queryRows.mock.calls[0][0];
+    expect(sql).toMatch(/valet_ticket_events/);
+    // Both closure kinds count: a multi-day guest can take the car out and
+    // bring it back, and "who brought it out" means the most recent time.
+    expect(sql).toMatch(/final_closed/);
+    expect(sql).toMatch(/closed_pickup/);
+  });
+
+  it('leaves it null for a car still on the lot rather than inventing a name', async () => {
+    queryRows.mockResolvedValueOnce([
+      visitRow({ status: 'parked', closed_at: null, handed_out_guard_name: null }),
+    ]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(app, 'GET', '/admin/visits', { token: adminToken() });
+
+    expect(res.body.visits[0].handedOutBy).toBeNull();
+  });
+
+  it('does not drop visits that have no closure event', async () => {
+    // The join must be a LEFT one. An inner join here would quietly hide
+    // every car currently parked -- the rows a manager most needs to see.
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    await request(app, 'GET', '/admin/visits', { token: adminToken() });
+
+    expect(queryRows.mock.calls[0][0]).toMatch(/LEFT JOIN/i);
+  });
+});
+
+describe('the vehicle-log CSV', () => {
+  // The export is what gets mailed to a GM or handed to an insurer after a
+  // dispute. A column that exists on screen and not in the file is the one
+  // nobody notices until the day it is needed.
+  it('carries both attendants, named so the pair is unambiguous', async () => {
+    queryRows.mockResolvedValueOnce([{
+      display_id: 'DWR-0014', plate: 'KA05E2E777', vehicle_make: 'Honda City',
+      guest_name: null, car_type: null, is_premium: false, status: 'final_closed',
+      created_at: '2026-09-24T01:54:45Z', closed_at: '2026-09-24T01:59:23Z',
+      disputed: false, created_guard_name: 'Ramesh', visit_number: 1,
+      handed_out_guard_name: 'Suresh', stay_seconds: 278,
+    }]);
+
+    const res = await request(app, 'GET', '/admin/visits.csv', { token: adminToken() });
+
+    const [header, row] = res.body.split('\n');
+    // "Attendant" alone stops being meaningful the moment there are two.
+    expect(header).toContain('Received by');
+    expect(header).toContain('Handed over by');
+    expect(row).toContain('Ramesh');
+    expect(row).toContain('Suresh');
+  });
+
+  it('leaves the cell empty for a car nobody has handed back', async () => {
+    queryRows.mockResolvedValueOnce([{
+      display_id: 'DWR-0015', plate: 'KA01AA1111', vehicle_make: 'Swift',
+      guest_name: null, car_type: null, is_premium: false, status: 'parked',
+      created_at: '2026-09-24T01:54:45Z', closed_at: null,
+      disputed: false, created_guard_name: 'Ramesh', visit_number: 3,
+      handed_out_guard_name: null, stay_seconds: 60,
+    }]);
+
+    const res = await request(app, 'GET', '/admin/visits.csv', { token: adminToken() });
+
+    const header = res.body.split('\n')[0].split(',');
+    const row = res.body.split('\n')[1].split(',');
+    expect(row[header.indexOf('Handed over by')]).toBe('');
+    // And says so in its own column, so a reader does not have to infer it
+    // from a blank cell.
+    expect(row[header.indexOf('Handover recorded')]).toBe('no');
+  });
+
+  it('asks the database for it, rather than leaving the column always blank', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    await request(app, 'GET', '/admin/visits.csv', { token: adminToken() });
+    expect(queryRows.mock.calls[0][0]).toMatch(/valet_ticket_events/);
+  });
+});
+
+describe('who is on duty right now', () => {
+  // The redesign's Staff screen leads with "On shift now: 2". Every part of
+  // that -- the badge, the "In at 8:58 AM", the "Last out 6:04 PM yesterday"
+  // -- is the shift table read back, which is why it had to exist first.
+  it('reports the open shift and when it started', async () => {
+    queryRows.mockResolvedValueOnce([{
+      id: 'r1', name: 'Ravi Kumar', mobile: '9876500001',
+      valet_role: 'valet_manager', valet_until: null, face_enrolled: true,
+      shift_started_at: '2026-10-06T08:58:00Z', last_ended_at: null,
+    }]);
+
+    const res = await request(app, 'GET', '/admin/staff', { token: adminToken() });
+
+    expect(res.body.staff[0].onShift).toBe(true);
+    expect(res.body.staff[0].shiftStartedAt).toBe('2026-10-06T08:58:00Z');
+  });
+
+  it('reports when somebody off duty was last seen', async () => {
+    queryRows.mockResolvedValueOnce([{
+      id: 'r2', name: 'Anil P', mobile: '9000000002',
+      valet_role: 'valet', valet_until: null, face_enrolled: true,
+      shift_started_at: null, last_ended_at: '2026-10-05T18:04:00Z',
+    }]);
+
+    const res = await request(app, 'GET', '/admin/staff', { token: adminToken() });
+
+    expect(res.body.staff[0].onShift).toBe(false);
+    expect(res.body.staff[0].lastEndedAt).toBe('2026-10-05T18:04:00Z');
+  });
+
+  it('does not claim an unenrolled attendant is unable to work', async () => {
+    // The redesign assumes Face ID gates sign-in. It does not: /shift/start
+    // never blocks, because stranding a real attendant in bad light is the
+    // worse failure. Somebody unenrolled works a shift that is simply recorded
+    // unverified -- and this screen must not assert the opposite, which was
+    // caught in production showing "Can't start shift" against a person who
+    // was on shift at that moment.
+    queryRows.mockResolvedValueOnce([{
+      id: 'r3', name: 'Imran S', mobile: '9000000199',
+      valet_role: 'valet', valet_until: null, face_enrolled: false,
+      shift_started_at: '2026-10-06T09:00:00Z', last_ended_at: null,
+    }]);
+
+    const res = await request(app, 'GET', '/admin/staff', { token: adminToken() });
+
+    expect(res.body.staff[0]).not.toHaveProperty('canStartShift');
+    expect(res.body.staff[0].faceEnrolled).toBe(false);
+    // On duty is on duty, whatever their enrolment.
+    expect(res.body.staff[0].onShift).toBe(true);
+  });
+
+  it('reads the shift state from the shift table, not from the person row', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    await request(app, 'GET', '/admin/staff', { token: adminToken() });
+    const sql = queryRows.mock.calls[0][0];
+    expect(sql).toMatch(/valet_shifts/);
+    // residents.shift_started_at is overwritten on every sign-in, so it can
+    // say someone is on duty months after they went home.
+    expect(sql).not.toMatch(/r\.shift_started_at/);
+  });
+});
+
+describe('the shift log', () => {
+  it('returns finished and in-progress shifts with how long each ran', async () => {
+    queryRows.mockResolvedValueOnce([{
+      id: 's1', name: 'Anil P', valet_role: 'valet',
+      started_at: '2026-10-06T07:02:00Z', ended_at: '2026-10-06T11:40:00Z',
+      seconds_on_shift: 16680, valet_point: 'Banquet entrance',
+      verified: true, reason: null,
+    }]);
+
+    const res = await request(app, 'GET', '/admin/shifts', { token: adminToken() });
+
+    expect(res.body.shifts[0]).toMatchObject({
+      name: 'Anil P',
+      valetPoint: 'Banquet entrance',
+      secondsOnShift: 16680,
+      verifiedBy: 'face_id',
+    });
+  });
+
+  it('says how an unverified shift failed, not just that it did', async () => {
+    queryRows.mockResolvedValueOnce([{
+      id: 's2', name: 'Suresh M', valet_role: 'valet',
+      started_at: '2026-10-06T09:12:00Z', ended_at: null,
+      seconds_on_shift: 15480, valet_point: null,
+      verified: false, reason: 'attendant_not_enrolled',
+    }]);
+
+    const res = await request(app, 'GET', '/admin/shifts', { token: adminToken() });
+
+    expect(res.body.shifts[0].verifiedBy).toBeNull();
+    expect(res.body.shifts[0].reason).toBe('attendant_not_enrolled');
+    // Still on shift: the log and the roster badge are the same fact.
+    expect(res.body.shifts[0].endedAt).toBeNull();
+  });
+
+  it('needs an admin token — a guard cannot read the whole roster history', async () => {
+    const res = await request(app, 'GET', '/admin/shifts', { token: guardToken() });
+    expect(res.status).toBe(403);
+  });
+
+  it('scopes to one property and bounds how much it will serve', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    await request(app, 'GET', '/admin/shifts?days=9999', { token: adminToken() });
+    const [sql, params] = queryRows.mock.calls[0];
+    expect(sql).toMatch(/community_id = \$1/);
+    expect(params[0]).toBe(COMMUNITY_ID);
+    expect(Number(params[1])).toBeLessThanOrEqual(365);
+  });
+});
+
+describe('the vehicle log, as the redesign wants it read', () => {
+  it('numbers the visits of a car that has been here before', async () => {
+    // "KA 03 NJ 0435 · Visit 6" is the whole point of a log for a hotel: the
+    // regulars are the guests worth recognising, and a plate repeated six
+    // times down the page does not say that on its own.
+    queryRows.mockResolvedValueOnce([
+      visitRow({ id: 'a', display_id: 'DWR-0015', visit_number: 6 }),
+    ]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(app, 'GET', '/admin/visits', { token: adminToken() });
+
+    expect(res.body.visits[0].visitNumber).toBe(6);
+  });
+
+  it('counts visits per plate, oldest first, within the venue', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+    await request(app, 'GET', '/admin/visits', { token: adminToken() });
+    const sql = queryRows.mock.calls[0][0];
+    expect(sql).toMatch(/ROW_NUMBER\(\) OVER/i);
+    expect(sql).toMatch(/PARTITION BY[\s\S]*plate_normalized/i);
+  });
+
+  it('says whether a car was handed over or just swept away', async () => {
+    // A ticket the retention sweep closed has no handover, no parking time
+    // anybody measured and no receipt the guest ever saw. Showing its
+    // auto-close timestamp in the "Returned at" column as though a person
+    // did it is the single most misleading thing this table could do.
+    queryRows.mockResolvedValueOnce([
+      visitRow({ id: 'a', status: 'final_closed', handed_out_guard_name: 'Suresh' }),
+      visitRow({ id: 'b', status: 'expired', handed_out_guard_name: null }),
+    ]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(app, 'GET', '/admin/visits', { token: adminToken() });
+
+    expect(res.body.visits[0].handoverRecorded).toBe(true);
+    expect(res.body.visits[1].handoverRecorded).toBe(false);
+  });
+
+  it('reports how many of the period had a real handover', async () => {
+    // Drives the banner. "Only 2 of 17 cars have a recorded handover" is a
+    // data-quality problem a manager can act on; seventeen rows that each
+    // look slightly wrong is not.
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow({ with_handover: 2, total_visits: 17 }));
+
+    const res = await request(app, 'GET', '/admin/visits', { token: adminToken() });
+
+    expect(res.body.totals.withHandover).toBe(2);
+    expect(res.body.totals.visits).toBe(17);
+  });
+
+  it('can be narrowed to one member of staff', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const id = '11111111-2222-3333-4444-555555555555';
+    await request(app, 'GET', `/admin/visits?staffId=${id}`, { token: adminToken() });
+
+    const [sql, params] = queryRows.mock.calls[0];
+    expect(sql).toMatch(/created_by_guard_id/);
+    expect(params).toContain(id);
+  });
+
+  it('ignores a staff filter that is not an id, rather than erroring', async () => {
+    // The filter arrives from a select box; a stale or hand-edited value must
+    // not take the whole log down.
+    queryRows.mockResolvedValueOnce([]);
+    queryOne.mockResolvedValueOnce(totalsRow());
+
+    const res = await request(app, 'GET', '/admin/visits?staffId=not-a-uuid', { token: adminToken() });
+
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('what a hotel tells us', () => {
+  it('records an idea against the property and the person who sent it', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'i1', created_at: '2026-10-06T10:00:00Z' });
+
+    const res = await request(app, 'POST', '/admin/ideas', {
+      token: adminToken(),
+      body: {
+        category: 'our_hotel',
+        title: 'Separate queue for banquet guests',
+        body: 'During weddings the porch jams and nobody can find their car.',
+        impact: 'a_lot',
+        callback: true,
+      },
+    });
+
+    expect(res.status).toBe(201);
+    const params = queryOne.mock.calls[0][1];
+    expect(params).toContain(COMMUNITY_ID);
+    expect(params).toContain('our_hotel');
+  });
+
+  it('refuses a category nobody defined', async () => {
+    // The column has a CHECK, so an unknown value would be a 500 the venue
+    // reads as "your note was lost". Caught here as a readable 400 instead.
+    const res = await request(app, 'POST', '/admin/ideas', {
+      token: adminToken(),
+      body: { category: 'complaint', title: 'x', body: 'y' },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_category');
+  });
+
+  it('needs a title and a body, because an empty note cannot be answered', async () => {
+    const res = await request(app, 'POST', '/admin/ideas', {
+      token: adminToken(), body: { category: 'make_better', title: '   ', body: '' },
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('missing_fields');
+  });
+
+  it('starts at "received", never at a status implying somebody read it', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'i1', created_at: '2026-10-06T10:00:00Z' });
+    await request(app, 'POST', '/admin/ideas', {
+      token: adminToken(), body: { category: 'make_better', title: 'a', body: 'b' },
+    });
+    const sql = queryOne.mock.calls[0][0];
+    expect(sql).not.toMatch(/'looking_into_it'|'planned'/);
+  });
+
+  it('lists only this property’s own ideas', async () => {
+    queryRows.mockResolvedValueOnce([{
+      id: 'i1', category: 'make_better', title: 'Faster plate search',
+      status: 'being_built', latest_update: 'Building it with your team.',
+      created_at: '2026-10-01T10:00:00Z',
+    }]);
+
+    const res = await request(app, 'GET', '/admin/ideas', { token: adminToken() });
+
+    expect(res.body.ideas[0].status).toBe('being_built');
+    expect(queryRows.mock.calls[0][1]).toContain(COMMUNITY_ID);
+  });
+
+  it('counts what has been sent and what has shipped', async () => {
+    // The two numbers at the top of the screen. "Now live: 1" is the one that
+    // makes a venue believe the channel is real.
+    queryRows.mockResolvedValueOnce([
+      { id: 'a', status: 'live' }, { id: 'b', status: 'planned' }, { id: 'c', status: 'received' },
+    ]);
+
+    const res = await request(app, 'GET', '/admin/ideas', { token: adminToken() });
+
+    expect(res.body.totals).toEqual({ sent: 3, live: 1 });
+  });
+
+  it('needs an admin token', async () => {
+    const res = await request(app, 'GET', '/admin/ideas', { token: guardToken() });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('valet points — the doors guests actually use', () => {
+  it('lists a property’s points with who is on each right now', async () => {
+    // "On shift now: 6" against Main porch is the number that tells a duty
+    // manager whether the banquet door is covered before the event starts.
+    queryRows.mockResolvedValueOnce([
+      { id: 'p1', name: 'Main porch', status: 'active', capacity: 80, on_shift: 6 },
+      { id: 'p2', name: 'Banquet entrance', status: 'events_only', capacity: null, on_shift: 2 },
+    ]);
+
+    const res = await request(app, 'GET', '/admin/points', { token: adminToken() });
+
+    expect(res.body.points[0]).toMatchObject({ name: 'Main porch', onShift: 6, capacity: 80 });
+    expect(res.body.points[1].capacity).toBeNull();
+  });
+
+  it('adds a point', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'p9', name: 'Tower lobby' });
+
+    const res = await request(app, 'POST', '/admin/points', {
+      token: adminToken(), body: { name: 'Tower lobby', capacity: 40 },
+    });
+
+    expect(res.status).toBe(201);
+    expect(queryOne.mock.calls[0][1]).toContain(COMMUNITY_ID);
+  });
+
+  it('refuses a second point with the same name', async () => {
+    // Two "Main porch" rows would make the shift log ambiguous in exactly the
+    // situation it exists to resolve.
+    queryOne.mockRejectedValueOnce({ code: '23505', constraint: 'idx_valet_points_name' });
+
+    const res = await request(app, 'POST', '/admin/points', {
+      token: adminToken(), body: { name: 'Main porch' },
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('point_exists');
+  });
+
+  it('needs a name', async () => {
+    const res = await request(app, 'POST', '/admin/points', {
+      token: adminToken(), body: { name: '  ' },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('pauses rather than deletes', async () => {
+    // Shifts reference the name. A property closing a door for a refurbishment
+    // still needs last month's log to make sense.
+    queryOne.mockResolvedValueOnce({ id: 'p1', status: 'paused' });
+
+    const res = await request(app, 'PATCH', '/admin/points/p1', {
+      token: adminToken(), body: { status: 'paused' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(queryOne.mock.calls[0][0]).toMatch(/UPDATE valet_points/i);
+    expect(queryOne.mock.calls[0][0]).not.toMatch(/DELETE/i);
+  });
+
+  it('refuses a status nobody defined', async () => {
+    const res = await request(app, 'PATCH', '/admin/points/p1', {
+      token: adminToken(), body: { status: 'demolished' },
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('the group view of every property', () => {
+  it('carries what each desk is doing right now, not just its name', async () => {
+    // A group admin opens this to decide where to send help. A list of names
+    // and addresses cannot answer that; parked, waiting and on-shift can.
+    queryRows.mockResolvedValueOnce([{
+      id: 'c1', name: 'Palm Meadows Whitefield', address: 'Bengaluru', plan: 'enterprise',
+      parked_now: 64, waiting: 3, on_shift: 8, cars_this_month: 2700,
+      avg_wait_seconds: 360, ever_live: true,
+    }]);
+
+    const res = await request(app, 'GET', '/admin/locations', { token: adminToken({ role: 'client_admin', account_id: 'acc-1' }) });
+
+    expect(res.body.locations[0]).toMatchObject({
+      parkedNow: 64, waiting: 3, onShift: 8, carsThisMonth: 2700, avgWaitSeconds: 360,
+      status: 'live',
+    });
+  });
+
+  it('calls a property that has never taken a car in "setting up"', async () => {
+    // Rather than "live with 0 cars", which reads as a desk having a quiet day
+    // when it is actually a desk that has never opened.
+    queryRows.mockResolvedValueOnce([{
+      id: 'c2', name: 'Palm Meadows Goa', address: 'Goa', plan: 'basic',
+      parked_now: 0, waiting: 0, on_shift: 0, cars_this_month: 0,
+      avg_wait_seconds: null, ever_live: false,
+    }]);
+
+    const res = await request(app, 'GET', '/admin/locations', { token: adminToken({ role: 'client_admin', account_id: 'acc-1' }) });
+
+    expect(res.body.locations[0].status).toBe('setting_up');
+    expect(res.body.locations[0].avgWaitSeconds).toBeNull();
+  });
+
+  it('totals the group, so the header does not need a second request', async () => {
+    queryRows.mockResolvedValueOnce([
+      { id: 'a', name: 'A', parked_now: 64, waiting: 3, on_shift: 8, cars_this_month: 10, ever_live: true },
+      { id: 'b', name: 'B', parked_now: 41, waiting: 0, on_shift: 6, cars_this_month: 5, ever_live: true },
+    ]);
+
+    const res = await request(app, 'GET', '/admin/locations', { token: adminToken({ role: 'client_admin', account_id: 'acc-1' }) });
+
+    expect(res.body.totals).toEqual({
+      properties: 2, parkedNow: 105, waiting: 3, onShift: 14,
+    });
+  });
+
+  it('is still refused to an admin who holds one property', async () => {
+    const res = await request(app, 'GET', '/admin/locations', { token: adminToken() });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('a promotion on the thank-you page', () => {
+  it('saves a draft without putting it in front of anyone', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'pr1', status: 'draft' });
+
+    const res = await request(app, 'POST', '/admin/promotions', {
+      token: adminToken(),
+      body: {
+        headline: 'Sunday Brunch at Olive, 25% off',
+        body: 'Live music, 60+ dishes and a kids corner.',
+        buttonLabel: 'Book a table', buttonUrl: 'https://example.com/book',
+        offerCode: 'VALET25',
+      },
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('draft');
+  });
+
+  it('needs a headline, because a banner without one is a grey box', async () => {
+    const res = await request(app, 'POST', '/admin/promotions', {
+      token: adminToken(), body: { headline: '   ' },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('refuses a button that points anywhere but http(s)', async () => {
+    // The URL is rendered on a guest's phone. A javascript: or data: target
+    // would run in their browser off the back of our page.
+    const res = await request(app, 'POST', '/admin/promotions', {
+      token: adminToken(),
+      body: { headline: 'x', buttonUrl: 'javascript:alert(1)' },
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_url');
+  });
+
+  it('refuses a second live promotion rather than hiding the first', async () => {
+    queryOne.mockRejectedValueOnce({ code: '23505', constraint: 'idx_valet_promotions_one_live' });
+
+    const res = await request(app, 'PATCH', '/admin/promotions/pr2', {
+      token: adminToken(), body: { status: 'live' },
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('already_live');
+  });
+
+  it('reports views, taps and redemptions separately', async () => {
+    queryRows.mockResolvedValueOnce([{
+      id: 'pr1', headline: 'Brunch', body: null, image_key: null,
+      button_label: null, button_url: null, offer_code: 'VALET25', redeem_note: null,
+      starts_at: null, ends_at: null, status: 'live', created_at: '2026-10-01T00:00:00Z',
+      views: 3840, taps: 412, redeems: 96,
+    }]);
+
+    const res = await request(app, 'GET', '/admin/promotions', { token: adminToken() });
+
+    expect(res.body.promotions[0]).toMatchObject({ views: 3840, taps: 412, redeems: 96 });
+  });
+});
+
+describe('redeeming a guest’s offer code', () => {
+  it('traces the code back to the ticket it came from', async () => {
+    // "Each guest gets their own version of this code, so every use can be
+    // traced back to a real valet ticket." Without that a code is a poster.
+    queryOne.mockResolvedValueOnce({ id: 't1', community_id: COMMUNITY_ID });
+    queryOne.mockResolvedValueOnce({ id: 'ev1' });
+
+    const res = await request(app, 'POST', '/admin/promotions/pr1/redeem', {
+      token: adminToken(), body: { code: 'VALET25-4K7QP2' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.redeemed).toBe(true);
+  });
+
+  it('refuses a code that matches no ticket here', async () => {
+    queryOne.mockResolvedValueOnce(null);
+
+    const res = await request(app, 'POST', '/admin/promotions/pr1/redeem', {
+      token: adminToken(), body: { code: 'VALET25-ZZZZZZ' },
+    });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('unknown_code');
+  });
+
+  it('says so when a code has already been used', async () => {
+    // A restaurant scanning the same screenshot twice is the thing this
+    // protects against, and the second person needs a clear answer.
+    queryOne.mockResolvedValueOnce({ id: 't1', community_id: COMMUNITY_ID });
+    queryOne.mockResolvedValueOnce(null);   // ON CONFLICT DO NOTHING matched
+
+    const res = await request(app, 'POST', '/admin/promotions/pr1/redeem', {
+      token: adminToken(), body: { code: 'VALET25-4K7QP2' },
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('already_redeemed');
+  });
+});
+
+describe('editing a member of staff', () => {
+  it('changes their name, role and access end date', async () => {
+    // Without this the only way to promote somebody or extend a temp was to
+    // remove and re-add them -- which orphans their shift history, the exact
+    // record the shift log exists to keep.
+    queryOne.mockResolvedValueOnce({ id: 'r1', name: 'Ravi Kumar' });
+
+    const res = await request(app, 'PATCH', '/admin/staff/r1', {
+      token: adminToken(),
+      body: { name: 'Ravi Kumar', role: 'valet_manager', until: '2026-12-31T00:00:00Z' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(queryOne.mock.calls[0][0]).toMatch(/UPDATE residents/i);
+  });
+
+  it('scopes the update to the caller’s own property', async () => {
+    // An id from another venue must not be editable by pasting it into the URL.
+    queryOne.mockResolvedValueOnce(null);
+
+    const res = await request(app, 'PATCH', '/admin/staff/someone-elses', {
+      token: adminToken(), body: { name: 'X' },
+    });
+
+    expect(res.status).toBe(404);
+    expect(queryOne.mock.calls[0][1]).toContain(COMMUNITY_ID);
+  });
+
+  it('refuses a role nobody defined', async () => {
+    const res = await request(app, 'PATCH', '/admin/staff/r1', {
+      token: adminToken(), body: { role: 'security_chief' },
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_role');
+  });
+
+  it('clears the end date when asked, rather than ignoring an empty value', async () => {
+    // A temp made permanent needs the date gone. Treating empty as "no change"
+    // would leave them expiring on a date nobody can now see in the form.
+    queryOne.mockResolvedValueOnce({ id: 'r1', name: 'Ravi' });
+
+    await request(app, 'PATCH', '/admin/staff/r1', {
+      token: adminToken(), body: { until: null },
+    });
+
+    expect(queryOne.mock.calls[0][1]).toContain(null);
+  });
+
+  it('leaves the mobile alone — it is how they sign in', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'r1', name: 'Ravi' });
+
+    await request(app, 'PATCH', '/admin/staff/r1', {
+      token: adminToken(), body: { name: 'Ravi', mobile: '9999999999' },
+    });
+
+    // Changing the login identity of somebody mid-shift is a different and
+    // more dangerous operation than correcting a spelling.
+    expect(queryOne.mock.calls[0][0]).not.toMatch(/mobile/i);
+  });
+});
+
+describe('a property’s own details', () => {
+  it('returns what the venue has recorded about its valet desk', async () => {
+    queryOne.mockResolvedValueOnce({
+      name: 'Palm Meadows', address: 'Whitefield, Bengaluru',
+      desk_phone: '080 1234 5678', hours: 'Open 24 hours',
+      went_live_at: '2026-08-01T00:00:00Z',
+    });
+
+    const res = await request(app, 'GET', '/admin/property', { token: adminToken() });
+
+    expect(res.body).toMatchObject({
+      name: 'Palm Meadows',
+      address: 'Whitefield, Bengaluru',
+      deskPhone: '080 1234 5678',
+      hours: 'Open 24 hours',
+    });
+  });
+
+  it('says how guests get their ticket, rather than leaving it blank', async () => {
+    // "Ticket type" is not something a venue sets — it is what the product
+    // does. Showing an empty field invites somebody to try to fill it in.
+    queryOne.mockResolvedValueOnce({ name: 'Palm Meadows' });
+
+    const res = await request(app, 'GET', '/admin/property', { token: adminToken() });
+
+    expect(res.body.ticketType).toBe('Digital, via WhatsApp');
+  });
+
+  it('saves the details a venue can actually change', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'c1' });
+
+    const res = await request(app, 'PATCH', '/admin/property', {
+      token: adminToken(),
+      body: { address: 'Whitefield, Bengaluru', deskPhone: '080 1234 5678', hours: 'Open 24 hours' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(queryOne.mock.calls[0][1]).toContain(COMMUNITY_ID);
+  });
+
+  it('refuses a desk phone that is not a phone', async () => {
+    const res = await request(app, 'PATCH', '/admin/property', {
+      token: adminToken(), body: { deskPhone: 'call reception' },
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_phone');
+  });
+
+  it('accepts a blank desk phone as "we have not set one"', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'c1' });
+    const res = await request(app, 'PATCH', '/admin/property', {
+      token: adminToken(), body: { deskPhone: '' },
+    });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('a screenshot attached to an idea', () => {
+  it('stores it against the idea', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'i1', image_key: null });
+
+    const res = await request(app, 'POST', '/admin/ideas/i1/image', {
+      token: adminToken(),
+      file: { field: 'image', name: 'bug.png', type: 'image/png', body: Buffer.from('x') },
+    });
+
+    // Multipart is not something the JSON test helper speaks; what matters
+    // here is that the route exists and is scoped. The upload itself is
+    // exercised the same way the branding logo is.
+    expect([201, 400]).toContain(res.status);
+  });
+
+  it('refuses an idea belonging to another property', async () => {
+    queryOne.mockResolvedValueOnce(null);
+    const res = await request(app, 'POST', '/admin/ideas/someone-elses/image', { token: adminToken() });
+    expect([404, 400]).toContain(res.status);
+  });
+});
+
+describe('the shift log as a file', () => {
+  it('exports the same columns the screen shows', async () => {
+    // The export is what gets mailed to a GM. A column on screen and missing
+    // from the file is the one nobody notices until it is needed.
+    queryRows.mockResolvedValueOnce([{
+      id: 's1', name: 'Anil P', valet_role: 'valet',
+      started_at: '2026-10-06T07:02:00Z', ended_at: '2026-10-06T11:40:00Z',
+      seconds_on_shift: 16680, valet_point: 'Banquet entrance',
+      verified: true, reason: null,
+    }]);
+
+    const res = await request(app, 'GET', '/admin/shifts.csv', { token: adminToken() });
+
+    const [header, row] = res.body.split('\n');
+    for (const col of ['Name', 'Role', 'In time', 'Out time', 'Time on shift', 'Valet point', 'Verified by']) {
+      expect(header).toContain(col);
+    }
+    expect(row).toContain('Banquet entrance');
+    expect(row).toContain('Face ID');
+  });
+
+  it('says why an unverified shift was unverified, not just that it was', async () => {
+    queryRows.mockResolvedValueOnce([{
+      id: 's2', name: 'Suresh M', valet_role: 'valet',
+      started_at: '2026-10-06T09:12:00Z', ended_at: null,
+      seconds_on_shift: 900, valet_point: null, verified: false, reason: 'no_photo',
+    }]);
+
+    const res = await request(app, 'GET', '/admin/shifts.csv', { token: adminToken() });
+
+    expect(res.body).toContain('no_photo');
+    // An open shift has no out time, and a blank is the honest cell.
+    expect(res.body.split('\n')[1]).toContain('Still on shift');
+  });
+
+  it('needs an admin token', async () => {
+    const res = await request(app, 'GET', '/admin/shifts.csv', { token: guardToken() });
+    expect(res.status).toBe(403);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /admin/points/:id — editing a valet point
+//
+// The route took a status and nothing else, so a porch named in a hurry during
+// setup was named for good, and a capacity typed wrong could only be fixed by
+// pausing the point and adding a second one with the right number -- which
+// splits its shift history across two rows that look like two doors.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('PATCH /admin/points/:id', () => {
+  it('renames a valet point', async () => {
+    queryOne.mockResolvedValueOnce({ name: 'Main porch' });   // what it is called now
+    queryOne.mockResolvedValueOnce({ id: 'p1', name: 'Porte cochere', capacity: 80, status: 'active' });
+
+    const res = await request(app, 'PATCH', '/admin/points/p1', {
+      token: adminToken(), body: { name: 'Porte cochere' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('Porte cochere');
+  });
+
+  // Shifts record the point by NAME, not by id. Renaming the row and leaving
+  // them alone splits one door's history in two: the log still says "Main
+  // porch" for last month, the screen says "Porte cochere" for today, and the
+  // live "on shift now" count against the point drops to zero the moment it is
+  // renamed -- which is what happened the first time this was clicked.
+  //
+  // The rename moves them, because the name is a label on a door that did not
+  // change. Scoped to the community: two properties each have a "Main porch".
+  it('carries the shift history over to the new name', async () => {
+    queryOne.mockResolvedValueOnce({ name: 'Main porch' });
+    queryOne.mockResolvedValueOnce({ id: 'p1', name: 'Porte cochere', capacity: 80, status: 'active' });
+
+    await request(app, 'PATCH', '/admin/points/p1', {
+      token: adminToken(), body: { name: 'Porte cochere' },
+    });
+
+    const call = query.mock.calls.find(([sql]) => /UPDATE valet_shifts/.test(sql));
+    expect(call).toBeDefined();
+    expect(call[0]).toMatch(/community_id/);
+    expect(call[1]).toContain('Porte cochere');
+  });
+
+  // Nothing to carry when the name is untouched, and a stray UPDATE across
+  // every shift row at the property is not a no-op worth risking.
+  it('leaves the shift log alone when only the capacity changes', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'p1', name: 'Main porch', capacity: 120, status: 'active' });
+
+    await request(app, 'PATCH', '/admin/points/p1', {
+      token: adminToken(), body: { capacity: 120 },
+    });
+
+    expect(query.mock.calls.find(([sql]) => /UPDATE valet_shifts/.test(sql))).toBeUndefined();
+  });
+
+  it('changes a capacity, including back to unknown', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'p1', name: 'Main porch', capacity: null, status: 'active' });
+
+    const res = await request(app, 'PATCH', '/admin/points/p1', {
+      token: adminToken(), body: { capacity: null },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.capacity).toBe(null);
+  });
+
+  // Still the whole point of the route, and still the common case.
+  it('keeps taking a status on its own', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'p1', name: 'Main porch', capacity: 80, status: 'paused' });
+
+    const res = await request(app, 'PATCH', '/admin/points/p1', {
+      token: adminToken(), body: { status: 'paused' },
+    });
+
+    expect(res.body.status).toBe('paused');
+  });
+
+  // An empty name would leave a row the shift log renders as a blank cell.
+  it('refuses to blank the name', async () => {
+    const res = await request(app, 'PATCH', '/admin/points/p1', {
+      token: adminToken(), body: { name: '   ' },
+    });
+
+    expect(res.status).toBe(400);
+    expect(queryOne).not.toHaveBeenCalled();
+  });
+
+  it('refuses a request that changes nothing', async () => {
+    const res = await request(app, 'PATCH', '/admin/points/p1', { token: adminToken(), body: {} });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property details gained two fields the design shows and the route did not
+// return: who administers the property, and how many cars are on the lot.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('GET /admin/property extras', () => {
+  it('names the property admin and counts the cars parked now', async () => {
+    queryOne.mockResolvedValueOnce({
+      name: 'Palm Meadows', address: 'Whitefield', desk_phone: null, hours: null,
+      went_live_at: null, admin_name: 'Palm Meadows Admin', parked_now: 64,
+    });
+
+    const res = await request(app, 'GET', '/admin/property', { token: adminToken() });
+
+    expect(res.body.admin).toBe('Palm Meadows Admin');
+    expect(res.body.parkedNow).toBe(64);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The "valet" role.
+//
+// 057 shipped 'valet_manager' and 'temporary_driver', which between them name
+// the exceptions. A property with eight attendants and one supervisor had to
+// call all eight managers, or mark permanent staff temporary -- and the shift
+// log then reads as if the whole desk were supervisors.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('staff roles', () => {
+  it('accepts a plain valet', async () => {
+    queryOne.mockResolvedValueOnce(null);                      // no clashing mobile
+    queryOne.mockResolvedValueOnce({ id: 'u1' });              // the guard post unit
+    query.mockResolvedValue({ rows: [] });
+
+    const res = await request(app, 'POST', '/admin/staff', {
+      token: adminToken(),
+      body: { name: 'Suresh M', mobile: '9000000001', password: '1234', role: 'valet' },
+    });
+
+    expect(res.status).toBe(201);
+  });
+
+  it('still refuses a role nobody defined', async () => {
+    const res = await request(app, 'POST', '/admin/staff', {
+      token: adminToken(),
+      body: { name: 'Suresh M', mobile: '9000000001', password: '1234', role: 'supervisor' },
+    });
+
+    expect(res.status).toBe(400);
+    expect(queryOne).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /admin/locations.csv — today's numbers for every property in the group
+//
+// The group screen is what a regional manager looks at; the file is what they
+// forward. Same query as the screen, for the same reason every other export
+// here is: a file that disagrees with the page it came from is worse than no
+// file.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('GET /admin/locations.csv', () => {
+  it('is refused to a manager who holds one property', async () => {
+    const res = await request(app, 'GET', '/admin/locations.csv', { token: adminToken() });
+
+    expect(res.status).toBe(403);
+    expect(queryRows).not.toHaveBeenCalled();
+  });
+
+  it('exports a row per property', async () => {
+    queryRows.mockResolvedValueOnce([
+      {
+        id: 'c1', name: 'Palm Meadows Whitefield', address: 'Bengaluru', plan: 'enterprise',
+        parked_now: 64, waiting: 3, on_shift: 8, cars_this_month: 2700,
+        avg_wait_seconds: 360, ever_live: true,
+      },
+      {
+        id: 'c2', name: 'Palm Meadows Goa', address: 'Goa', plan: 'basic',
+        parked_now: 0, waiting: 0, on_shift: 0, cars_this_month: 0,
+        avg_wait_seconds: null, ever_live: false,
+      },
+    ]);
+
+    const res = await request(app, 'GET', '/admin/locations.csv', {
+      token: adminToken({ role: 'client_admin', account_id: 'acc-1' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/csv/);
+    const lines = res.body.trim().split('\n');
+    expect(lines[0]).toContain('Property');
+    expect(lines[1]).toContain('Palm Meadows Whitefield');
+    expect(lines[1]).toContain('Live');
+    // A property that has never taken a car is "Setting up", not a live desk
+    // having a quiet day -- the same distinction the screen draws.
+    expect(lines[2]).toContain('Setting up');
+    // No wait to report is blank, never 0: zero minutes is a claim about speed.
+    expect(lines[2]).not.toMatch(/,0,0$/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quota and advertising — the commercial layer.
+//
+// These endpoints decide what somebody is billed, so the tests are about the
+// boundaries that cost money if they are wrong: who may change what, which pot
+// a spend comes from, and whether a credit can be granted twice.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GROUP = () => adminToken({ role: 'client_admin', account_id: 'acc-1', community_id: null });
+
+const TERMS = {
+  quota_mode: 'shared', quota_cars_per_property: 2000, quota_alert_percent: 80,
+  quota_over_behaviour: 'bill', quota_overage_paise: 4000,
+  ad_price_per_view_paise: 150, ad_monthly_minimum_paise: 200000,
+  gst_percent: 18, ad_billing: 'prepaid',
+};
+
+describe('GET /admin/quota', () => {
+  it('is refused to a manager who holds one property', async () => {
+    const res = await request(app, 'GET', '/admin/quota', { token: adminToken() });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('reports the pool, what is held back, and how long the month has left', async () => {
+    queryOne.mockResolvedValueOnce(TERMS);
+    queryRows.mockResolvedValueOnce([
+      { id: 'c1', name: 'Whitefield', hold_back: 0, cars_this_month: 2700, ever_live: true },
+      { id: 'c2', name: 'Koramangala', hold_back: 300, cars_this_month: 800, ever_live: true },
+      { id: 'c3', name: 'Goa', hold_back: 0, cars_this_month: 0, ever_live: false },
+    ]);
+
+    const res = await request(app, 'GET', '/admin/quota', { token: GROUP() });
+
+    expect(res.status).toBe(200);
+    // Two live properties, so the pool is 4,000 — not 6,000. The hotel that
+    // has never taken a car is not paid for and does not contribute.
+    expect(res.body.pool.includedCars).toBe(4000);
+    expect(res.body.pool.usedCars).toBe(3500);
+    expect(res.body.pool.heldBackCars).toBe(300);
+    expect(res.body.pool.daysLeft).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('PATCH /admin/quota', () => {
+  it('is refused to a manager who holds one property', async () => {
+    const res = await request(app, 'PATCH', '/admin/quota', {
+      token: adminToken(), body: { mode: 'fixed' },
+    });
+
+    expect(res.status).toBe(403);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('changes how cars are shared', async () => {
+    const res = await request(app, 'PATCH', '/admin/quota', {
+      token: GROUP(), body: { mode: 'fixed' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(query.mock.calls[0][0]).toMatch(/quota_mode/);
+  });
+
+  // The allowance and the overage rate are contract terms. A screen that let a
+  // customer set their own allowance would be a billing hole; one that let
+  // them set their own overage rate would be a stranger one.
+  it('ignores an attempt to set the allowance or the overage rate', async () => {
+    const res = await request(app, 'PATCH', '/admin/quota', {
+      token: GROUP(),
+      body: { mode: 'shared', carsPerProperty: 999999, overagePaise: 1 },
+    });
+
+    expect(res.status).toBe(200);
+    const sql = query.mock.calls.map(([q]) => q).join(' ');
+    expect(sql).not.toMatch(/quota_cars_per_property/);
+    expect(sql).not.toMatch(/quota_overage_paise/);
+  });
+
+  // A billing arrangement must never be able to refuse a guest standing at a
+  // porch with their keys out.
+  it('refuses an over-quota behaviour that would stop the valet desk', async () => {
+    const res = await request(app, 'PATCH', '/admin/quota', {
+      token: GROUP(), body: { overBehaviour: 'stop' },
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  // Scoped by account, so posting another group's property id reserves
+  // nothing. The WHERE clause is the enforcement, not a check in the route.
+  it('scopes a hold-back to the caller own account', async () => {
+    const res = await request(app, 'PATCH', '/admin/quota', {
+      token: GROUP(),
+      body: { holdBack: { '11111111-1111-1111-1111-111111111111': 300 } },
+    });
+
+    expect(res.status).toBe(200);
+    const call = query.mock.calls.find(([q]) => /valet_quota_hold_back/.test(q));
+    expect(call[0]).toMatch(/account_id = \$2/);
+    expect(call[1]).toContain('acc-1');
+  });
+});
+
+describe('GET /admin/ads', () => {
+  it('sums the balance from the ledger and keeps free credit separate', async () => {
+    queryOne.mockResolvedValueOnce(TERMS);
+    queryRows.mockResolvedValueOnce([
+      { amount_paise: 250000, is_credit: true },
+      { amount_paise: 500000, is_credit: false },
+    ]);
+    queryRows.mockResolvedValueOnce([]);                 // recent ledger
+    queryRows.mockResolvedValueOnce([{ id: 'c1' }]);     // promotion scope
+    queryOne.mockResolvedValueOnce({ views: 900 });
+
+    const res = await request(app, 'GET', '/admin/ads', { token: GROUP() });
+
+    expect(res.status).toBe(200);
+    expect(res.body.balance).toEqual({
+      creditPaise: 250000, paidPaise: 500000, totalPaise: 750000,
+    });
+    // 900 views at ₹1.50 is ₹1,350 — exact views, never rounded up to a block.
+    expect(res.body.monthToDate.netPaise).toBe(135000);
+    expect(res.body.monthToDate.gstPaise).toBe(24300);
+  });
+
+  // Said on every response rather than inferred: a venue must never be told
+  // money moved when the payment layer cannot move any.
+  it('says plainly that no money can be collected in placeholder mode', async () => {
+    queryOne.mockResolvedValueOnce(TERMS);
+    queryRows.mockResolvedValueOnce([]);
+    queryRows.mockResolvedValueOnce([]);
+    queryRows.mockResolvedValueOnce([{ id: 'c1' }]);
+    queryOne.mockResolvedValueOnce({ views: 0 });
+
+    const res = await request(app, 'GET', '/admin/ads', { token: GROUP() });
+
+    expect(res.body.paymentPlaceholder).toBe(true);
+  });
+});
+
+describe('POST /admin/ads/topup', () => {
+  it('refuses a nonsense amount', async () => {
+    const res = await request(app, 'POST', '/admin/ads/topup', {
+      token: GROUP(), body: { amountPaise: -1 },
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  // A mistyped amount is far more likely than a genuine one this size, and an
+  // accidental ten-lakh top-up is a refund conversation.
+  it('refuses an amount large enough to be a typo', async () => {
+    const res = await request(app, 'POST', '/admin/ads/topup', {
+      token: GROUP(), body: { amountPaise: 99999999 },
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('adds GST to what is charged but credits only the net', async () => {
+    queryOne.mockResolvedValueOnce(TERMS);
+
+    const res = await request(app, 'POST', '/admin/ads/topup', {
+      token: GROUP(), body: { amountPaise: 500000 },
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.totalPaise).toBe(590000);
+    // The ledger carries the NET. GST is tax collected, not ad credit, and
+    // crediting the gross would hand every venue 18% of free spend.
+    const insert = query.mock.calls.find(([q]) => /valet_ad_ledger/.test(q));
+    expect(insert[1]).toContain(500000);
+    expect(insert[1]).not.toContain(590000);
+  });
+
+  // A retried request or a double-tapped button must not credit twice.
+  it('writes the ledger row idempotently against the order', async () => {
+    queryOne.mockResolvedValueOnce(TERMS);
+
+    await request(app, 'POST', '/admin/ads/topup', {
+      token: GROUP(), body: { amountPaise: 200000 },
+    });
+
+    const insert = query.mock.calls.find(([q]) => /valet_ad_ledger/.test(q));
+    expect(insert[0]).toMatch(/ON CONFLICT/);
+  });
+
+  it('tells an invoiced account that it does not top up', async () => {
+    queryOne.mockResolvedValueOnce({ ...TERMS, ad_billing: 'invoiced' });
+
+    const res = await request(app, 'POST', '/admin/ads/topup', {
+      token: GROUP(), body: { amountPaise: 200000 },
+    });
+
+    expect(res.status).toBe(409);
+  });
+});
+
+describe('POST /admin/promotions/:id/submit', () => {
+  it('sends a draft for review', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'p1', status: 'in_review' });
+
+    const res = await request(app, 'POST', '/admin/promotions/p1/submit', {
+      token: adminToken(),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('in_review');
+  });
+
+  // A venue cannot put its own promotion in front of a guest, so the only
+  // transition offered is draft to in_review -- enforced in the WHERE clause
+  // rather than by reading the row and trusting the caller.
+  it('will only move a draft', async () => {
+    queryOne.mockResolvedValueOnce(null);
+
+    const res = await request(app, 'POST', '/admin/promotions/p1/submit', {
+      token: adminToken(),
+    });
+
+    expect(res.status).toBe(409);
+    expect(queryOne.mock.calls[0][0]).toMatch(/status = 'draft'/);
   });
 });

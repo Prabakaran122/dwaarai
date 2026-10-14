@@ -80,6 +80,21 @@ describe('guest page states', () => {
     expect(await screen.findByRole('button', { name: /request my car/i })).toBeInTheDocument();
   });
 
+  // The car is out with a multi-day guest. This used to read "Parked for 29
+  // min" with a Request button -- to the guest who was driving it.
+  it('tells a guest who has their car that they have it, and how to bring it back', async () => {
+    mockGetTicket.mockResolvedValue({ ...baseTicket, status: 'with_guest', hasCard: true });
+
+    render(<GuestPage />);
+
+    expect(await screen.findByText(/your car is with you/i)).toBeInTheDocument();
+    expect(screen.getByText(/hand the keys and your card/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /request my car/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/parked for/i)).not.toBeInTheDocument();
+    // They are coming back: this is not the moment to ask for the card.
+    expect(screen.queryByText(/return the card/i)).not.toBeInTheDocument();
+  });
+
   it('confirms the request instead of offering it again once requested', async () => {
     mockGetTicket.mockResolvedValue({ ...baseTicket, status: 'retrieval_requested' });
 

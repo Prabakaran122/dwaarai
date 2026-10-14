@@ -3,12 +3,16 @@ import { asyncRouter } from '../lib/async-router.js';
 import { query, queryOne, queryRows } from '../db.js';
 import { normalizePlate } from '../lib/plate.js';
 import { storage, extensionFor } from '../lib/storage.js';
-import { newClaimCode } from '../lib/claim-code.js';
+import { newClaimCode, normalizeClaimCode } from '../lib/claim-code.js';
 import { newSessionToken, nextDisplayId } from '../lib/tokens.js';
 import bcrypt from 'bcryptjs';
 import { logEvent } from '../lib/events.js';
 import { vectorize, isRecognitionConfigured } from '../lib/face.js';
 import { authenticateJWT } from '../middleware/auth.js';
+import {
+  viewCostPaise, withGst, monthlyCeilingPaise, balanceFromLedger, splitSpend, quotaFor,
+} from '../lib/ads.js';
+import { createAdOrder, isPlaceholderMode } from '../lib/payments.js';
 
 const router = asyncRouter();
 
@@ -84,46 +88,214 @@ router.get('/plate-history', authenticateJWT(['admin']), async (req, res) => {
  * open counts on the day it arrived, which is what "came in last 30 days"
  * means to the person asking.
  */
+/**
+ * An explicit window, when a named one will not do.
+ *
+ * "Last 30 days" answers how the desk has been doing. A manager who comes to
+ * this page because something went wrong on a particular night needs the
+ * night, and no multiple of seven contains it.
+ *
+ * Instants, not calendar dates: nothing in this service carries a venue
+ * timezone, so parsing a bare 2026-08-20 would read it as a UTC day and hand
+ * a manager in India a window shifted five and a half hours off the evening
+ * they meant. The browser knows its own offset and sends the moments it
+ * computed from the dates that were typed.
+ *
+ * Returns null unless BOTH ends parse -- half a range is a typo, and guessing
+ * the other end silently answers a question nobody asked.
+ */
+function parseRange(query) {
+  const at = (v) => {
+    const t = Date.parse(String(v ?? ''));
+    return Number.isNaN(t) ? null : new Date(t);
+  };
+  const a = at(query.from);
+  const b = at(query.to);
+  if (!a || !b) return null;
+  // Backwards is a slip, not a request for nothing. Returned empty, the table
+  // would read as "no cars that weekend" -- a different and far worse answer
+  // than the dates being the wrong way round.
+  const [from, to] = a <= b ? [a, b] : [b, a];
+  return { from: from.toISOString(), to: to.toISOString() };
+}
+
+/**
+ * "Show me only the ones that went wrong."
+ *
+ * Deliberately not a filter on the ticket's own status column. A ticket the
+ * retention sweep closed reads as `final_closed` -- indistinguishable, by that
+ * column alone, from a car a person actually handed back -- and those swept
+ * rows are precisely the ones this filter exists to surface. The question is
+ * whether a human recorded a handover, so the predicate asks the event table.
+ *
+ * `qualifier` differs between the row query (aliased `t.`) and the totals
+ * query (`valet_tickets.`), so the same definition serves both and the count
+ * above the table cannot drift from the table.
+ *
+ * It must never be empty. valet_ticket_events has an `id` column of its own,
+ * so a bare `e.ticket_id = id` inside the subquery binds to the SUBQUERY's id,
+ * compares an event to itself, and NOT EXISTS is then true for every row --
+ * the filter silently does nothing. The rows came back correct because they
+ * were aliased; only the totals were wrong, so the page read "showing 14 of
+ * 16" and nobody would have questioned the 16.
+ */
+const VISIT_STATUSES = ['returned', 'no_handover', 'parked'];
+
+function visitStatusSql(status, qualifier) {
+  if (!qualifier) throw new Error('visitStatusSql needs a table qualifier');
+  const id = `${qualifier}id`;
+  const handover = `EXISTS (
+        SELECT 1 FROM valet_ticket_events e
+         WHERE e.ticket_id = ${id}
+           AND e.event_type IN ('final_closed', 'closed_pickup')
+      )`;
+  if (status === 'returned') return `AND ${handover}`;
+  if (status === 'no_handover') return `AND NOT ${handover}`;
+  // Still with the team: open on any definition the rest of the page uses.
+  // with_guest is open but not with the team: the guest is driving it.
+  if (status === 'parked') return `AND ${qualifier}status NOT IN ('final_closed', 'expired', 'with_guest')`;
+  return '';
+}
+
 router.get('/visits', authenticateJWT(['admin']), async (req, res) => {
   const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
+  const range = parseRange(req.query);
+
+  // Rejected rather than ignored. A filter the server does not understand,
+  // silently dropped, returns the whole log under a heading that says it is
+  // narrowed -- and the manager reads 17 rows as 2.
+  const status = req.query.status ? String(req.query.status) : null;
+  if (status && !VISIT_STATUSES.includes(status)) {
+    return res.status(400).json({ error: 'invalid_status' });
+  }
   // Bounded so one request cannot try to serialise a year of a busy venue.
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 1000);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+
+  // Optional, and quietly ignored when it is not an id: the value arrives from
+  // a select box, and a stale one must not take the whole log down.
+  const staffId = /^[0-9a-f-]{36}$/i.test(String(req.query.staffId ?? ''))
+    ? String(req.query.staffId)
+    : null;
+
+  // One window, built once and spent twice, so the totals line above the table
+  // can never describe a different period from the table under it.
+  //
+  // Both ends are parameters. They have already been through Date.parse and
+  // toISOString, so they cannot be anything but a canonical instant -- but a
+  // value that reached SQL as text because today's validation happened to be
+  // tight is a bug waiting for the day somebody loosens it.
+  //
+  // $2 is the day count or the range's start in both queries; the range's end
+  // takes the first free position, which differs between them because the rows
+  // query already uses $3-$5 for paging and the staff filter.
+  const window = (alias, endPlaceholder) => (range
+    ? {
+        sql: `AND ${alias}created_at >= $2::timestamptz
+              AND ${alias}created_at <  ${endPlaceholder}::timestamptz`,
+        params: [range.from, range.to],
+      }
+    : {
+        sql: `AND ${alias}created_at >= NOW() - ($2 || ' days')::interval`,
+        params: [String(days)],
+      });
+
+  const rowWindow = window('t.', '$6');
+  const rowStatus = visitStatusSql(status, 't.');
 
   const rows = await queryRows(
     `SELECT t.id, t.display_id, t.plate, t.plate_normalized, t.vehicle_make,
             t.guest_name, t.car_type, t.is_premium,
             t.status, t.created_at, t.closed_at, t.disputed,
+            -- Which visit this is for this plate at this venue. The regulars
+            -- are the guests worth recognising, and the same plate appearing
+            -- six times down the page does not say that on its own.
+            ROW_NUMBER() OVER (
+              PARTITION BY t.plate_normalized ORDER BY t.created_at
+            ) AS visit_number,
             cg.name AS created_guard_name,
+            hg.name AS handed_out_guard_name,
             EXTRACT(EPOCH FROM (COALESCE(t.closed_at, NOW()) - t.created_at))::bigint AS stay_seconds
        FROM valet_tickets t
        JOIN residents cg ON cg.id = t.created_by_guard_id
+       -- Who released the car.
+       --
+       -- Not available on the ticket: current_guard_id is set when a valet
+       -- accepts the retrieval and nulled again the moment the ticket closes,
+       -- so every row in this list has an empty one. The durable record is the
+       -- closure event, which is also the row the verification is stamped on.
+       --
+       -- Both closure kinds, most recent first: a multi-day guest can take the
+       -- car out and bring it back, and "who brought it out" means the last
+       -- time it happened, not the first.
+       --
+       -- LEFT, and the lateral is what keeps it cheap: an inner join would
+       -- silently drop every car still parked -- the rows a manager most wants
+       -- to see -- and that failure looks like missing data, not a bad join.
+       LEFT JOIN LATERAL (
+         SELECT r.name
+           FROM valet_ticket_events e
+           JOIN residents r ON r.id = e.guard_id
+          WHERE e.ticket_id = t.id
+            AND e.event_type IN ('final_closed', 'closed_pickup')
+          ORDER BY e.created_at DESC
+          LIMIT 1
+       ) hg ON TRUE
       WHERE t.community_id = $1
-        AND t.created_at >= NOW() - ($2 || ' days')::interval
+        ${rowWindow.sql}
+        ${rowStatus}
+        AND ($5::uuid IS NULL OR t.created_by_guard_id = $5::uuid)
       ORDER BY t.created_at DESC
       LIMIT $3 OFFSET $4`,
-    [req.user.community_id, String(days), limit, offset]
+    // The range's end is appended, so it is absent entirely on the day path
+    // rather than sitting there as an unused null the query would still have
+    // to be written around.
+    [req.user.community_id, rowWindow.params[0], limit, offset, staffId,
+     ...rowWindow.params.slice(1)]
   );
+
+  const totalsWindow = window('', '$3');
+  const totalsStatus = visitStatusSql(status, 'valet_tickets.');
 
   // Totals are computed over the whole window, not the returned page — a
   // manager reading "148 visits" while looking at 200 rows of 900 would be
   // worse than no number at all.
   const totals = await queryOne(
     `SELECT COUNT(*)::int                                   AS total_visits,
+            -- Drives the data-quality banner. A ticket the sweep closed has
+            -- no handover, no parking time anybody measured and no receipt
+            -- the guest ever saw; counting them tells a manager how much of
+            -- this log is actually evidence.
+            COUNT(*) FILTER (
+              WHERE EXISTS (
+                SELECT 1 FROM valet_ticket_events e
+                 WHERE e.ticket_id = valet_tickets.id
+                   AND e.event_type IN ('final_closed', 'closed_pickup')
+              )
+            )::int                                          AS with_handover,
             COUNT(DISTINCT plate_normalized)::int           AS unique_vehicles,
             COUNT(*) FILTER (WHERE disputed)::int           AS disputed_count,
             COUNT(*) FILTER (WHERE status NOT IN ('final_closed','expired'))::int AS open_count,
             COALESCE(AVG(EXTRACT(EPOCH FROM (COALESCE(closed_at, NOW()) - created_at))), 0)::bigint AS avg_stay_seconds
        FROM valet_tickets
       WHERE community_id = $1
-        AND created_at >= NOW() - ($2 || ' days')::interval`,
-    [req.user.community_id, String(days)]
+        ${totalsWindow.sql}
+        ${totalsStatus}`,
+    [req.user.community_id, ...totalsWindow.params]
   );
 
   res.json({
     days,
+    // Echoed back so the page renders its own filter state from the answer it
+    // got, not from what it believes it asked for.
+    status,
+    // Null unless a range is actually in force, so the page can say "last 30
+    // days" or "20-22 Aug" without inferring which it is from the parameters
+    // it happened to send.
+    range,
     totals: {
       visits: totals?.total_visits ?? 0,
+      withHandover: totals?.with_handover ?? 0,
       uniqueVehicles: totals?.unique_vehicles ?? 0,
       // A vehicle seen more than once in the window. The interesting number
       // for a venue is repeat custom, not raw footfall.
@@ -143,6 +315,17 @@ router.get('/visits', authenticateJWT(['admin']), async (req, res) => {
       staySeconds: Number(r.stay_seconds),
       disputed: r.disputed,
       takenInBy: r.created_guard_name,
+      // Null while the car is still on the lot. Deliberately not coalesced to
+      // a dash here: the page decides how to render "nobody yet", and a
+      // string would make an open visit indistinguishable from a closed one
+      // whose event went missing.
+      handedOutBy: r.handed_out_guard_name ?? null,
+      visitNumber: Number(r.visit_number),
+      // The difference between "a person handed this car back" and "the sweep
+      // closed the ticket days later". Showing an auto-close timestamp in a
+      // "Returned at" column as though somebody did it is the most misleading
+      // thing this table could do.
+      handoverRecorded: !!r.handed_out_guard_name,
     })),
     paging: { limit, offset, returned: rows.length },
   });
@@ -615,11 +798,79 @@ router.get('/feedback', admin, async (req, res) => {
     [communityId, String(days)]
   );
 
+  // "Review with staff": who to actually talk to.
+  //
+  // A rollup says something went wrong at this property. It does not say who
+  // was standing there, and a manager cannot act on a bar chart. Grouped by
+  // the attendant at HANDOVER rather than at intake, deliberately -- that is
+  // the moment the guest is rating. The person who parked the car six hours
+  // earlier is not who they are thinking of.
+  //
+  // Only attendants with rated trips appear. Somebody who has had no feedback
+  // at all is not a quiet success story and must not be listed as one.
+  const byStaff = await queryRows(
+    `SELECT r.id                                            AS guard_id,
+            r.name,
+            COUNT(*)::int                                   AS rated,
+            COUNT(*) FILTER (WHERE NOT f.satisfied)::int    AS unhappy,
+            -- The reasons cited against this person's trips, deduplicated:
+            -- the count is already above, and a manager opening a conversation
+            -- needs the subject, not the arithmetic a second time.
+            COALESCE(
+              ARRAY(
+                SELECT DISTINCT UNNEST(f2.reasons)
+                  FROM valet_feedback f2
+                  JOIN valet_tickets t2 ON t2.id = f2.ticket_id
+                 WHERE f2.community_id = f.community_id
+                   AND NOT f2.satisfied
+                   AND f2.created_at >= NOW() - ($2 || ' days')::interval
+                   AND EXISTS (
+                     SELECT 1 FROM valet_ticket_events e2
+                      WHERE e2.ticket_id = t2.id
+                        AND e2.guard_id = r.id
+                        AND e2.event_type IN ('final_closed', 'closed_pickup')
+                   )
+              ), '{}'
+            )                                               AS reasons
+       FROM valet_feedback f
+       JOIN valet_tickets t ON t.id = f.ticket_id
+       -- The last handover on the ticket. A multi-day guest can take the car
+       -- out and bring it back, and the trip they rated ended with whoever
+       -- handed it over the final time.
+       JOIN LATERAL (
+         SELECT e.guard_id
+           FROM valet_ticket_events e
+          WHERE e.ticket_id = t.id
+            AND e.event_type IN ('final_closed', 'closed_pickup')
+            AND e.guard_id IS NOT NULL
+          ORDER BY e.created_at DESC
+          LIMIT 1
+       ) last_handover ON TRUE
+       JOIN residents r ON r.id = last_handover.guard_id
+      WHERE f.community_id = $1
+        AND f.created_at >= NOW() - ($2 || ' days')::interval
+      GROUP BY r.id, r.name, f.community_id
+      ORDER BY unhappy DESC, rated DESC`,
+    [communityId, String(days)]
+  );
+
   res.json({
     days,
     satisfied: totals?.satisfied ?? 0,
     notSatisfied: totals?.not_satisfied ?? 0,
     reasons,
+    byStaff: byStaff.map((r) => ({
+      id: r.guard_id,
+      name: r.name,
+      rated: Number(r.rated),
+      unhappy: Number(r.unhappy),
+      reasons: r.reasons ?? [],
+      // Two bad trips is a bad week; it is not a pattern, and a percentage
+      // printed beside somebody's name turns one into the other. The server
+      // decides this rather than the page, so an export or a second client
+      // cannot quietly disagree about what counts as evidence.
+      enoughToJudge: Number(r.rated) >= 5,
+    })),
   });
 });
 
@@ -797,37 +1048,86 @@ function csvField(value) {
  */
 router.get('/visits.csv', admin, async (req, res) => {
   const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
+  // Read the same way the screen reads it. A manager who narrows the table to
+  // one weekend and then downloads a month has been handed the wrong evidence,
+  // and a CSV looks right until somebody counts it.
+  const range = parseRange(req.query);
+  // Same filter the screen is on. An export that silently widens what the
+  // table was narrowed to is the wrong evidence, handed over confidently.
+  const status = req.query.status ? String(req.query.status) : null;
+  if (status && !VISIT_STATUSES.includes(status)) {
+    return res.status(400).json({ error: 'invalid_status' });
+  }
+  const window = range
+    ? {
+        sql: 'AND t.created_at >= $2::timestamptz AND t.created_at < $3::timestamptz',
+        params: [range.from, range.to],
+      }
+    : {
+        sql: "AND t.created_at >= NOW() - ($2 || ' days')::interval",
+        params: [String(days)],
+      };
 
   const rows = await queryRows(
     `SELECT t.display_id, t.plate, t.vehicle_make, t.guest_name, t.car_type, t.is_premium,
             t.status, t.created_at, t.closed_at, t.disputed,
+            ROW_NUMBER() OVER (
+              PARTITION BY t.plate_normalized ORDER BY t.created_at
+            ) AS visit_number,
             cg.name AS created_guard_name,
+            hg.name AS handed_out_guard_name,
             EXTRACT(EPOCH FROM (COALESCE(t.closed_at, NOW()) - t.created_at))::bigint AS stay_seconds
        FROM valet_tickets t
        JOIN residents cg ON cg.id = t.created_by_guard_id
+       -- Same lateral as GET /visits, and it has to stay the same: the export
+       -- is what gets mailed to a GM or handed to an insurer, and a CSV that
+       -- disagrees with the screen it was exported from is worse than either.
+       LEFT JOIN LATERAL (
+         SELECT r.name
+           FROM valet_ticket_events e
+           JOIN residents r ON r.id = e.guard_id
+          WHERE e.ticket_id = t.id
+            AND e.event_type IN ('final_closed', 'closed_pickup')
+          ORDER BY e.created_at DESC
+          LIMIT 1
+       ) hg ON TRUE
       WHERE t.community_id = $1
-        AND t.created_at >= NOW() - ($2 || ' days')::interval
+        ${window.sql}
+        ${visitStatusSql(status, 't.')}
       ORDER BY t.created_at DESC`,
-    [req.user.community_id, String(days)]
+    [req.user.community_id, ...window.params]
   );
 
   const header = [
-    'Ticket', 'Plate', 'Make', 'Guest', 'Type', 'Premium', 'Status',
-    'Checked in', 'Checked out', 'Stay (minutes)', 'Attendant', 'Disputed',
+    'Ticket', 'Plate', 'Make', 'Visit no.', 'Guest', 'Type', 'Premium', 'Status',
+    'Received at', 'Returned at', 'Parking time (minutes)',
+    // Was a single 'Attendant', which stopped meaning anything the moment
+    // there were two of them.
+    'Received by', 'Handed over by', 'Handover recorded', 'Disputed',
   ];
   const lines = [header.join(',')];
   for (const r of rows) {
     lines.push([
-      r.display_id, r.plate, r.vehicle_make, r.guest_name, r.car_type,
+      r.display_id, r.plate, r.vehicle_make, Number(r.visit_number), r.guest_name, r.car_type,
       r.is_premium ? 'yes' : 'no', r.status,
       r.created_at ? new Date(r.created_at).toISOString() : '',
       r.closed_at ? new Date(r.closed_at).toISOString() : '',
       Math.round((Number(r.stay_seconds) || 0) / 60),
-      r.created_guard_name, r.disputed ? 'yes' : 'no',
+      r.created_guard_name, r.handed_out_guard_name ?? '',
+      // Auto-closed tickets carry no parking time anybody measured, and the
+      // export is what gets handed to an insurer. A blank here is the honest
+      // answer; a number computed from a sweep timestamp is not.
+      r.handed_out_guard_name ? 'yes' : 'no',
+      r.disputed ? 'yes' : 'no',
     ].map(csvField).join(','));
   }
 
-  const stamp = new Date().toISOString().slice(0, 10);
+  // Named for the window it holds rather than the day it was taken: two
+  // downloads in one afternoon are otherwise two files with the same name, and
+  // the one in the mail thread is then unidentifiable.
+  const stamp = range
+    ? `${range.from.slice(0, 10)}_${range.to.slice(0, 10)}`
+    : new Date().toISOString().slice(0, 10);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="vehicle-log-${stamp}.csv"`);
   res.send(lines.join('\n'));
@@ -835,7 +1135,9 @@ router.get('/visits.csv', admin, async (req, res) => {
 
 // --- locations and staff ---------------------------------------------------
 
-const VALET_ROLES = ['valet_manager', 'temporary_driver'];
+// 'valet' is the role most staff actually hold, and was the one the enum did
+// not have. Listed first because it is the default a property wants.
+const VALET_ROLES = ['valet', 'valet_manager', 'temporary_driver'];
 
 /**
  * Every property under a client admin's account.
@@ -844,21 +1146,134 @@ const VALET_ROLES = ['valet_manager', 'temporary_driver'];
  * visible on every other screen already, and a Locations list of one is
  * furniture that implies a choice they do not have.
  */
-router.get('/locations', admin, async (req, res) => {
-  if (req.user.role !== 'client_admin' || !req.user.account_id) {
-    return res.status(403).json({ error: 'not_a_group', message: 'This account holds a single property' });
-  }
-
-  const locations = await queryRows(
+function groupLocations(accountId) {
+  // A group admin opens this to decide where to send help. A list of names and
+  // addresses cannot answer that, so every row carries what the desk is doing
+  // right now -- all of it derived on read, like every other report here.
+  return queryRows(
     `SELECT c.id, c.name, c.address,
-            COALESCE(c.config->>'valetPlan', 'basic') AS plan
+            COALESCE(c.config->>'valetPlan', 'basic') AS plan,
+            (SELECT COUNT(*) FROM valet_tickets t
+              WHERE t.community_id = c.id
+                AND t.status IN ('parked','parked_again','retrieval_requested','en_route','arrived')
+            )::int AS parked_now,
+            -- Asked for and not yet in their hands. Everything from the tap
+            -- to the handover counts, because a guest standing at the door
+            -- waiting is still waiting.
+            (SELECT COUNT(*) FROM valet_tickets t
+              WHERE t.community_id = c.id
+                AND t.status IN ('retrieval_requested','en_route','arrived')
+            )::int AS waiting,
+            (SELECT COUNT(*) FROM valet_shifts s
+              WHERE s.community_id = c.id AND s.ended_at IS NULL
+            )::int AS on_shift,
+            (SELECT COUNT(*) FROM valet_tickets t
+              WHERE t.community_id = c.id
+                AND t.created_at >= date_trunc('month', NOW())
+            )::int AS cars_this_month,
+            -- Today only, and from the request to the handover: a month-long
+            -- average hides the evening that went wrong, which is the one a
+            -- group admin is looking for.
+            (SELECT AVG(EXTRACT(EPOCH FROM (h.created_at - r.created_at)))
+               FROM valet_ticket_events r
+               JOIN valet_ticket_events h
+                 ON h.ticket_id = r.ticket_id
+                AND h.event_type IN ('closed_pickup','final_closed')
+                AND h.created_at > r.created_at
+               JOIN valet_tickets t ON t.id = r.ticket_id
+              WHERE t.community_id = c.id
+                AND r.event_type = 'requested'
+                AND r.created_at >= date_trunc('day', NOW())
+            ) AS avg_wait_seconds,
+            EXISTS (SELECT 1 FROM valet_tickets t WHERE t.community_id = c.id) AS ever_live
        FROM communities c
       WHERE c.account_id = $1
       ORDER BY c.name`,
-    [req.user.account_id]
+    [accountId]
   );
+}
 
-  res.json({ locations });
+/** One row's worth of a property, shared by the screen and the export. */
+function locationRow(l) {
+  return {
+    id: l.id,
+    name: l.name,
+    address: l.address,
+    plan: l.plan,
+    parkedNow: Number(l.parked_now ?? 0),
+    waiting: Number(l.waiting ?? 0),
+    onShift: Number(l.on_shift ?? 0),
+    carsThisMonth: Number(l.cars_this_month ?? 0),
+    // Null rather than 0 when nothing was handed over today: "0 min average
+    // wait" reads as a desk performing perfectly, not as one with no data.
+    avgWaitSeconds: l.avg_wait_seconds === null || l.avg_wait_seconds === undefined
+      ? null
+      : Math.round(Number(l.avg_wait_seconds)),
+    // Deliberately not a sync status. Valet has no edge node -- the app talks
+    // straight to this API -- so "last synced 12 minutes ago" would be a
+    // number with nothing behind it. What is true and useful is whether this
+    // desk has ever taken a car in.
+    status: l.ever_live ? 'live' : 'setting_up',
+  };
+}
+
+/** Whether this request is a group admin at all, said once. */
+function groupOnly(req, res) {
+  if (req.user.role !== 'client_admin' || !req.user.account_id) {
+    res.status(403).json({ error: 'not_a_group', message: 'This account holds a single property' });
+    return false;
+  }
+  return true;
+}
+
+router.get('/locations', admin, async (req, res) => {
+  if (!groupOnly(req, res)) return;
+
+  const rows = (await groupLocations(req.user.account_id)).map(locationRow);
+
+  res.json({
+    locations: rows,
+    totals: {
+      properties: rows.length,
+      parkedNow: rows.reduce((n, r) => n + r.parkedNow, 0),
+      waiting: rows.reduce((n, r) => n + r.waiting, 0),
+      onShift: rows.reduce((n, r) => n + r.onShift, 0),
+    },
+  });
+});
+
+/**
+ * The group screen, as a file.
+ *
+ * What a regional manager forwards after looking at the screen, so it runs the
+ * same query -- an export that disagrees with the page it came from is worse
+ * than no export.
+ */
+router.get('/locations.csv', admin, async (req, res) => {
+  if (!groupOnly(req, res)) return;
+
+  const rows = (await groupLocations(req.user.account_id)).map(locationRow);
+
+  const header = [
+    'Property', 'Address', 'Plan', 'Status', 'Parked now', 'Waiting',
+    'On shift', 'Cars this month', 'Average wait today (minutes)',
+  ];
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    lines.push([
+      r.name, r.address ?? '', r.plan,
+      r.status === 'live' ? 'Live' : 'Setting up',
+      r.parkedNow, r.waiting, r.onShift, r.carsThisMonth,
+      // Blank, never 0. "0 minutes" is a claim about how fast the desk is;
+      // no handovers today is the absence of one.
+      r.avgWaitSeconds === null ? '' : Math.round(r.avgWaitSeconds / 60),
+    ].map(csvField).join(','));
+  }
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="properties-${stamp}.csv"`);
+  res.send(lines.join('\n'));
 });
 
 /**
@@ -872,10 +1287,26 @@ router.get('/locations', admin, async (req, res) => {
 router.get('/staff', admin, async (req, res) => {
   const rows = await queryRows(
     `SELECT r.id, r.name, r.mobile, r.valet_role, r.valet_until, r.is_active,
-            (fe.id IS NOT NULL) AS face_enrolled
+            (fe.id IS NOT NULL) AS face_enrolled,
+            open.started_at  AS shift_started_at,
+            last.ended_at    AS last_ended_at
        FROM residents r
        LEFT JOIN face_enrollments fe
               ON fe.resident_id = r.id AND fe.status = 'active'
+       -- The open shift, if any. NOT residents.shift_started_at: that column
+       -- is overwritten on every sign-in and never cleared, so it happily
+       -- reports somebody as on duty months after they went home.
+       LEFT JOIN LATERAL (
+         SELECT s.started_at FROM valet_shifts s
+          WHERE s.resident_id = r.id AND s.ended_at IS NULL
+          ORDER BY s.started_at DESC LIMIT 1
+       ) open ON TRUE
+       -- And when they were last seen, for the "Last out 6:04 PM" line.
+       LEFT JOIN LATERAL (
+         SELECT s.ended_at FROM valet_shifts s
+          WHERE s.resident_id = r.id AND s.ended_at IS NOT NULL
+          ORDER BY s.ended_at DESC LIMIT 1
+       ) last ON TRUE
       WHERE r.community_id = $1 AND r.type = 'guard' AND r.is_active = true
       ORDER BY r.valet_role NULLS LAST, r.name`,
     [req.user.community_id]
@@ -886,14 +1317,826 @@ router.get('/staff', admin, async (req, res) => {
       id: r.id,
       name: r.name,
       mobile: r.mobile,
-      role: r.valet_role || 'valet_manager',
+      role: r.valet_role || 'valet',
       faceEnrolled: r.face_enrolled === true,
       until: r.valet_until,
       // A temp whose date has passed is shown as expired rather than quietly
       // dropped: somebody has to notice they are still on the list.
       expired: !!(r.valet_until && new Date(r.valet_until) < new Date()),
+
+      onShift: !!r.shift_started_at,
+      shiftStartedAt: r.shift_started_at ?? null,
+      lastEndedAt: r.last_ended_at ?? null,
+      // Deliberately NOT a `canStartShift` flag. The redesign assumes Face ID
+      // gates sign-in ("they need it to sign in to the valet app"), but
+      // /shift/start never blocks -- stranding a real attendant in bad light
+      // is the worse failure, and that was a considered decision. So somebody
+      // without Face ID can and does work; their shifts are simply recorded
+      // unverified. `faceEnrolled` above already says this truthfully, and a
+      // second field claiming they cannot work would be false on its face.
     })),
   });
+});
+
+/**
+ * The shift log.
+ *
+ * What the Staff screen's second tab reads. Deliberately a log of shifts and
+ * not an attendance product: no late marks, no overtime rules, no leave. This
+ * answers "who was on duty, when, where, and had we actually verified them",
+ * which is the question a valet manager has when a car goes missing at 7pm.
+ */
+/**
+ * What a hotel wants to tell us.
+ *
+ * The only screen in this product where information runs the other way. A
+ * venue that watches its own suggestion move from Planned to Live keeps
+ * sending them, so the status and the one-line update are as much the feature
+ * as the form is.
+ */
+const IDEA_CATEGORIES = ['not_working', 'make_better', 'our_hotel', 'something_new'];
+const IDEA_IMPACTS = ['a_little', 'daily', 'a_lot'];
+
+/**
+ * The doors guests hand over and collect cars at.
+ *
+ * A hotel does not have "a valet desk" -- it has a main porch running all day
+ * and a banquet entrance that opens for events, and an attendant works one of
+ * them for a shift. Without this the shift log could not say which door
+ * somebody was on, which is the first question asked when a car goes missing.
+ */
+const POINT_STATUSES = ['active', 'events_only', 'paused'];
+
+/**
+ * A promotion on the guest's thank-you page.
+ *
+ * Replaces one line of config text with a banner, a traceable offer code and
+ * counts of what it produced. Pricing, ad balance, GST and the review queue
+ * are deliberately absent -- those are commercial decisions and the payment
+ * layer is still in placeholder mode. A venue can run a promotion and measure
+ * it honestly without any of them.
+ */
+const PROMO_STATUSES = ['draft', 'live', 'paused', 'ended'];
+
+/** Rendered on a guest's phone, so anything but http(s) is a script target. */
+function safeUrl(raw) {
+  const v = String(raw ?? '').trim();
+  if (!v) return { ok: true, value: null };
+  try {
+    const u = new URL(v);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return { ok: false };
+    return { ok: true, value: u.toString() };
+  } catch {
+    return { ok: false };
+  }
+}
+
+router.get('/promotions', admin, async (req, res) => {
+  const rows = await queryRows(
+    `SELECT p.id, p.headline, p.body, p.image_key, p.button_label, p.button_url,
+            p.offer_code, p.redeem_note, p.starts_at, p.ends_at, p.status, p.created_at,
+            p.spend_limit_paise, p.show_from, p.show_to,
+            (SELECT COUNT(*) FROM valet_promotion_events e
+              WHERE e.promotion_id = p.id AND e.kind = 'view')::int   AS views,
+            (SELECT COUNT(*) FROM valet_promotion_events e
+              WHERE e.promotion_id = p.id AND e.kind = 'tap')::int    AS taps,
+            (SELECT COUNT(*) FROM valet_promotion_events e
+              WHERE e.promotion_id = p.id AND e.kind = 'redeem')::int AS redeems
+       FROM valet_promotions p
+      WHERE p.community_id = $1
+      ORDER BY p.created_at DESC
+      LIMIT 50`,
+    [req.user.community_id]
+  );
+
+  res.json({
+    promotions: rows.map((r) => ({
+      id: r.id,
+      headline: r.headline,
+      body: r.body ?? null,
+      hasImage: !!r.image_key,
+      buttonLabel: r.button_label ?? null,
+      buttonUrl: r.button_url ?? null,
+      offerCode: r.offer_code ?? null,
+      redeemNote: r.redeem_note ?? null,
+      startsAt: r.starts_at ?? null,
+      endsAt: r.ends_at ?? null,
+      spendLimitPaise: r.spend_limit_paise ?? null,
+      showFrom: r.show_from ?? null,
+      showTo: r.show_to ?? null,
+      status: r.status,
+      createdAt: r.created_at,
+      // Views are one per valet ticket, not per page load: the guest page
+      // polls, so raw impressions would turn one guest on a slow connection
+      // into forty.
+      views: Number(r.views ?? 0),
+      taps: Number(r.taps ?? 0),
+      redeems: Number(r.redeems ?? 0),
+    })),
+  });
+});
+
+/**
+ * The promotion numbers, line by line.
+ *
+ * The design promises "every number can be checked line by line in the
+ * download", and that promise is the only reason a venue should believe a
+ * view count they cannot otherwise audit.
+ */
+router.get('/promotions.csv', admin, async (req, res) => {
+  const rows = await queryRows(
+    `SELECT p.headline, p.offer_code, p.status, p.starts_at, p.ends_at, p.created_at,
+            (SELECT COUNT(*) FROM valet_promotion_events e
+              WHERE e.promotion_id = p.id AND e.kind = 'view')::int   AS views,
+            (SELECT COUNT(*) FROM valet_promotion_events e
+              WHERE e.promotion_id = p.id AND e.kind = 'tap')::int    AS taps,
+            (SELECT COUNT(*) FROM valet_promotion_events e
+              WHERE e.promotion_id = p.id AND e.kind = 'redeem')::int AS redeems
+       FROM valet_promotions p
+      WHERE p.community_id = $1
+      ORDER BY p.created_at DESC`,
+    [req.user.community_id]
+  );
+
+  const header = [
+    'Promotion', 'Offer code', 'Status', 'Starts', 'Ends', 'Created',
+    'Verified views', 'Button taps', 'Offers redeemed',
+  ];
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    lines.push([
+      r.headline, r.offer_code ?? '', r.status,
+      r.starts_at ? new Date(r.starts_at).toISOString() : '',
+      r.ends_at ? new Date(r.ends_at).toISOString() : '',
+      r.created_at ? new Date(r.created_at).toISOString() : '',
+      r.views, r.taps, r.redeems,
+    ].map(csvField).join(','));
+  }
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="promotions-${stamp}.csv"`);
+  res.send(lines.join('\n'));
+});
+
+router.post('/promotions', admin, async (req, res) => {
+  const headline = String(req.body.headline ?? '').trim().slice(0, 80);
+  if (!headline) {
+    return res.status(400).json({ error: 'missing_fields', message: 'Give the banner a headline' });
+  }
+
+  const url = safeUrl(req.body.buttonUrl);
+  if (!url.ok) {
+    return res.status(400).json({
+      error: 'invalid_url',
+      message: 'The button must point at an http or https address',
+    });
+  }
+
+  const row = await queryOne(
+    `INSERT INTO valet_promotions
+       (community_id, headline, body, button_label, button_url, offer_code, redeem_note,
+        starts_at, ends_at, spend_limit_paise, show_from, show_to)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+     RETURNING id, status`,
+    [
+      req.user.community_id,
+      headline,
+      String(req.body.body ?? '').trim().slice(0, 240) || null,
+      String(req.body.buttonLabel ?? '').trim().slice(0, 40) || null,
+      url.value,
+      String(req.body.offerCode ?? '').trim().toUpperCase().slice(0, 24) || null,
+      String(req.body.redeemNote ?? '').trim().slice(0, 240) || null,
+      req.body.startsAt ? new Date(req.body.startsAt) : null,
+      req.body.endsAt ? new Date(req.body.endsAt) : null,
+      // A cap on delivery, not a charge. Null means "no cap", which is
+      // different from zero and must stay different.
+      Number.isFinite(parseInt(req.body.spendLimitPaise, 10))
+        ? parseInt(req.body.spendLimitPaise, 10)
+        : null,
+      // Both ends or neither: half a window is a typo, and guessing the other
+      // end would silently advertise at an hour nobody chose.
+      req.body.showFrom && req.body.showTo ? String(req.body.showFrom) : null,
+      req.body.showFrom && req.body.showTo ? String(req.body.showTo) : null,
+    ]
+  );
+
+  // Always a draft. Nothing reaches a guest's screen because somebody filled
+  // in a form.
+  res.status(201).json({ id: row?.id, status: row?.status });
+});
+
+/**
+ * The banner image.
+ *
+ * Same 2MB ceiling as the venue logo and for the same reason: this loads on a
+ * guest's phone over a hotel's wifi, and a print asset would make them wait
+ * for something they glance at.
+ */
+router.post('/promotions/:id/image', admin, logoUpload.single('image'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'no_file', message: 'Choose a PNG or JPG to upload' });
+  }
+
+  const existing = await queryOne(
+    'SELECT image_key FROM valet_promotions WHERE id = $1 AND community_id = $2',
+    [req.params.id, req.user.community_id]
+  );
+  if (!existing) return res.status(404).json({ error: 'not_found' });
+
+  const key = `valet/promo/${req.user.community_id}/${req.params.id}-${Date.now()}.${extensionFor(req.file.mimetype)}`;
+  await storage.put(key, req.file.buffer, req.file.mimetype);
+
+  await query(
+    'UPDATE valet_promotions SET image_key = $3, updated_at = NOW() WHERE id = $1 AND community_id = $2',
+    [req.params.id, req.user.community_id, key]
+  );
+  // Removed only after the new one is recorded, so a failure part-way leaves
+  // the old banner rather than none.
+  if (existing.image_key) await storage.delete(existing.image_key).catch(() => {});
+
+  res.status(201).json({ hasImage: true });
+});
+
+router.patch('/promotions/:id', admin, async (req, res) => {
+  const status = String(req.body.status ?? '');
+  if (!PROMO_STATUSES.includes(status)) {
+    return res.status(400).json({ error: 'invalid_status' });
+  }
+
+  try {
+    const row = await queryOne(
+      `UPDATE valet_promotions SET status = $3, updated_at = NOW()
+        WHERE id = $1 AND community_id = $2
+        RETURNING id, status`,
+      [req.params.id, req.user.community_id, status]
+    );
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    return res.json({ id: row.id, status: row.status });
+  } catch (err) {
+    // Two banners cannot share one thank-you screen. Refusing is the only
+    // honest option -- letting the second win would silently take the first
+    // down without telling anybody.
+    if (err?.code === '23505' && err?.constraint === 'idx_valet_promotions_one_live') {
+      return res.status(409).json({
+        error: 'already_live',
+        message: 'Another promotion is already live. Pause it first.',
+      });
+    }
+    throw err;
+  }
+});
+
+/**
+ * Marking a guest's code used, from the restaurant or spa counter.
+ *
+ * The code a guest is shown is the promotion's stem plus their ticket's claim
+ * code, which is what makes a redemption traceable to one car on one night
+ * rather than to "somebody saw a poster".
+ */
+router.post('/promotions/:id/redeem', admin, async (req, res) => {
+  const code = String(req.body.code ?? '').trim().toUpperCase();
+  const claim = code.includes('-') ? code.slice(code.lastIndexOf('-') + 1) : code;
+  if (!claim) return res.status(400).json({ error: 'missing_fields' });
+
+  const ticket = await queryOne(
+    `SELECT id, community_id FROM valet_tickets
+      WHERE claim_code = $1 AND community_id = $2`,
+    [normalizeClaimCode(claim), req.user.community_id]
+  );
+  if (!ticket) {
+    return res.status(404).json({
+      error: 'unknown_code',
+      message: 'That code does not match a visit here',
+    });
+  }
+
+  const row = await queryOne(
+    `INSERT INTO valet_promotion_events (promotion_id, ticket_id, kind)
+     VALUES ($1, $2, 'redeem')
+     ON CONFLICT DO NOTHING
+     RETURNING id`,
+    [req.params.id, ticket.id]
+  );
+  if (!row) {
+    // The same screenshot shown twice. The second person needs a clear answer,
+    // not a silent success.
+    return res.status(409).json({
+      error: 'already_redeemed',
+      message: 'This code has already been used',
+    });
+  }
+
+  res.json({ redeemed: true });
+});
+
+/**
+ * A property's own details.
+ *
+ * Kept in communities.config alongside the logo and plan rather than in new
+ * columns: these are a handful of optional strings a venue fills in once, and
+ * the JSONB pattern is already how this product stores that kind of thing.
+ *
+ * "Last sync" from the design is deliberately absent — valet has no edge node,
+ * the app talks straight to this API, so the number would have nothing behind
+ * it. Ticket type is reported rather than stored: it is what the product does,
+ * not something a venue sets, and an empty field invites somebody to fill it.
+ */
+router.get('/property', admin, async (req, res) => {
+  const row = await queryOne(
+    `SELECT c.name, c.address,
+            c.config->>'valetDeskPhone'  AS desk_phone,
+            c.config->>'valetHours'      AS hours,
+            c.config->>'valetWentLiveAt' AS went_live_at,
+            -- Who to call about this property, which is the one field on the
+            -- design's card that answers a question rather than stating a
+            -- setting. Read rather than stored: it is already a row.
+            --
+            -- From the admins table, not residents. Portal logins are
+            -- their own table; residents holds people who live at or work the
+            -- gate of a property, and there is no type = 'admin' in it. A
+            -- version of this that looked there returned null for every
+            -- property while every test passed, because a mock has no opinion
+            -- about which table a row is in.
+            (SELECT a.name FROM admins a
+              WHERE a.community_id = c.id
+              ORDER BY a.created_at LIMIT 1)        AS admin_name,
+            -- Cars on the lot right now. The design puts this beside "on shift
+            -- now" because the pair is the whole state of a valet desk.
+            (SELECT COUNT(*) FROM valet_tickets t
+              WHERE t.community_id = c.id
+                AND t.status NOT IN ('final_closed', 'expired'))::int AS parked_now
+       FROM communities c WHERE c.id = $1`,
+    [req.user.community_id]
+  );
+  if (!row) return res.status(404).json({ error: 'not_found' });
+
+  res.json({
+    name: row.name,
+    address: row.address ?? null,
+    deskPhone: row.desk_phone ?? null,
+    hours: row.hours ?? null,
+    wentLiveAt: row.went_live_at ?? null,
+    admin: row.admin_name ?? null,
+    parkedNow: Number(row.parked_now ?? 0),
+    ticketType: 'Digital, via WhatsApp',
+    // The number guests message. One per deployment, not per property, which
+    // is why it is read from the environment and not editable here.
+    guestWhatsApp: process.env.WHATSAPP_NUMBER || null,
+  });
+});
+
+router.patch('/property', admin, async (req, res) => {
+  const deskPhone = req.body.deskPhone === undefined
+    ? undefined
+    : String(req.body.deskPhone).trim();
+  // Blank is a real answer — "we have not set one" — so only a non-empty value
+  // that is not phone-shaped is rejected.
+  if (deskPhone && !/^[0-9+()\s-]{6,20}$/.test(deskPhone)) {
+    return res.status(400).json({
+      error: 'invalid_phone',
+      message: 'Enter a phone number guests could dial',
+    });
+  }
+
+  const address = req.body.address === undefined
+    ? undefined
+    : String(req.body.address).trim().slice(0, 300);
+  const hours = req.body.hours === undefined
+    ? undefined
+    : String(req.body.hours).trim().slice(0, 120);
+
+  const row = await queryOne(
+    `UPDATE communities
+        SET address = COALESCE($2, address),
+            config = COALESCE(config, '{}'::jsonb)
+                     || CASE WHEN $3::text IS NULL THEN '{}'::jsonb
+                             ELSE jsonb_build_object('valetDeskPhone', $3::text) END
+                     || CASE WHEN $4::text IS NULL THEN '{}'::jsonb
+                             ELSE jsonb_build_object('valetHours', $4::text) END
+      WHERE id = $1
+      RETURNING id`,
+    [req.user.community_id, address ?? null, deskPhone ?? null, hours ?? null]
+  );
+  if (!row) return res.status(404).json({ error: 'not_found' });
+
+  res.json({ saved: true });
+});
+
+router.get('/points', admin, async (req, res) => {
+  const rows = await queryRows(
+    `SELECT p.id, p.name, p.status, p.capacity,
+            (SELECT COUNT(*) FROM valet_shifts s
+              WHERE s.community_id = p.community_id
+                AND s.ended_at IS NULL
+                AND s.valet_point = p.name)::int AS on_shift
+       FROM valet_points p
+      WHERE p.community_id = $1
+      ORDER BY p.status, p.name`,
+    [req.user.community_id]
+  );
+
+  res.json({
+    points: rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      status: r.status,
+      // Null, not 0. Plenty of venues genuinely do not know their capacity,
+      // and a made-up number is worse than an empty one.
+      capacity: r.capacity ?? null,
+      onShift: Number(r.on_shift ?? 0),
+    })),
+  });
+});
+
+router.post('/points', admin, async (req, res) => {
+  const name = String(req.body.name ?? '').trim().slice(0, 120);
+  if (!name) return res.status(400).json({ error: 'missing_fields', message: 'Give the point a name' });
+
+  const capacity = Number.isFinite(Number(req.body.capacity)) && Number(req.body.capacity) > 0
+    ? Math.floor(Number(req.body.capacity))
+    : null;
+  const status = POINT_STATUSES.includes(req.body.status) ? req.body.status : 'active';
+
+  try {
+    const row = await queryOne(
+      `INSERT INTO valet_points (community_id, name, status, capacity)
+       VALUES ($1, $2, $3, $4) RETURNING id, name`,
+      [req.user.community_id, name, status, capacity]
+    );
+    return res.status(201).json({ id: row?.id, name: row?.name });
+  } catch (err) {
+    // Matched on the constraint name rather than the code alone: a 23505 here
+    // can only be the one index, but saying which keeps the error readable if
+    // another is ever added.
+    if (err?.code === '23505' && err?.constraint === 'idx_valet_points_name') {
+      return res.status(409).json({
+        error: 'point_exists',
+        message: 'A valet point with that name already exists here',
+      });
+    }
+    throw err;
+  }
+});
+
+/**
+ * Edit a valet point: its name, its capacity, or its status.
+ *
+ * Took a status and nothing else until now, which meant a porch named in a
+ * hurry during setup was named for good. The workaround -- pause it, add a
+ * second point with the right name -- splits a door's shift history across two
+ * rows that read as two doors, so the log stops being able to answer "who was
+ * on the main porch last month".
+ *
+ * Each field is optional and absent means unchanged, so the status-only call
+ * the pause button makes is untouched.
+ */
+router.patch('/points/:id', admin, async (req, res) => {
+  const sets = [];
+  const params = [req.params.id, req.user.community_id];
+
+  if (req.body.status !== undefined) {
+    const status = String(req.body.status);
+    if (!POINT_STATUSES.includes(status)) {
+      return res.status(400).json({ error: 'invalid_status' });
+    }
+    params.push(status);
+    sets.push(`status = $${params.length}`);
+  }
+
+  if (req.body.name !== undefined) {
+    const name = String(req.body.name).trim();
+    // A blank name leaves a row the shift log renders as an empty cell, and a
+    // shift against a nameless door is a shift nobody can place.
+    if (!name) return res.status(400).json({ error: 'invalid_name' });
+    params.push(name.slice(0, 80));
+    sets.push(`name = $${params.length}`);
+  }
+
+  if (req.body.capacity !== undefined) {
+    // Null is a real answer -- "we have never counted" -- and must be settable
+    // again by somebody who typed a number they were not sure of.
+    const raw = req.body.capacity;
+    const capacity = raw === null || raw === '' ? null : parseInt(raw, 10);
+    if (capacity !== null && (!Number.isFinite(capacity) || capacity < 0)) {
+      return res.status(400).json({ error: 'invalid_capacity' });
+    }
+    params.push(capacity);
+    sets.push(`capacity = $${params.length}`);
+  }
+
+  // Nothing to do is a client bug, not a no-op to be reported as success.
+  if (sets.length === 0) return res.status(400).json({ error: 'nothing_to_change' });
+
+  // What the point is called now, needed below to find the shift rows carrying
+  // the old label. Read AFTER validation and only when a rename is actually
+  // being asked for: a request that is going to be rejected must not touch the
+  // database at all.
+  const previous = req.body.name === undefined
+    ? null
+    : await queryOne(
+        'SELECT name FROM valet_points WHERE id = $1 AND community_id = $2',
+        [req.params.id, req.user.community_id]
+      );
+
+  // Paused, never deleted. Shifts reference the name, and a property closing a
+  // door for a refurbishment still needs last month's log to make sense.
+  const row = await queryOne(
+    `UPDATE valet_points SET ${sets.join(', ')}
+      WHERE id = $1 AND community_id = $2
+      RETURNING id, name, capacity, status`,
+    params
+  );
+  if (!row) return res.status(404).json({ error: 'not_found' });
+
+  // valet_shifts records the point by NAME, so a rename that stopped here
+  // would split one door's history in two: last month's log still says "Main
+  // porch", today's screen says "Porte cochere", and the live "on shift now"
+  // count against the point drops to zero the moment it is renamed. The name
+  // is a label on a door that did not change, so the label moves with it.
+  //
+  // Scoped to the community, because two properties each have a "Main porch".
+  // Done after the point update rather than before, so a rejected rename never
+  // rewrites a shift log.
+  if (req.body.name !== undefined && previous && previous.name !== row.name) {
+    await query(
+      `UPDATE valet_shifts SET valet_point = $3
+        WHERE community_id = $1 AND valet_point = $2`,
+      [req.user.community_id, previous.name, row.name]
+    );
+  }
+  res.json({
+    id: row.id,
+    name: row.name,
+    capacity: row.capacity ?? null,
+    status: row.status,
+  });
+});
+
+/**
+ * The shift log as a file.
+ *
+ * Same columns as the screen. A column visible in the portal and missing from
+ * the export is the one nobody notices until a dispute needs it.
+ */
+router.get('/shifts.csv', admin, async (req, res) => {
+  const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
+  const range = parseRange(req.query);
+  const staffId = /^[0-9a-f-]{36}$/i.test(String(req.query.staffId ?? ''))
+    ? String(req.query.staffId)
+    : null;
+  const window = range
+    ? { sql: 'AND s.started_at >= $2::timestamptz AND s.started_at < $4::timestamptz',
+        params: [range.from], tail: [range.to] }
+    : { sql: "AND s.started_at >= NOW() - ($2 || ' days')::interval",
+        params: [String(days)], tail: [] };
+
+  const rows = await queryRows(
+    `SELECT r.name, r.valet_role, s.started_at, s.ended_at, s.valet_point,
+            s.verified, s.reason,
+            EXTRACT(EPOCH FROM (COALESCE(s.ended_at, NOW()) - s.started_at))::bigint
+              AS seconds_on_shift
+       FROM valet_shifts s
+       JOIN residents r ON r.id = s.resident_id
+      WHERE s.community_id = $1
+        ${window.sql}
+        AND ($3::uuid IS NULL OR s.resident_id = $3::uuid)
+      ORDER BY s.started_at DESC`,
+    [req.user.community_id, window.params[0], staffId, ...window.tail]
+  );
+
+  const header = [
+    'Name', 'Role', 'In time', 'Out time', 'Time on shift (minutes)',
+    'Valet point', 'Verified by', 'Why not verified',
+  ];
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    lines.push([
+      r.name,
+      r.valet_role || 'valet',
+      r.started_at ? new Date(r.started_at).toISOString() : '',
+      // An open shift has no out time. Said in words rather than left blank,
+      // because a blank in a spreadsheet reads as missing data.
+      r.ended_at ? new Date(r.ended_at).toISOString() : 'Still on shift',
+      Math.round((Number(r.seconds_on_shift) || 0) / 60),
+      r.valet_point ?? '',
+      r.verified === true ? 'Face ID' : '',
+      r.verified === true ? '' : (r.reason ?? 'unknown'),
+    ].map(csvField).join(','));
+  }
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="shift-log-${stamp}.csv"`);
+  res.send(lines.join('\n'));
+});
+
+router.post('/ideas', admin, async (req, res) => {
+  const category = String(req.body.category ?? '');
+  // Checked before the insert because the column has a CHECK constraint, and a
+  // constraint violation would reach the venue as a 500 they read as "my note
+  // was lost" rather than as something they can correct.
+  if (!IDEA_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: 'invalid_category' });
+  }
+
+  const title = String(req.body.title ?? '').trim().slice(0, 160);
+  const body = String(req.body.body ?? '').trim();
+  if (!title || !body) {
+    return res.status(400).json({
+      error: 'missing_fields',
+      message: 'Give it a short title and tell us what happens today',
+    });
+  }
+
+  const impact = IDEA_IMPACTS.includes(req.body.impact) ? req.body.impact : null;
+
+  const row = await queryOne(
+    `INSERT INTO valet_ideas (community_id, submitted_by, category, title, body, impact, callback)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, created_at`,
+    [
+      req.user.community_id,
+      req.user.sub ?? null,
+      category,
+      title,
+      body,
+      impact,
+      req.body.callback === true,
+    ]
+  );
+
+  // Status is left to default. Anything else here would tell a venue somebody
+  // had looked at their note before anybody had.
+  res.status(201).json({ id: row?.id, createdAt: row?.created_at });
+});
+
+/**
+ * A screenshot attached to an idea.
+ *
+ * "A screen that behaves oddly" is far easier to show than to describe,
+ * especially for somebody writing in their second language — which the form
+ * explicitly invites. Same 2MB ceiling as every other upload here.
+ */
+router.post('/ideas/:id/image', admin, logoUpload.single('image'), async (req, res) => {
+  const idea = await queryOne(
+    'SELECT id, image_key FROM valet_ideas WHERE id = $1 AND community_id = $2',
+    [req.params.id, req.user.community_id]
+  );
+  if (!idea) return res.status(404).json({ error: 'not_found' });
+  if (!req.file) {
+    return res.status(400).json({ error: 'no_file', message: 'Choose a PNG or JPG to upload' });
+  }
+
+  const key = `valet/ideas/${req.user.community_id}/${req.params.id}-${Date.now()}.${extensionFor(req.file.mimetype)}`;
+  await storage.put(key, req.file.buffer, req.file.mimetype);
+  await query(
+    'UPDATE valet_ideas SET image_key = $3, updated_at = NOW() WHERE id = $1 AND community_id = $2',
+    [req.params.id, req.user.community_id, key]
+  );
+  if (idea.image_key) await storage.delete(idea.image_key).catch(() => {});
+
+  res.status(201).json({ hasImage: true });
+});
+
+router.get('/ideas', admin, async (req, res) => {
+  const rows = await queryRows(
+    `SELECT id, category, title, body, impact, callback, status, latest_update, created_at
+       FROM valet_ideas
+      WHERE community_id = $1
+      ORDER BY created_at DESC
+      LIMIT 200`,
+    [req.user.community_id]
+  );
+
+  res.json({
+    totals: {
+      sent: rows.length,
+      // The number that makes a venue believe the channel is real.
+      live: rows.filter((r) => r.status === 'live').length,
+    },
+    ideas: rows.map((r) => ({
+      id: r.id,
+      category: r.category,
+      title: r.title,
+      body: r.body,
+      impact: r.impact ?? null,
+      callback: r.callback === true,
+      status: r.status,
+      latestUpdate: r.latest_update ?? null,
+      createdAt: r.created_at,
+    })),
+  });
+});
+
+router.get('/shifts', admin, async (req, res) => {
+  const days = Math.min(Math.max(parseInt(req.query.days, 10) || 7, 1), 365);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 1000);
+
+  // "Who was on at the banquet entrance last Saturday" is the question this
+  // screen gets opened to answer, and a rolling 7/30/90 window cannot be bent
+  // into a date. The range is one day wide in practice; nothing here insists
+  // on that, because a wedding weekend is two.
+  const range = parseRange(req.query);
+  // Quietly ignored when it is not an id: the value comes from a select box,
+  // and a stale option must not take the whole log down.
+  const staffId = /^[0-9a-f-]{36}$/i.test(String(req.query.staffId ?? ''))
+    ? String(req.query.staffId)
+    : null;
+
+  const window = range
+    ? { sql: 'AND s.started_at >= $2::timestamptz AND s.started_at < $5::timestamptz',
+        params: [range.from], tail: [range.to] }
+    : { sql: "AND s.started_at >= NOW() - ($2 || ' days')::interval",
+        params: [String(days)], tail: [] };
+
+  const rows = await queryRows(
+    `SELECT s.id, r.name, r.valet_role,
+            s.started_at, s.ended_at, s.valet_point, s.verified, s.reason,
+            EXTRACT(EPOCH FROM (COALESCE(s.ended_at, NOW()) - s.started_at))::bigint
+              AS seconds_on_shift
+       FROM valet_shifts s
+       JOIN residents r ON r.id = s.resident_id
+      WHERE s.community_id = $1
+        ${window.sql}
+        AND ($4::uuid IS NULL OR s.resident_id = $4::uuid)
+      ORDER BY s.started_at DESC
+      LIMIT $3`,
+    // The range's end takes $5, after the positions the day path already uses,
+    // so neither branch has to renumber the staff filter -- which is how a
+    // filter quietly starts matching against a row limit.
+    [req.user.community_id, window.params[0], limit, staffId, ...window.tail]
+  );
+
+  res.json({
+    days,
+    // Null unless a range is in force, so the page labels itself from the
+    // answer rather than from what it believes it asked for.
+    range,
+    shifts: rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      role: r.valet_role || 'valet',
+      startedAt: r.started_at,
+      // Null means on duty now, which the screen renders as "Still on shift"
+      // rather than as a missing value.
+      endedAt: r.ended_at ?? null,
+      secondsOnShift: Number(r.seconds_on_shift),
+      valetPoint: r.valet_point ?? null,
+      // Only a real match earns a method. Anything else carries the reason, so
+      // "not verified" can be read as the three different situations it is.
+      verifiedBy: r.verified === true ? 'face_id' : null,
+      reason: r.reason ?? null,
+    })),
+  });
+});
+
+const STAFF_ROLES = ['valet', 'valet_manager', 'temporary_driver'];
+
+/**
+ * Correcting a member of staff.
+ *
+ * The only way to change a role or extend a temp used to be remove-and-re-add,
+ * which orphans their shift history -- the exact record the shift log exists
+ * to keep. This edits the person instead.
+ *
+ * Mobile is deliberately not editable here. It is how they sign in to the
+ * valet app, and changing somebody's login mid-shift is a different and more
+ * dangerous operation than correcting a spelling.
+ */
+router.patch('/staff/:id', admin, async (req, res) => {
+  const role = req.body.role === undefined ? undefined : String(req.body.role);
+  if (role !== undefined && !STAFF_ROLES.includes(role)) {
+    return res.status(400).json({ error: 'invalid_role' });
+  }
+
+  const name = req.body.name === undefined
+    ? undefined
+    : String(req.body.name).trim().slice(0, 200);
+  if (name !== undefined && !name) {
+    return res.status(400).json({ error: 'missing_fields', message: 'A name cannot be empty' });
+  }
+
+  // `until` distinguishes absent (leave it) from null (clear it). A temp made
+  // permanent needs the date gone, and treating an empty value as "no change"
+  // would leave them expiring on a date the form no longer shows.
+  const untilGiven = Object.prototype.hasOwnProperty.call(req.body, 'until');
+  const until = untilGiven && req.body.until ? new Date(req.body.until) : null;
+
+  const row = await queryOne(
+    `UPDATE residents
+        SET name       = COALESCE($3, name),
+            valet_role = COALESCE($4, valet_role),
+            valet_until = CASE WHEN $5 THEN $6 ELSE valet_until END
+      WHERE id = $1 AND community_id = $2 AND type = 'guard'
+      RETURNING id, name`,
+    [req.params.id, req.user.community_id, name ?? null, role ?? null, untilGiven, until]
+  );
+  // Scoped to the caller's own property: an id from another venue must not be
+  // editable by pasting it into the URL.
+  if (!row) return res.status(404).json({ error: 'not_found' });
+
+  res.json({ id: row.id, name: row.name });
 });
 
 router.post('/staff', admin, async (req, res) => {
@@ -1048,4 +2291,339 @@ router.post('/staff/:id/face', admin, async (req, res) => {
  */
 router.get('/face/status', admin, async (req, res) => {
   res.json({ configured: isRecognitionConfigured() });
+});
+
+// --- quota and advertising --------------------------------------------------
+//
+// The commercial layer. Nothing in here invents a price: every rate is read
+// from the account row, which is where migration 069 put the defaults so that
+// a change of terms is a settings edit rather than a release.
+
+/** The account's commercial terms, with the migration's defaults as a floor. */
+function accountTerms(accountId) {
+  return queryOne(
+    `SELECT quota_mode, quota_cars_per_property, quota_alert_percent,
+            quota_over_behaviour, quota_overage_paise,
+            ad_price_per_view_paise, ad_monthly_minimum_paise, gst_percent, ad_billing
+       FROM accounts WHERE id = $1`,
+    [accountId]
+  );
+}
+
+/**
+ * The shared car pool, and where each property stands in it.
+ *
+ * Group admins only. A manager of one property has no pool to share and no
+ * settings to change; showing them a quota panel would imply a choice they do
+ * not have and a group they are not part of.
+ */
+router.get('/quota', admin, async (req, res) => {
+  if (!groupOnly(req, res)) return;
+
+  const terms = await accountTerms(req.user.account_id);
+  if (!terms) return res.status(404).json({ error: 'not_found' });
+
+  const rows = await queryRows(
+    `SELECT c.id, c.name, c.valet_quota_hold_back AS hold_back,
+            (SELECT COUNT(*) FROM valet_tickets t
+              WHERE t.community_id = c.id
+                AND t.created_at >= date_trunc('month', NOW()))::int AS cars_this_month,
+            EXISTS (SELECT 1 FROM valet_tickets t WHERE t.community_id = c.id) AS ever_live
+       FROM communities c
+      WHERE c.account_id = $1
+      ORDER BY c.name`,
+    [req.user.account_id]
+  );
+
+  const properties = rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    holdBack: Number(r.hold_back ?? 0),
+    carsThisMonth: Number(r.cars_this_month ?? 0),
+    status: r.ever_live ? 'live' : 'setting_up',
+  }));
+
+  const pool = quotaFor({
+    properties,
+    carsPerProperty: terms.quota_cars_per_property,
+    mode: terms.quota_mode,
+  });
+
+  // Days left in the month, which is what makes "4,950 of 6,000" actionable:
+  // the same number four days from the end means something very different
+  // from the same number on the 3rd.
+  const now = new Date();
+  const daysLeft = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate();
+
+  res.json({
+    settings: {
+      mode: terms.quota_mode,
+      carsPerProperty: terms.quota_cars_per_property,
+      alertPercent: terms.quota_alert_percent,
+      overBehaviour: terms.quota_over_behaviour,
+      // Null when no rate has been agreed, and the screen says so rather than
+      // printing a number nobody signed.
+      overagePaise: terms.quota_overage_paise ?? null,
+    },
+    pool: { ...pool, daysLeft },
+    properties: properties.map((p) => ({
+      ...p,
+      // Against this property's own share, which is what "2,700 of 2,000"
+      // means on the design's row.
+      includedCars: p.status === 'live' ? terms.quota_cars_per_property : 0,
+    })),
+  });
+});
+
+/**
+ * Change how the group's cars are shared.
+ *
+ * Deliberately NOT editable here: cars per property and the overage rate.
+ * Those are contract terms. A screen that let a customer set their own
+ * allowance would be a billing hole, and one that let them set their own
+ * overage rate would be a stranger one.
+ */
+router.patch('/quota', admin, async (req, res) => {
+  if (!groupOnly(req, res)) return;
+
+  const sets = [];
+  const params = [req.user.account_id];
+
+  if (req.body.mode !== undefined) {
+    if (!['shared', 'fixed'].includes(String(req.body.mode))) {
+      return res.status(400).json({ error: 'invalid_mode' });
+    }
+    params.push(String(req.body.mode));
+    sets.push(`quota_mode = $${params.length}`);
+  }
+
+  if (req.body.alertPercent !== undefined) {
+    const pct = parseInt(req.body.alertPercent, 10);
+    if (!Number.isFinite(pct) || pct < 1 || pct > 100) {
+      return res.status(400).json({ error: 'invalid_alert_percent' });
+    }
+    params.push(pct);
+    sets.push(`quota_alert_percent = $${params.length}`);
+  }
+
+  if (req.body.overBehaviour !== undefined) {
+    // 'stop' is not offered, here or in the schema: a billing arrangement must
+    // never be able to refuse a guest standing at a porch with their keys out.
+    if (!['bill', 'notify'].includes(String(req.body.overBehaviour))) {
+      return res.status(400).json({ error: 'invalid_over_behaviour' });
+    }
+    params.push(String(req.body.overBehaviour));
+    sets.push(`quota_over_behaviour = $${params.length}`);
+  }
+
+  if (sets.length > 0) {
+    await query(`UPDATE accounts SET ${sets.join(', ')} WHERE id = $1`, params);
+  }
+
+  // Hold-backs arrive as a map of property to cars. Written one at a time and
+  // scoped to the account, so a group admin cannot reserve cars at a hotel
+  // that is not theirs by posting somebody else's id.
+  const holdBack = req.body.holdBack;
+  if (holdBack && typeof holdBack === 'object') {
+    for (const [id, raw] of Object.entries(holdBack)) {
+      if (!/^[0-9a-f-]{36}$/i.test(id)) continue;
+      const cars = parseInt(raw, 10);
+      if (!Number.isFinite(cars) || cars < 0) {
+        return res.status(400).json({ error: 'invalid_hold_back' });
+      }
+      await query(
+        'UPDATE communities SET valet_quota_hold_back = $3 WHERE id = $1 AND account_id = $2',
+        [id, req.user.account_id, cars]
+      );
+    }
+  }
+
+  if (sets.length === 0 && !holdBack) {
+    return res.status(400).json({ error: 'nothing_to_change' });
+  }
+
+  res.json({ saved: true });
+});
+
+/**
+ * Who owns the ad balance: the group if there is one, the property otherwise.
+ *
+ * A single hotel with no group still buys promotions, and the ledger's CHECK
+ * constraint insists exactly one owner is set -- a row belonging to both can
+ * be counted twice, and a row belonging to neither cannot be counted at all.
+ */
+function adOwner(user) {
+  return user.role === 'client_admin' && user.account_id
+    ? { column: 'account_id', id: user.account_id }
+    : { column: 'community_id', id: user.community_id };
+}
+
+/** Terms for whoever owns the balance; a lone property falls back to defaults. */
+async function adTerms(user) {
+  if (user.role === 'client_admin' && user.account_id) {
+    return accountTerms(user.account_id);
+  }
+  const row = await queryOne(
+    `SELECT a.ad_price_per_view_paise, a.ad_monthly_minimum_paise, a.gst_percent, a.ad_billing
+       FROM communities c LEFT JOIN accounts a ON a.id = c.account_id
+      WHERE c.id = $1`,
+    [user.community_id]
+  );
+  // A property with no account has no negotiated terms, so it gets the
+  // published ones. Stated here rather than defaulted silently in three places.
+  return {
+    ad_price_per_view_paise: row?.ad_price_per_view_paise ?? 150,
+    ad_monthly_minimum_paise: row?.ad_monthly_minimum_paise ?? 200000,
+    gst_percent: row?.gst_percent ?? 18,
+    ad_billing: row?.ad_billing ?? 'prepaid',
+  };
+}
+
+/**
+ * What advertising costs here, and what has been paid toward it.
+ *
+ * The balance is summed from the ledger rather than read from a column: a
+ * running total is a number somebody has to keep correct under concurrency,
+ * and the first time it drifts nobody can say when or why.
+ */
+router.get('/ads', admin, async (req, res) => {
+  const terms = await adTerms(req.user);
+  const owner = adOwner(req.user);
+
+  const ledger = await queryRows(
+    `SELECT amount_paise, is_credit FROM valet_ad_ledger WHERE ${owner.column} = $1`,
+    [owner.id]
+  );
+  const balance = balanceFromLedger(ledger);
+
+  const recent = await queryRows(
+    `SELECT kind, amount_paise, is_credit, note, order_ref, created_at
+       FROM valet_ad_ledger
+      WHERE ${owner.column} = $1
+      ORDER BY created_at DESC
+      LIMIT 20`,
+    [owner.id]
+  );
+
+  // Delivered views this month, which is what the spend is actually made of.
+  const views = await queryOne(
+    `SELECT COUNT(*)::int AS views
+       FROM valet_promotion_events e
+       JOIN valet_promotions p ON p.id = e.promotion_id
+      WHERE e.kind = 'view'
+        AND e.created_at >= date_trunc('month', NOW())
+        AND p.community_id = ANY($1::uuid[])`,
+    [await promotionScope(req.user)]
+  );
+
+  const deliveredPaise = viewCostPaise(views?.views ?? 0, terms.ad_price_per_view_paise);
+
+  res.json({
+    pricing: {
+      perViewPaise: terms.ad_price_per_view_paise,
+      monthlyMinimumPaise: terms.ad_monthly_minimum_paise,
+      gstPercent: terms.gst_percent,
+      billing: terms.ad_billing,
+    },
+    balance,
+    monthToDate: {
+      views: views?.views ?? 0,
+      ...withGst(deliveredPaise, terms.gst_percent),
+    },
+    ledger: recent.map((r) => ({
+      kind: r.kind,
+      amountPaise: Number(r.amount_paise),
+      isCredit: r.is_credit === true,
+      note: r.note ?? null,
+      orderRef: r.order_ref ?? null,
+      at: r.created_at,
+    })),
+    // Said on every response rather than inferred by the client: a venue must
+    // never be told money moved when the payment layer cannot move any.
+    paymentPlaceholder: isPlaceholderMode(),
+  });
+});
+
+/** Which properties' promotions this caller's spend covers. */
+async function promotionScope(user) {
+  if (user.role === 'client_admin' && user.account_id) {
+    const rows = await queryRows(
+      'SELECT id FROM communities WHERE account_id = $1', [user.account_id]
+    );
+    return rows.map((r) => r.id);
+  }
+  return [user.community_id];
+}
+
+/**
+ * Add to the ad balance.
+ *
+ * Mints an order and records the ledger row in the same request, which is
+ * correct ONLY because placeholder orders cannot fail. When this goes live the
+ * credit must move to the payment webhook -- crediting on intent rather than
+ * on settlement would hand a venue a balance for a payment they abandoned.
+ * The route refuses to pretend otherwise: in live mode it returns the order
+ * and credits nothing.
+ */
+router.post('/ads/topup', admin, async (req, res) => {
+  const amountPaise = parseInt(req.body.amountPaise, 10);
+  if (!Number.isFinite(amountPaise) || amountPaise <= 0) {
+    return res.status(400).json({ error: 'invalid_amount' });
+  }
+  // A ceiling, because a mistyped amount is far more likely than a genuine
+  // one this size, and an accidental ten-lakh top-up is a refund conversation.
+  if (amountPaise > 10000000) {
+    return res.status(400).json({ error: 'amount_too_large', message: 'Top up ₹1,00,000 or less at a time' });
+  }
+
+  const terms = await adTerms(req.user);
+  if (terms.ad_billing === 'invoiced') {
+    return res.status(409).json({
+      error: 'invoiced_account',
+      message: 'This account is invoiced monthly. Promotion spend is added to your Dwaar AI invoice.',
+    });
+  }
+
+  const owner = adOwner(req.user);
+  const totals = withGst(amountPaise, terms.gst_percent);
+  const order = await createAdOrder(totals.totalPaise, `valet-ads-${Date.now()}`);
+
+  if (order.placeholder) {
+    // The ledger carries the NET, not the total: GST is tax collected, not ad
+    // credit. Crediting the gross would hand every venue 18% of free spend.
+    await query(
+      `INSERT INTO valet_ad_ledger (${owner.column}, amount_paise, kind, order_ref, note)
+       VALUES ($1, $2, 'topup', $3, $4)
+       ON CONFLICT (order_ref) WHERE order_ref IS NOT NULL DO NOTHING`,
+      [owner.id, amountPaise, order.id, 'Recorded in placeholder mode — no money collected']
+    );
+  }
+
+  res.status(201).json({
+    orderId: order.id,
+    ...totals,
+    paymentPlaceholder: order.placeholder,
+    credited: order.placeholder,
+  });
+});
+
+/**
+ * Send a promotion for review.
+ *
+ * Dwaar AI checks every promotion before it reaches a guest's phone, so a
+ * venue cannot put it live themselves. Draft to in_review is the whole
+ * transition; approval is an operator action.
+ */
+router.post('/promotions/:id/submit', admin, async (req, res) => {
+  const row = await queryOne(
+    `UPDATE valet_promotions SET status = 'in_review', updated_at = NOW()
+      WHERE id = $1 AND community_id = $2 AND status = 'draft'
+      RETURNING id, status`,
+    [req.params.id, req.user.community_id]
+  );
+  // Not found and not-a-draft are the same answer on purpose: both mean "there
+  // is no draft here to send", and distinguishing them tells a caller which
+  // ids exist at other properties.
+  if (!row) return res.status(409).json({ error: 'not_a_draft' });
+  res.json({ id: row.id, status: row.status });
 });

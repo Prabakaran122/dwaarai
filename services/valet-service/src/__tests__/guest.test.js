@@ -790,3 +790,71 @@ describe('the venue a guest is standing in', () => {
     expect(res.body.venueName).toBe('The Leela Palace');
   });
 });
+
+describe('the banner a guest sees after their car is returned', () => {
+  it('carries the live promotion and the guest’s own offer code', async () => {
+    // The code is the promotion's stem plus this ticket's claim code. That is
+    // what lets a restaurant's redemption be traced to one car on one night
+    // rather than to "somebody saw a poster".
+    queryOne.mockResolvedValueOnce(ticketRow({
+      claim_code: '4K7QP2',
+      promo_id: 'pr1', promo_headline: 'Sunday Brunch, 25% off',
+      promo_body: 'Live music and 60+ dishes.', promo_offer_code: 'VALET25',
+      promo_button_label: 'Book a table', promo_button_url: 'https://example.com',
+    }));
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+
+    expect(res.body.promo).toMatchObject({
+      id: 'pr1',
+      headline: 'Sunday Brunch, 25% off',
+      guestCode: 'VALET25-4K7QP2',
+    });
+  });
+
+  it('shows no code when the promotion does not offer one', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({
+      claim_code: '4K7QP2', promo_id: 'pr1', promo_headline: 'Spa is open late',
+      promo_offer_code: null,
+    }));
+
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+
+    expect(res.body.promo.guestCode).toBeNull();
+  });
+
+  it('shows nothing when no promotion is live', async () => {
+    queryOne.mockResolvedValueOnce(ticketRow({ promo_id: null }));
+    const res = await request(app, 'GET', `/guest/tickets/${SESSION_TOKEN}`);
+    expect(res.body.promo).toBeNull();
+  });
+
+  it('counts a view once, however many times the page reloads', async () => {
+    // The page polls every few seconds and reopens on every tap of the
+    // WhatsApp link. Counting raw impressions would turn one guest on a slow
+    // connection into forty, and that number could never be charged for.
+    queryOne.mockResolvedValueOnce({ id: 't1' });
+    queryOne.mockResolvedValueOnce(null);   // ON CONFLICT DO NOTHING matched
+
+    const res = await request(app, 'POST', `/guest/tickets/${SESSION_TOKEN}/promo/pr1/view`);
+
+    expect(res.status).toBe(200);
+    const sql = queryOne.mock.calls.at(-1)[0];
+    expect(sql).toMatch(/ON CONFLICT[\s\S]*DO NOTHING/i);
+  });
+
+  it('records a tap separately from a view', async () => {
+    queryOne.mockResolvedValueOnce({ id: 't1' });
+    queryOne.mockResolvedValueOnce({ id: 'ev' });
+
+    const res = await request(app, 'POST', `/guest/tickets/${SESSION_TOKEN}/promo/pr1/tap`);
+
+    expect(res.status).toBe(200);
+    expect(queryOne.mock.calls.at(-1)[1]).toContain('tap');
+  });
+
+  it('refuses a kind nobody defined', async () => {
+    const res = await request(app, 'POST', `/guest/tickets/${SESSION_TOKEN}/promo/pr1/sold`);
+    expect(res.status).toBe(404);
+  });
+});

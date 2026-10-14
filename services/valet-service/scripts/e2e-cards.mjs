@@ -124,7 +124,7 @@ try {
     body: { plate: 'KA 01 AB 9012', vehicleMake: 'Innova', stayEndAt: stayEnd(), cardCode: 'A001' },
   });
   check('refuses the reused card', clash.status === 409 && clash.body?.error === 'card_in_use', JSON.stringify(clash.body));
-  check('names the ticket already holding it', String(clash.body?.message).includes('SRT-'), clash.body?.message);
+  check('names the ticket already holding it', String(clash.body?.message).includes('DWR-'), clash.body?.message);
 
   const count = await pool.query('SELECT COUNT(*)::int AS c FROM valet_tickets WHERE community_id = $1', [communityId]);
   check('the rejected ticket was rolled back, not left half-created', count.rows[0].c === 1, `rows=${count.rows[0].c}`);
@@ -147,31 +147,42 @@ try {
   console.log('\n--- the guest side of a card ---');
   const resolved = await fetch(`${BASE}/guest/cards/${communityId}/A001`).then((r) => r.json());
   check('a bound card resolves to its ticket', resolved.sessionToken === tokenA);
-  check('and returns nothing else about the vehicle', Object.keys(resolved).join() === 'sessionToken',
-    Object.keys(resolved).join());
+  // The WhatsApp reference and the venue name, which the guest is standing in.
+  // Nothing about the vehicle: that only comes from the ticket itself.
+  check('and returns nothing else about the vehicle',
+    Object.keys(resolved).sort().join() === 'sessionToken,venueName,waRef' && resolved.venueName === 'Card Test Venue',
+    JSON.stringify(resolved));
 
-  const free = await fetch(`${BASE}/guest/cards/${communityId}/A003`);
-  const bogus = await fetch(`${BASE}/guest/cards/${communityId}/NOPE`);
-  const [freeBody, bogusBody] = [await free.text(), await bogus.text()];
-  check('an unbound card 404s', free.status === 404);
-  // Byte-identical, not merely both-404: a body that distinguished "this card
-  // exists but is free" from "no such card" would let someone enumerate a
-  // venue's card stock and learn how busy it is.
-  check('an unknown code is indistinguishable from a free one',
-    bogus.status === free.status && bogusBody === freeBody, `${freeBody} vs ${bogusBody}`);
+  // A registered-but-free card now answers too, deliberately (see the LEFT
+  // JOIN comment in routes/guest.js): the guard hands the card over at the
+  // START of intake, so "no ticket yet" is the normal case for a guest who
+  // scans promptly. What is given up is that probing can tell registered
+  // stock from a made-up code; what must still hold is that a free card
+  // carries no vehicle data and an unknown code carries nothing at all.
+  const free = await api(`/guest/cards/${communityId}/A003`);
+  check('a free card resolves with no ticket behind it',
+    free.status === 200 && free.body?.sessionToken === null && typeof free.body?.waRef === 'string',
+    JSON.stringify(free.body));
+  check('and leaks no vehicle or ticket data',
+    Object.keys(free.body || {}).sort().join() === 'sessionToken,venueName,waRef', JSON.stringify(free.body));
+  const bogus = await api(`/guest/cards/${communityId}/NOPE`);
+  check('an unknown code 404s', bogus.status === 404, JSON.stringify(bogus.body));
 
   // The guest can drive their whole flow from the card alone.
   const guestView = await api(`/guest/tickets/${resolved.sessionToken}`);
   check('the card gets the guest to their live status', guestView.body?.plate === 'KA 05 MH 2847',
     JSON.stringify(guestView.body));
   const requested = await api(`/guest/tickets/${resolved.sessionToken}/request`, { method: 'POST' });
-  check('and lets them request the car', requested.body?.status === 'requested');
+  check('and lets them request the car', requested.body?.status === 'retrieval_requested', JSON.stringify(requested.body));
 
   console.log('\n--- closing a ticket frees its card ---');
   // Drive it to a close without a pickup: the manual expire path.
   await api(`/guard/tickets/${tokenA}/expire`, { method: 'POST', token });
-  const afterClose = await fetch(`${BASE}/guest/cards/${communityId}/A001`);
-  check('the card stops resolving once the ticket closes', afterClose.status === 404);
+  const afterClose = await api(`/guest/cards/${communityId}/A001`);
+  // Still a registered card, so it answers -- but no longer with the closed
+  // ticket, which the next holder of this card must never reach.
+  check('the card stops resolving to the ticket once it closes',
+    afterClose.status === 200 && afterClose.body?.sessionToken === null, JSON.stringify(afterClose.body));
 
   const reuse = await api('/guard/tickets', {
     method: 'POST', token,
@@ -183,18 +194,29 @@ try {
     (await fetch(`${BASE}/guest/cards/${communityId}/A001`).then((r) => r.json())).sessionToken === reuse.body?.sessionToken);
 
   console.log('\n--- binding a card after the fact ---');
-  const late = await api('/guard/tickets', {
+  // A ticket can no longer start without a card: the card IS the ticket, and
+  // a card-less one would leave the guest with no way into their booking.
+  const noCard = await api('/guard/tickets', {
     method: 'POST', token,
     body: { plate: 'KA 33 QQ 4444', vehicleMake: 'i20', stayEndAt: stayEnd() },
   });
-  check('a ticket can start with no card at all', late.status === 201 && late.body?.cardCode === null);
+  check('a ticket cannot start with no card', noCard.status === 400 && noCard.body?.error === 'card_required',
+    JSON.stringify(noCard.body));
+  // The bind route survives as a swap -- a guest who lost the first card.
+  const late = await api('/guard/tickets', {
+    method: 'POST', token,
+    body: { plate: 'KA 33 QQ 4444', vehicleMake: 'i20', stayEndAt: stayEnd(), cardCode: 'A004' },
+  });
+  check('so it starts with one', late.status === 201 && late.body?.cardCode === 'A004', JSON.stringify(late.body));
   const bound = await api(`/guard/tickets/${late.body.sessionToken}/card`, {
     method: 'POST', token, body: { cardCode: 'A003' },
   });
-  check('and have one bound afterwards', bound.status === 200 && bound.body?.cardCode === 'A003',
+  check('and can have another bound afterwards', bound.status === 200 && bound.body?.cardCode === 'A003',
     JSON.stringify(bound.body));
   check('which then resolves for the guest',
     (await fetch(`${BASE}/guest/cards/${communityId}/A003`).then((r) => r.json())).sessionToken === late.body.sessionToken);
+  check('and the card it replaced is free again',
+    (await api(`/guest/cards/${communityId}/A004`)).body?.sessionToken === null);
 
   const doubleBind = await api(`/guard/tickets/${tokenB}/card`, {
     method: 'POST', token, body: { cardCode: 'A003' },

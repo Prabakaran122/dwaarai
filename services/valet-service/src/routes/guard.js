@@ -10,11 +10,13 @@ import { toDataUrl } from '../lib/qr.js';
 import { logEvent } from '../lib/events.js';
 import { schedulePhotoDeletion, scheduleConditionMediaDeletion } from '../lib/expiry.js';
 import { storage, buildKey, extensionFor } from '../lib/storage.js';
+import { signPhotoLink, verifyPhotoLink, contentTypeFor, PHOTO_LINK_TTL_SECONDS } from '../lib/photo-link.js';
 import { emitTicketUpdate } from '../lib/realtime.js';
 import { lastArrivalAt, usedTokenSince } from '../lib/handover.js';
 import { sendClaimCode } from '../lib/sms.js';
 import { notifyGuest } from '../lib/whatsapp-guest.js';
-import { readPlate } from '../lib/anpr.js';
+import { readPlate, isConfigured as plateReaderConfigured } from '../lib/anpr.js';
+import { idempotent } from '../lib/idempotency.js';
 import { matchAttendant } from '../lib/face.js';
 import { authenticateJWT } from '../middleware/auth.js';
 
@@ -37,6 +39,15 @@ const conditionUpload = multer({
 });
 
 const guard = authenticateJWT(['guard', 'admin']);
+
+/**
+ * Applied after `guard`, never before it.
+ *
+ * The key is scoped per community and that comes off the token, so this has to
+ * run once req.user exists. Mounted app-wide ahead of the router it would see
+ * no user on any request, decline to do anything, and look like it was working.
+ */
+const once = idempotent;
 
 // --- helpers ---------------------------------------------------------------
 
@@ -131,7 +142,11 @@ router.post('/profile', guard, photoUpload.single('idPhoto'), async (req, res) =
 // --- ticket creation -------------------------------------------------------
 
 /** Open statuses: a car standing in a slot, by any of the names that means. */
+// 'with_guest' is deliberately absent: the car is not here.
 const HOLDING_A_SLOT = ['parked', 'retrieval_requested', 'en_route', 'arrived', 'parked_again'];
+
+/** The four condition views, in capture order -- the same list the app uses. */
+const CONDITION_ANGLES = ['front', 'right', 'back', 'left'];
 
 /**
  * Free slots, grouped the way the attendant picks them: floor, then zone.
@@ -240,6 +255,36 @@ router.post('/shift/start', guard, async (req, res) => {
     // Additive column; a shift is not worth failing over the bookkeeping.
   }
 
+  // The shift as a record.
+  //
+  // Everything above computes verified / confidence / reason with some care,
+  // and until now handed all three to the app and kept none. So nobody could
+  // answer "who is on duty" or "who signed in unverified last Tuesday", and
+  // the audit trail the BRD asks for did not exist.
+  //
+  // ON CONFLICT DO NOTHING against the one-open-shift index: a double tap, or
+  // an app retrying after a dropped reply, must not put the same person on
+  // duty twice -- they would then appear twice in "on shift now" forever.
+  try {
+    await query(
+      `INSERT INTO valet_shifts
+         (resident_id, community_id, verified, confidence, reason, valet_point)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT DO NOTHING`,
+      [
+        req.user.sub,
+        req.user.community_id,
+        verified,
+        match.available ? match.confidence : null,
+        reason,
+        req.body.valetPoint ? String(req.body.valetPoint).slice(0, 120) : null,
+      ]
+    );
+  } catch {
+    // Same reasoning as above, and more so: bookkeeping must never be the
+    // thing that strands an attendant at six in the morning.
+  }
+
   // Never a lock-out. A bad light at six in the morning must not strand a
   // real attendant; the record says what happened and a manager decides.
   res.status(201).json({
@@ -248,6 +293,72 @@ router.post('/shift/start', guard, async (req, res) => {
     verified,
     confidence: match.available ? match.confidence : null,
     reason,
+  });
+});
+
+/**
+ * What this deployment can do, as opposed to what the code can do.
+ *
+ * Plate reading needs a service that is not always there: it ships separately,
+ * it is heavy, and a venue can run the whole product without it. The app asks
+ * once at intake and hides the camera button on a `false`.
+ *
+ * That matters more than it looks. A button that opens a camera, takes a
+ * photo, waits, and then always says "could not read it" does not teach an
+ * attendant "this venue has no reader" -- it teaches them the feature is
+ * broken, and they stop trying at the venues where it does work.
+ *
+ * An env check, deliberately: this is called on every intake, and the busiest
+ * path in the product should not gain a query to answer it.
+ */
+router.get('/capabilities', guard, async (_req, res) => {
+  res.json({ plateScan: plateReaderConfigured() });
+});
+
+/**
+ * Ending a shift.
+ *
+ * There was no counterpart to /shift/start, so no shift was ever closed and
+ * "on duty now" would have grown forever. Called when an attendant signs out.
+ *
+ * Idempotent and quiet: signing out twice, or after a sweep already closed the
+ * row, is not an error worth showing somebody who is trying to go home.
+ */
+/**
+ * The doors an attendant can start a shift at.
+ *
+ * Paused ones are excluded: choosing one would file a shift against a place
+ * nobody is standing, and the shift log would then be confidently wrong.
+ */
+router.get('/points', guard, async (req, res) => {
+  const rows = await queryRows(
+    `SELECT id, name FROM valet_points
+      WHERE community_id = $1 AND status <> 'paused'
+      ORDER BY name`,
+    [req.user.community_id]
+  );
+  res.json({ points: rows.map((r) => ({ id: r.id, name: r.name })) });
+});
+
+router.post('/shift/end', guard, async (req, res) => {
+  let closed = null;
+  try {
+    closed = await queryOne(
+      `UPDATE valet_shifts
+          SET ended_at = NOW()
+        WHERE resident_id = $1 AND ended_at IS NULL
+        RETURNING id, started_at, ended_at`,
+      [req.user.sub]
+    );
+  } catch {
+    // Reported as "no shift was open", which is the honest answer when we
+    // cannot tell -- and leaves the attendant able to sign out regardless.
+  }
+
+  res.json({
+    ended: !!closed,
+    startedAt: closed?.started_at ?? null,
+    endedAt: closed?.ended_at ?? null,
   });
 });
 
@@ -289,9 +400,20 @@ router.post('/tickets/:token/accept-intake', guard, async (req, res) => {
   res.json(ticketView(updated));
 });
 
-router.post('/tickets/start', guard, async (req, res) => {
+router.post('/tickets/start', guard, once, async (req, res) => {
   const communityId = req.user.community_id;
   const cardCode = String(req.body.cardCode ?? '').trim();
+  // This route exists because a card was scanned; without one there is
+  // nothing to start from, and the ticket it would create is one no guest can
+  // reach. Same rule as POST /tickets, stated in both places because they are
+  // two separate ways in.
+  if (!cardCode) {
+    return res.status(400).json({
+      error: 'card_required',
+      message: 'Scan the valet card before starting intake',
+    });
+  }
+
   const client = await pool.connect();
 
   try {
@@ -386,7 +508,7 @@ const completeIntakeSchema = z.object({
  * Only from parking_in_progress. Completing twice would overwrite a plate
  * somebody has already checked against the car in front of them.
  */
-router.post('/tickets/:token/complete', guard, async (req, res) => {
+router.post('/tickets/:token/complete', guard, once, async (req, res) => {
   const ticket = await findTicket(req.params.token, req.user.community_id);
   if (!ticket) return notFound(res);
   // Either route in: a card scanned at the kerb (parking_in_progress) or a job
@@ -406,6 +528,7 @@ router.post('/tickets/:token/complete', guard, async (req, res) => {
   if (Number.isNaN(stayEnd.getTime()) || stayEnd.getTime() <= Date.now()) {
     return res.status(400).json({ error: 'invalid_stay_end' });
   }
+
 
   const typedPhone = parsed.data.phoneNumber ? parsed.data.phoneNumber.replace(/\s+/g, '') : null;
   if (typedPhone && !/^(\+91)?[6-9]\d{9}$/.test(typedPhone)) {
@@ -529,7 +652,7 @@ function isClaimCodeCollision(err) {
   return err?.code === '23505' && err?.constraint === 'idx_valet_claim_code_open';
 }
 
-router.post('/tickets', guard, async (req, res) => {
+router.post('/tickets', guard, once, async (req, res) => {
   const parsed = createTicketSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'missing_fields', message: 'plate, vehicleMake and stayEndAt are required' });
@@ -540,6 +663,23 @@ router.post('/tickets', guard, async (req, res) => {
   const stayEnd = new Date(parsed.data.stayEndAt);
   if (Number.isNaN(stayEnd.getTime()) || stayEnd.getTime() <= Date.now()) {
     return res.status(400).json({ error: 'invalid_stay_end', message: 'stayEndAt must be a valid future datetime' });
+  }
+
+  // The card IS the ticket.
+  //
+  // One printed QR is scanned twice: by the guard here to start intake, then
+  // by the guest off the same card to reach WhatsApp. A ticket with no card
+  // leaves the guest holding nothing and with no way into their own booking.
+  //
+  // Checked after the field validation above, so an attendant who left the
+  // plate blank is told that rather than sent hunting for a card they already
+  // scanned -- and checked here rather than only in the app, because an older
+  // APK must not be able to create a ticket no guest can ever reach.
+  if (!String(parsed.data.cardCode ?? '').trim()) {
+    return res.status(400).json({
+      error: 'card_required',
+      message: 'Scan the valet card before creating the ticket',
+    });
   }
 
   // Checked before the car is taken in, not after: a typo caught here is a
@@ -736,14 +876,38 @@ router.get('/plate-lookup', guard, async (req, res) => {
   const normalized = normalizePlate(req.query.plate);
   if (!normalized) return res.json({ isReturning: false });
 
+  // One pass: the count for the banner, and the most recent visit's details
+  // so the attendant does not re-type "Toyota Innova" for the ninth time on a
+  // regular's car. The window function keeps it to a single scan of the same
+  // index the count already needs.
   const row = await queryOne(
-    `SELECT COUNT(*)::int AS visit_count, MAX(created_at) AS last_visit_at
+    `SELECT COUNT(*)::int AS visit_count,
+            MAX(created_at) AS last_visit_at,
+            (ARRAY_AGG(vehicle_make ORDER BY created_at DESC))[1] AS vehicle_make,
+            (ARRAY_AGG(guest_name   ORDER BY created_at DESC))[1] AS guest_name,
+            (ARRAY_AGG(car_type     ORDER BY created_at DESC))[1] AS car_type,
+            (ARRAY_AGG(is_premium   ORDER BY created_at DESC))[1] AS is_premium
        FROM valet_tickets WHERE community_id = $1 AND plate_normalized = $2`,
     [req.user.community_id, normalized]
   );
 
   if (!row || !row.visit_count) return res.json({ isReturning: false });
-  res.json({ isReturning: true, visitCount: row.visit_count, lastVisitAt: row.last_visit_at });
+
+  // Only what was actually recorded. A key present with a null value is a key
+  // the app would happily prefill with nothing, blanking a box the attendant
+  // may already have filled in -- so absent means absent.
+  const lastSeen = {};
+  if (row.vehicle_make) lastSeen.vehicleMake = row.vehicle_make;
+  if (row.guest_name) lastSeen.guestName = row.guest_name;
+  if (row.car_type) lastSeen.carType = row.car_type;
+  if (row.is_premium) lastSeen.isPremium = true;
+
+  res.json({
+    isReturning: true,
+    visitCount: row.visit_count,
+    lastVisitAt: row.last_visit_at,
+    lastSeen,
+  });
 });
 
 /**
@@ -854,6 +1018,51 @@ router.get('/tickets/:token/photo', guard, async (req, res) => {
 
   const stream = await storage.getStream(photo.storage_key);
   if (!stream) return res.status(404).json({ error: 'no_photo' });
+  res.setHeader('Content-Type', contentTypeFor(photo.storage_key));
+  res.setHeader('Cache-Control', 'private, no-store');
+  stream.pipe(res);
+});
+
+// A header-free way to the same photo -- see lib/photo-link.js for why the
+// handover screen cannot use the route above.
+router.post('/tickets/:token/photo-link', guard, async (req, res) => {
+  const ticket = await findTicket(req.params.token, req.user.community_id);
+  if (!ticket) return notFound(res);
+
+  const photo = await queryOne(
+    `SELECT storage_key FROM valet_photos
+      WHERE ticket_id = $1 AND deleted_at IS NULL
+      ORDER BY captured_at DESC LIMIT 1`,
+    [ticket.id]
+  );
+  if (!photo) return res.status(404).json({ error: 'no_photo' });
+
+  res.json({
+    url: `/guard/photo-links/${signPhotoLink(ticket.id, ticket.community_id)}`,
+    expiresIn: PHOTO_LINK_TTL_SECONDS,
+  });
+});
+
+// No guard middleware: the signature is the credential. Every refusal is the
+// same bare 404, so a probe learns nothing about which part was wrong.
+router.get('/photo-links/:sig', async (req, res) => {
+  const link = verifyPhotoLink(req.params.sig);
+  if (!link) return res.status(404).json({ error: 'not_found' });
+
+  // Re-checked at read time: retention may have deleted the photo since the
+  // link was signed, and community scoping must hold here as everywhere.
+  const photo = await queryOne(
+    `SELECT p.storage_key FROM valet_photos p
+       JOIN valet_tickets t ON t.id = p.ticket_id
+      WHERE p.ticket_id = $1 AND t.community_id = $2 AND p.deleted_at IS NULL
+      ORDER BY p.captured_at DESC LIMIT 1`,
+    [link.ticketId, link.communityId]
+  );
+  if (!photo) return res.status(404).json({ error: 'not_found' });
+
+  const stream = await storage.getStream(photo.storage_key);
+  if (!stream) return res.status(404).json({ error: 'not_found' });
+  res.setHeader('Content-Type', contentTypeFor(photo.storage_key));
   res.setHeader('Cache-Control', 'private, no-store');
   stream.pipe(res);
 });
@@ -865,13 +1074,19 @@ router.get('/tickets/:token/photo', guard, async (req, res) => {
 // once both stages exist and compare intake against return. Nothing here
 // computes that; a human reviews the comparison view below instead.
 
-const conditionSchema = z.object({
+export const conditionSchema = z.object({
   stage: z.enum(['intake', 'return']),
   mediaType: z.enum(['photo', 'video']),
-  angle: z.enum(['front', 'back', 'left', 'right']).optional().nullable(),
+  // 'plate' is the BRD's Screen 4 shot: the registration as it looked on
+  // arrival. Kept in the same table as the four condition angles so it
+  // inherits the retention sweep and the dispute exemption, and must stay in
+  // step with the CHECK constraint in migration 060 -- zod rejecting first is
+  // a 400 an attendant can read, the constraint rejecting is a 500 they
+  // cannot.
+  angle: z.enum(['front', 'back', 'left', 'right', 'plate']).optional().nullable(),
 });
 
-router.post('/tickets/:token/condition', guard, conditionUpload.single('media'), async (req, res) => {
+router.post('/tickets/:token/condition', guard, once, conditionUpload.single('media'), async (req, res) => {
   const ticket = await findTicket(req.params.token, req.user.community_id);
   if (!ticket) return notFound(res);
 
@@ -1106,6 +1321,80 @@ router.post('/tickets/:token/scan', guard, async (req, res) => {
   res.json({ success: true });
 });
 
+/**
+ * A multi-day guest brings the car back: check it in again.
+ *
+ * Whatever happened to the car happened while the guest had it, so this is an
+ * intake in its own right -- the same four condition views, captured since the
+ * handover that sent it out, enforced here rather than trusted to the app.
+ */
+router.post('/tickets/:token/returned', guard, async (req, res) => {
+  const ticket = await findTicket(req.params.token, req.user.community_id);
+  if (!ticket) return notFound(res);
+  if (ticket.status !== 'with_guest') {
+    return res.status(409).json({ error: 'wrong_status', status: ticket.status });
+  }
+
+  const wentOut = await queryOne(
+    `SELECT created_at FROM valet_ticket_events
+      WHERE ticket_id = $1 AND event_type = 'closed_pickup'
+      ORDER BY created_at DESC LIMIT 1`,
+    [ticket.id]
+  );
+  const since = wentOut?.created_at ?? ticket.created_at;
+  const captured = await queryRows(
+    `SELECT DISTINCT angle FROM valet_condition_records
+      WHERE ticket_id = $1 AND stage = 'intake' AND media_type = 'photo'
+        AND captured_at >= $2 AND deleted_at IS NULL`,
+    [ticket.id, since]
+  );
+  const have = new Set(captured.map((r) => r.angle));
+  const missing = CONDITION_ANGLES.filter((a) => !have.has(a));
+  if (missing.length) {
+    return res.status(409).json({
+      error: 'condition_required',
+      missing,
+      message: 'Photograph all four sides of the car before checking it back in',
+    });
+  }
+
+  // Its old slot, if nobody has been put in it meanwhile. With the guest, the
+  // ticket held no slot, so another car may well be standing there now.
+  let slotId = ticket.slot_id ?? null;
+  if (slotId) {
+    const taken = await queryOne(
+      `SELECT id FROM valet_tickets WHERE slot_id = $1 AND id <> $2 AND status = ANY($3) LIMIT 1`,
+      [slotId, ticket.id, HOLDING_A_SLOT]
+    );
+    if (taken) slotId = null;
+  }
+
+  // The status and its audit event move together or not at all. Separately,
+  // a failed event insert left a car checked in with no record of how,
+  // behind a 500 the valet would then retry.
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE valet_tickets SET status = 'parked_again', slot_id = $2, current_guard_id = NULL WHERE id = $1`,
+      [ticket.id, slotId]
+    );
+    await logEvent(ticket.id, 'returned_by_guest', {
+      guardId: req.user.sub, metadata: { keptSlot: !!slotId }, client,
+    });
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  const updated = await findTicket(req.params.token, req.user.community_id);
+  emitTicketUpdate(updated);
+  res.json(ticketView(updated));
+});
+
 router.post('/tickets/:token/confirm-pickup', guard, async (req, res) => {
   const ticket = await findTicket(req.params.token, req.user.community_id);
   if (!ticket) return notFound(res);
@@ -1180,8 +1469,12 @@ router.post('/tickets/:token/confirm-pickup', guard, async (req, res) => {
     await schedulePhotoDeletion(ticket.id);
     await scheduleConditionMediaDeletion(ticket.id);
   } else {
+    // With the guest, not parked: the car has just been handed over. Calling
+    // it 'parked_again' here told the queue, the slot count and the guest's
+    // own page that it was on the lot while the guest was driving it. It is
+    // parked again only when a valet checks it back in (/returned below).
     await query(
-      `UPDATE valet_tickets SET status = 'parked_again', current_guard_id = NULL WHERE id = $1`,
+      `UPDATE valet_tickets SET status = 'with_guest', current_guard_id = NULL WHERE id = $1`,
       [ticket.id]
     );
     await logEvent(ticket.id, 'closed_pickup', { guardId: req.user.sub, metadata: { verification } });

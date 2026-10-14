@@ -120,6 +120,69 @@ export default function ValetFeedbackPage() {
               the {data?.notSatisfied ?? 0} unhappy responses.
             </p>
           </div>
+
+          {/* Review with staff.
+              A bar chart tells a manager something went wrong at this
+              property. It does not tell them who to talk to, and that is the
+              only thing they can actually act on this afternoon. */}
+          {(data?.byStaff.length ?? 0) > 0 && (
+            <div className="rounded-xl border border-gray-200 bg-white p-5 mt-6">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
+                Review with staff
+              </p>
+              <p className="text-xs text-gray-500 mb-4">
+                Grouped by whoever handed the car back — the one moment of the
+                trip the guest is rating.
+              </p>
+
+              <div className="space-y-3">
+                {data?.byStaff.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-start justify-between gap-4 border-t border-gray-100 pt-3 first:border-0 first:pt-0"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-gray-900">{p.name}</p>
+                      <p className="text-xs text-gray-500">
+                        {p.unhappy} unhappy of {p.rated} rated
+                        {/* Said instead of a percentage, deliberately. "100%
+                            unhappy" beside a name on two responses is the
+                            misreading this panel exists to prevent, not make
+                            easier. */}
+                        {!p.enoughToJudge && (
+                          <span className="text-gray-400">
+                            {' '}· too few to read as a pattern
+                          </span>
+                        )}
+                      </p>
+                      {p.reasons.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {p.reasons.map((r) => (
+                            <span
+                              key={r}
+                              className="rounded-full bg-amber-50 text-amber-800 ring-1 ring-amber-200 text-[11px] px-2 py-0.5"
+                            >
+                              {REASON_LABEL[r] ?? r}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {p.unhappy > 0 && p.enoughToJudge && (
+                      <span className="shrink-0 rounded-full bg-red-50 text-red-700 ring-1 ring-red-200 text-[11px] font-semibold px-2 py-0.5">
+                        Worth a conversation
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <p className="mt-4 text-xs text-gray-400">
+                A guest rates the whole trip, not one person. Read this as where
+                to start a conversation, not as a verdict.
+              </p>
+            </div>
+          )}
         </>
       )}
     </div>

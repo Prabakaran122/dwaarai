@@ -5,8 +5,15 @@ jest.mock('expo-camera', () => {
   return {
     useCameraPermissions: jest.fn(() => [{ granted: true }, jest.fn()]),
     // Exposes onBarcodeScanned as a prop the test can fire directly, since a
-    // real camera never runs under Jest.
-    CameraView: (props: Record<string, unknown>) => React.createElement(View, props),
+    // real camera never runs under Jest. The ref carries takePictureAsync for
+    // the same reason -- the plate scanner captures a frame rather than
+    // watching for barcodes.
+    CameraView: React.forwardRef((props: Record<string, unknown>, ref: unknown) => {
+      React.useImperativeHandle(ref, () => ({
+        takePictureAsync: async () => ({ base64: 'aGVsbG8=' }),
+      }));
+      return React.createElement(View, props);
+    }),
   };
 });
 jest.mock('expo-image-picker', () => ({
@@ -41,6 +48,9 @@ beforeEach(() => {
   (api.startIntake as jest.Mock).mockResolvedValue({ data: createdTicket });
   (api.completeIntake as jest.Mock).mockResolvedValue({ data: {} });
   (api.listSlots as jest.Mock).mockResolvedValue({ data: { enabled: false, floors: [] } });
+  // Off unless a test says otherwise, matching a venue with no reader.
+  (api.getCapabilities as jest.Mock).mockResolvedValue({ plateScan: false });
+  (api.scanPlate as jest.Mock).mockResolvedValue({ plate: null, confidence: null, suggestionOnly: true });
   (api.uploadGuestPhoto as jest.Mock).mockResolvedValue({});
   (api.uploadCondition as jest.Mock).mockResolvedValue({});
   (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockResolvedValue({ granted: true });
@@ -62,6 +72,33 @@ describe('ticket details', () => {
     fireEvent.press(screen.getByTestId('valet-create'));
 
     expect(api.createTicket).not.toHaveBeenCalled();
+  });
+
+  // Premium is a property of the car, not a fourth body style: a premium SUV
+  // is both. Drawn as a chip in the car-type row it read as one more choice
+  // in a pick-one list, so it is an on/off switch on its own row.
+  it('records premium as an on/off switch independent of car type', async () => {
+    const screen = render(<NewValetTicketScreen />);
+
+    const premium = screen.getByTestId('valet-premium');
+    expect(premium.props.accessibilityRole).toBe('switch');
+    expect(premium.props.value).toBe(false);
+
+    fireEvent.press(screen.getByTestId('valet-cartype-suv'));
+    fireEvent(premium, 'valueChange', true);
+    expect(screen.getByTestId('valet-premium').props.value).toBe(true);
+
+    // The label is the bigger target, and the one a valet reaches for.
+    fireEvent.press(screen.getByTestId('valet-premium-row'));
+    expect(screen.getByTestId('valet-premium').props.value).toBe(false);
+    fireEvent.press(screen.getByTestId('valet-premium-row'));
+
+    await fillDetails(screen);
+
+    expect(api.createTicket).toHaveBeenCalledWith(
+      'KA03NJ0435', 'Maruti Swift', expect.any(String),
+      expect.objectContaining({ carType: 'suv', isPremium: true })
+    );
   });
 
   it('creates a ticket with a future stay-end', async () => {
@@ -194,10 +231,11 @@ describe('intake condition capture', () => {
     expect(api.uploadCondition).toHaveBeenCalledWith('tok-9', 'file://shot.jpg', 'intake', 'photo', 'front');
   });
 
-  it('blocks finishing until at least one capture exists', async () => {
+  it('blocks finishing until the whole set exists, and says so', async () => {
     const screen = await reachCondition();
 
-    expect(screen.getByTestId('valet-condition-hint')).toBeTruthy();
+    // It said "at least one photo or video" while all four were required.
+    expect(screen.getByTestId('valet-condition-hint').props.children).toMatch(/all four/i);
     fireEvent.press(screen.getByTestId('valet-finish'));
 
     expect(screen.queryByTestId('valet-done-card')).toBeNull();
@@ -231,10 +269,12 @@ describe('binding a printed card at intake', () => {
   // Card QRs carry the venue: codes are unique per venue, not globally.
   const CARD_QR = 'https://dwaarai.com/valet/c/978aa095-6aa9-45b6-b6d5-d3a915dfca38/A047';
 
-  it('does not force a card: a venue with no stock takes cars in as before', async () => {
+  // The card is mandatory, and the server is what enforces it (an older APK
+  // must not be able to skip it). The app sends what it has and maps the
+  // refusal -- see 'when the server refuses a ticket with no card'.
+  it('sends no card code when none was scanned, leaving the rule to the server', async () => {
     const screen = render(<NewValetTicketScreen />);
 
-    // The create button must be reachable without ever touching the scanner.
     await fillDetails(screen);
 
     expect(api.createTicket).toHaveBeenCalledWith(
@@ -242,10 +282,14 @@ describe('binding a printed card at intake', () => {
     );
   });
 
-  it('says so rather than leaving the card row blank', () => {
+  // It used to read "No card — show the QR on screen", offering a path the
+  // server refuses: the valet found out only when Create failed.
+  it('says a card is required, not that the screen QR will do', () => {
     const screen = render(<NewValetTicketScreen />);
 
-    expect(screen.getByTestId('valet-no-card-hint')).toBeTruthy();
+    const hint = screen.getByTestId('valet-no-card-hint').props.children;
+    expect(hint).toMatch(/needs a card/i);
+    expect(hint).not.toMatch(/QR on screen/i);
   });
 
   it('reads a card code out of its scanned QR', async () => {
@@ -385,8 +429,13 @@ describe('what the guest is handed', () => {
     expect(screen.queryByTestId('valet-qr-card')).toBeNull();
   });
 
-  it('still offers the screen QR alongside the card', async () => {
-    // A guest who would rather use their own phone can.
+  it('draws no QR at all once a card is bound', async () => {
+    // This replaces "still offers the screen QR alongside the card". That was
+    // a real decision -- a guest who preferred their own phone could use the
+    // screen -- but it does not survive contact with the actual flow: ONE
+    // printed QR is scanned twice, by the guard to start intake and then by
+    // the guest off the same card. A second, different QR on the screen is
+    // not the one they are meant to scan.
     (api.createTicket as jest.Mock).mockResolvedValue({
       data: { ...createdTicket, cardCode: 'A047' },
     });
@@ -394,7 +443,7 @@ describe('what the guest is handed', () => {
 
     await fillDetails(screen);
 
-    expect(screen.UNSAFE_getAllByType(require('react-native').Image).length).toBeGreaterThan(0);
+    expect(screen.UNSAFE_queryAllByType(require('react-native').Image)).toHaveLength(0);
   });
 
   it('falls back to the screen QR when there is no card', async () => {
@@ -782,5 +831,196 @@ describe('a job that begins when the card is scanned', () => {
     // close and no reason to make two round trips at a busy porch.
     expect(api.createTicket).toHaveBeenCalled();
     expect(api.completeIntake).not.toHaveBeenCalled();
+  });
+});
+
+describe('reading the plate off the car', () => {
+  const withReader = () =>
+    (api.getCapabilities as jest.Mock).mockResolvedValue({ plateScan: true });
+
+  it('offers nothing at a venue with no reader', async () => {
+    const screen = render(<NewValetTicketScreen />);
+    await waitFor(() => expect(api.getCapabilities).toHaveBeenCalled());
+    expect(screen.queryByTestId('valet-scan-plate')).toBeNull();
+  });
+
+  it('offers the camera where a reader exists', async () => {
+    withReader();
+    const screen = render(<NewValetTicketScreen />);
+    await waitFor(() => expect(screen.getByTestId('valet-scan-plate')).toBeTruthy());
+  });
+
+  it('stays out of the way when the capability call fails', async () => {
+    // A capabilities endpoint that 500s must not take intake down with it.
+    // The attendant types the plate, which is what they did before any of
+    // this existed.
+    (api.getCapabilities as jest.Mock).mockRejectedValue(new Error('down'));
+    const screen = render(<NewValetTicketScreen />);
+    await waitFor(() => expect(api.getCapabilities).toHaveBeenCalled());
+    expect(screen.queryByTestId('valet-scan-plate')).toBeNull();
+    expect(screen.getByTestId('valet-plate-input')).toBeTruthy();
+  });
+
+  it('fills the field with what it read, and leaves it editable', async () => {
+    withReader();
+    (api.scanPlate as jest.Mock).mockResolvedValue({
+      plate: 'KA03NJ0435', confidence: 0.91, suggestionOnly: true,
+    });
+
+    const screen = render(<NewValetTicketScreen />);
+    await waitFor(() => expect(screen.getByTestId('valet-scan-plate')).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-scan-plate')); });
+    await act(async () => { fireEvent.press(screen.getByTestId('plate-capture')); });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('valet-plate-input').props.value).toBe('KA03NJ0435'));
+
+    // The mark is the point: an attendant must be able to see that this was
+    // read rather than typed, or they stop checking it.
+    expect(screen.getByTestId('valet-plate-suggested')).toBeTruthy();
+  });
+
+  it('drops the suggested mark the moment a human touches the field', async () => {
+    withReader();
+    (api.scanPlate as jest.Mock).mockResolvedValue({
+      plate: 'KA03NJ0435', confidence: 0.91, suggestionOnly: true,
+    });
+
+    const screen = render(<NewValetTicketScreen />);
+    await waitFor(() => expect(screen.getByTestId('valet-scan-plate')).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-scan-plate')); });
+    await act(async () => { fireEvent.press(screen.getByTestId('plate-capture')); });
+    await waitFor(() => expect(screen.getByTestId('valet-plate-suggested')).toBeTruthy());
+
+    fireEvent.changeText(screen.getByTestId('valet-plate-input'), 'KA03NJ0436');
+    expect(screen.queryByTestId('valet-plate-suggested')).toBeNull();
+  });
+
+  it('returns the attendant to the form when it cannot read the plate', async () => {
+    withReader();
+    (api.scanPlate as jest.Mock).mockResolvedValue({
+      plate: null, confidence: null, suggestionOnly: true,
+    });
+
+    const screen = render(<NewValetTicketScreen />);
+    await waitFor(() => expect(screen.getByTestId('valet-scan-plate')).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-scan-plate')); });
+    await act(async () => { fireEvent.press(screen.getByTestId('plate-capture')); });
+
+    // Back to the field with the cursor's job obvious, not left staring at a
+    // viewfinder wondering whether it is still working.
+    await waitFor(() => expect(screen.getByTestId('valet-plate-input')).toBeTruthy());
+    expect(screen.getByTestId('plate-unreadable')).toBeTruthy();
+  });
+
+  it('never overwrites a plate the attendant already typed', async () => {
+    withReader();
+    (api.scanPlate as jest.Mock).mockResolvedValue({
+      plate: null, confidence: null, suggestionOnly: true,
+    });
+
+    const screen = render(<NewValetTicketScreen />);
+    await waitFor(() => expect(screen.getByTestId('valet-scan-plate')).toBeTruthy());
+    fireEvent.changeText(screen.getByTestId('valet-plate-input'), 'KA03NJ0435');
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-scan-plate')); });
+    await act(async () => { fireEvent.press(screen.getByTestId('plate-capture')); });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('valet-plate-input').props.value).toBe('KA03NJ0435'));
+  });
+
+  it('survives the scan throwing', async () => {
+    withReader();
+    (api.scanPlate as jest.Mock).mockRejectedValue(new Error('offline'));
+
+    const screen = render(<NewValetTicketScreen />);
+    await waitFor(() => expect(screen.getByTestId('valet-scan-plate')).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-scan-plate')); });
+    await act(async () => { fireEvent.press(screen.getByTestId('plate-capture')); });
+
+    // A reader being down must never be why a car cannot be taken in.
+    await waitFor(() => expect(screen.getByTestId('valet-plate-input')).toBeTruthy());
+  });
+
+  it('submits the typed value, never a confidence or a flag', async () => {
+    withReader();
+    (api.scanPlate as jest.Mock).mockResolvedValue({
+      plate: 'KA03NJ0435', confidence: 0.91, suggestionOnly: true,
+    });
+
+    const screen = render(<NewValetTicketScreen />);
+    await waitFor(() => expect(screen.getByTestId('valet-scan-plate')).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-scan-plate')); });
+    await act(async () => { fireEvent.press(screen.getByTestId('plate-capture')); });
+    await waitFor(() => expect(screen.getByTestId('valet-plate-suggested')).toBeTruthy());
+
+    fireEvent.changeText(screen.getByTestId('valet-make-input'), 'Maruti Swift');
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-create')); });
+
+    // The ticket carries a plate, full stop. Whether a machine proposed it is
+    // not a fact the ticket records, and must not become one an audit reads.
+    const args = (api.createTicket as jest.Mock).mock.calls[0];
+    expect(args[0]).toBe('KA03NJ0435');
+    expect(JSON.stringify(args)).not.toContain('0.91');
+  });
+});
+
+describe('what the guest is handed when a card is bound', () => {
+  beforeEach(() => {
+    (api.createTicket as jest.Mock).mockResolvedValue({
+      data: { ...createdTicket, cardCode: 'A017', claimCode: 'KGMYFT' },
+    });
+  });
+
+  it('draws no QR of its own — the card already carries one', async () => {
+    // The same printed QR is scanned twice: the guard scans it to start
+    // intake, then hands the card over and the guest scans that same card.
+    // A second, different QR on the guard's screen is not the one the guest
+    // is meant to use, and showing it invites them to scan the wrong thing.
+    const screen = render(<NewValetTicketScreen />);
+    await fillDetails(screen);
+
+    await waitFor(() => expect(screen.getByTestId('valet-card-handout')).toBeTruthy());
+    expect(screen.queryByTestId('valet-handout-qr')).toBeNull();
+  });
+
+  it('leads with the card and its code, which is what they walk away with', async () => {
+    const screen = render(<NewValetTicketScreen />);
+    await fillDetails(screen);
+
+    expect(await screen.findByTestId('valet-handout-code')).toBeTruthy();
+    expect(screen.getByTestId('valet-handout-code').props.children).toBe('A017');
+  });
+
+  it('still shows a QR at a venue with no card stock', async () => {
+    // The cardless venue has nothing to hand over, so the screen QR is the
+    // only way into WhatsApp there. Removing it everywhere would strand them.
+    (api.createTicket as jest.Mock).mockResolvedValue({
+      data: { ...createdTicket, cardCode: null, claimCode: 'KGMYFT' },
+    });
+    const screen = render(<NewValetTicketScreen />);
+    await fillDetails(screen);
+
+    await waitFor(() => expect(screen.getByTestId('valet-qr-card')).toBeTruthy());
+  });
+});
+
+
+describe('when the server refuses a ticket with no card', () => {
+  it('says to scan the card, not "that failed"', async () => {
+    // The card is mandatory server-side now. Without this mapping the
+    // attendant gets a generic failure and no idea that the fix is in their
+    // other hand.
+    (api.createTicket as jest.Mock).mockRejectedValue({
+      response: { data: { error: 'card_required' } },
+    });
+
+    const screen = render(<NewValetTicketScreen />);
+    await fillDetails(screen);
+
+    await waitFor(() => {
+      expect(screen.getByText(/scan the valet card/i)).toBeTruthy();
+    });
   });
 });

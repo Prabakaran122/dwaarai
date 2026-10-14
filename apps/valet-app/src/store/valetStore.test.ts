@@ -1,8 +1,22 @@
 jest.mock('../api/valet');
+jest.mock('@react-native-async-storage/async-storage', () => {
+  let store: Record<string, string> = {};
+  return {
+    __esModule: true,
+    default: {
+      getItem: jest.fn(async (k: string) => (k in store ? store[k] : null)),
+      setItem: jest.fn(async (k: string, v: string) => { store[k] = v; }),
+      removeItem: jest.fn(async (k: string) => { delete store[k]; }),
+      clear: jest.fn(async () => { store = {}; }),
+    },
+  };
+});
 
 import * as api from '../api/valet';
-import { useValetStore, sortQueue, NEEDS_ACTION, forParking, forDelivery } from './valetStore';
+import { useValetStore, sortQueue, NEEDS_ACTION, forParking, forDelivery, forWithGuest } from './valetStore';
 import type { ValetTicket, ValetStatus } from '../api/valet';
+import { reachability } from '../lib/connectivity';
+import { loadQueue, clearQueue } from '../lib/queueCache';
 
 function ticket(overrides: Partial<ValetTicket> = {}): ValetTicket {
   return {
@@ -287,6 +301,17 @@ describe('the two sides of a valet shift', () => {
     expect(forParking(all)).toHaveLength(0);
     expect(forDelivery(all)).toHaveLength(2);
   });
+
+  // Handed to a multi-day guest: not on the lot, not a job to park until the
+  // guest brings it back. Listing it under "On the lot" said it was parked
+  // while the guest was driving it.
+  it('keeps a car that is out with its guest off the lot, in its own list', () => {
+    const all = [t('b', 'parked'), t('w', 'with_guest')];
+
+    expect(forDelivery(all).map((x) => x.id)).toEqual(['b']);
+    expect(forParking(all)).toHaveLength(0);
+    expect(forWithGuest(all).map((x) => x.id)).toEqual(['w']);
+  });
 });
 
 describe('taking a job the desk logged', () => {
@@ -300,5 +325,78 @@ describe('taking a job the desk logged', () => {
     // Refreshed straight after: two attendants looking at a stale queue is
     // how they both walk to the same car.
     expect(api.listTickets).toHaveBeenCalled();
+  });
+});
+
+describe('a stand with no signal', () => {
+  const netFail = Object.assign(new Error('Network Error'), { response: undefined });
+
+  beforeEach(async () => {
+    reachability.getState().reset();
+    await clearQueue();
+    useValetStore.setState({ tickets: [], error: null });
+  });
+
+  it('caches every good poll so the queue survives the app being killed', async () => {
+    (api.listTickets as jest.Mock).mockResolvedValue({ data: { tickets: [ticket()] } });
+
+    await useValetStore.getState().fetch();
+
+    // In-memory state already survived a failed poll. It does not survive an
+    // attendant force-quitting the app in a basement and reopening it, which
+    // is exactly when they need the list most.
+    const cached = await loadQueue();
+    expect(cached?.tickets).toHaveLength(1);
+  });
+
+  it('marks itself offline when the server never answered', async () => {
+    (api.listTickets as jest.Mock).mockRejectedValue(netFail);
+
+    await useValetStore.getState().fetch();
+
+    expect(reachability.getState().online).toBe(false);
+  });
+
+  it('stays online when the server answered with an error', async () => {
+    (api.listTickets as jest.Mock).mockRejectedValue({ response: { status: 500 } });
+
+    await useValetStore.getState().fetch();
+
+    expect(reachability.getState().online).toBe(true);
+  });
+
+  it('keeps showing the last known cars rather than blanking', async () => {
+    (api.listTickets as jest.Mock).mockResolvedValueOnce({ data: { tickets: [ticket()] } });
+    await useValetStore.getState().fetch();
+
+    (api.listTickets as jest.Mock).mockRejectedValueOnce(netFail);
+    await useValetStore.getState().fetch();
+
+    expect(useValetStore.getState().tickets).toHaveLength(1);
+  });
+
+  it('restores the cache on a cold start, before any poll succeeds', async () => {
+    (api.listTickets as jest.Mock).mockResolvedValueOnce({ data: { tickets: [ticket()] } });
+    await useValetStore.getState().fetch();
+
+    // Simulate the app being killed and reopened: memory gone, disk intact.
+    useValetStore.setState({ tickets: [] });
+    await useValetStore.getState().hydrate();
+
+    expect(useValetStore.getState().tickets).toHaveLength(1);
+  });
+
+  it('does not let a stale cache overwrite fresher live data', async () => {
+    (api.listTickets as jest.Mock).mockResolvedValueOnce({ data: { tickets: [ticket()] } });
+    await useValetStore.getState().fetch();
+
+    (api.listTickets as jest.Mock).mockResolvedValueOnce({
+      data: { tickets: [ticket({ id: 'newer' }), ticket({ id: 'also-newer' })] },
+    });
+    await useValetStore.getState().fetch();
+
+    // A late-arriving hydrate must not undo a poll that already landed.
+    await useValetStore.getState().hydrate();
+    expect(useValetStore.getState().tickets).toHaveLength(2);
   });
 });

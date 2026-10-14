@@ -128,8 +128,11 @@ protects the media.
 
 **Physical cards (044, 045).** A venue prints a box of cards once; each QR
 encodes `/valet/c/<code>`. A guard scans one at intake to bind it to a ticket,
-and it frees itself when the ticket closes — reusable per venue. The screen QR
-is not replaced: a venue with no card stock behaves exactly as before.
+and it frees itself when the ticket closes — reusable per venue. **The card is
+mandatory**: `POST /guard/tickets` and `/tickets/start` refuse a ticket with no
+`cardCode` (400 `card_required`), so a venue must register stock before its
+first car. The app's card hint says so; it used to offer "No card — show the QR
+on screen", a path the server refuses.
 
 - Stock is registered by an **operator** (`POST /admin/cards`, admin portal at
   `/admin/valet/cards`), never invented by the intake path — otherwise a
@@ -142,9 +145,13 @@ is not replaced: a venue with no card stock behaves exactly as before.
   on the **constraint name**, because the same INSERT can violate
   `UNIQUE (community_id, display_id)` — a genuine fault that must not be
   reported as "card is taken".
-- The card carries only the short code. `GET /guest/cards/:code` exchanges it
-  for a session token and returns nothing else, and a free card returns a
-  byte-identical 404 to an unknown one, so probing cannot enumerate stock.
+- The card carries only the short code. `GET /guest/cards/:community/:code`
+  exchanges it for a session token and returns nothing else about the car. An
+  unknown code 404s; a registered card answers 200 even with no ticket on it
+  (`sessionToken: null`) -- a deliberate trade, documented in `guest.js`, since a
+  guest who scans promptly arrives before intake finishes. The card page says
+  "Your car is with us" only when a ticket is on the card, and otherwise polls
+  until one is.
 - Retiring a card deactivates rather than deletes: every ticket it has been on
   references it, and that history is the audit trail.
 
@@ -195,11 +202,35 @@ Two rules hold it together:
   matches.
 
 The handover screen reads `hasPhoto` from the ticket to decide which UI to
-show. It must never decide by waiting for the image to fail: the photo endpoint
-needs a guard token, `<Image source={{uri}}>` sends no Authorization header, and
-that combination rendered an empty frame above a "Matches" button for *every*
-ticket — training guards to tap through a check that never ran. The image
-source now carries the header explicitly.
+show, and never offers "Person matches" until the `<Image>` has reported
+`onLoad`. **The image carries no credential.** The photo endpoint needs a guard
+token and `<Image source={{uri}}>` sends none; putting `headers` on the source
+did not fix it on a device -- the native loader dropped the header (seen in
+Expo Go / New Architecture), the request 401'd, and the guard was asked to
+match a face against an empty frame while a Jest test asserting the header
+passed. The app now asks `POST /guard/tickets/:token/photo-link` for a link
+signed for that one photo (`lib/photo-link.js`, two minutes, its own purpose
+claim) and loads `GET /guard/photo-links/:sig` with no header. A load failure
+shows "the photo did not load", a retry, and the vehicle check -- recorded as
+`vehicle_confirmed`, never `photo`.
+
+**Condition photos are the same four views everywhere** -- front, right, back,
+left, in that order (`valet-app/src/lib/conditionAngles.ts`, mirrored in
+`guard.js`). Return used to accept one photo in a different order, so a dispute
+compared four "before" views with as few as one "after". The server still
+accepts one return capture (an older APK must not strand a car at handover);
+the app requires all four.
+
+**A non-final handover sets `with_guest` (070), not `parked_again`.** The car is
+out with a multi-day guest: open (URL, card and claim code keep working),
+holding no slot, not requestable, listed under the valet app's "With guests"
+tab. It used to go straight to `parked_again`, so the lot, the slot count,
+"parked right now" and the guest's own page ("Parked for 29 min") all said it
+was parked while the guest drove it. A valet ends it with **Car is back**:
+four fresh intake-stage photos, then `POST /guard/tickets/:token/returned`,
+which refuses without them (409 `condition_required`) and moves the status and
+writes `returned_by_guest` (071) in one transaction. `with_guest` expires with
+the stay like any other open ticket.
 
 `services/valet-service/scripts/e2e-cards.mjs` and `e2e-verification.mjs` cover
 all of this against a real service and database.
@@ -219,6 +250,63 @@ VALET_BASE_URL=https://dwaarai.com/valet-api \
 VALET_E2E_DATABASE_URL=$DATABASE_URL JWT_SECRET=$JWT_SECRET \
   pnpm --filter valet-service e2e
 ```
+
+**The CORS preflight must list every verb the routes answer.** It said
+`GET, POST, DELETE, OPTIONS` while six routes answered PATCH, so a browser
+refused the preflight and every PATCH in the admin portal failed before a
+request was sent -- pausing a valet point, saving property details, running a
+promotion, editing a staff member. No 500, no access-log line, no server-side
+trace: the whole failure lives in the browser, which is why curl and 530
+service tests all said those endpoints were fine. Only clicking Save in a real
+browser found it. `src/__tests__/cors.test.js` now checks the header against
+the route table.
+
+**Renaming a valet point moves its shifts with it.** `valet_shifts` records the
+point by NAME, so a rename that stopped at `valet_points` split one door's
+history in two -- last month's log said "Main porch", the screen said "Porte
+cochere", and the live "on shift now" count against the point dropped to zero
+the moment it was renamed. The name is a label on a door that did not change,
+so the UPDATE carries the label over, scoped to the community because two
+properties each have a "Main porch".
+
+**Plate history was folded into Find a vehicle.** They were one question asked
+twice: `/valet/plate-history` needed a whole plate typed from memory and
+reported on one car, while `/valet/search` already finds the car from four
+digits. A manager had to pick between two lookups before knowing what they
+were looking for. The history now expands under a search result, where the
+plate is already correct and already spelled the way the ticket spells it. The
+old route stays as a redirect -- it is in bookmarks, and a 404 on a page that
+worked yesterday reads as the portal being broken.
+
+Not merged, and deliberately: **Inventory** (`valet_slots`, where a car is
+parked) and **Properties** (`valet_points`, where a guest stands). They sound
+alike and are not the same object; see the 063-066 section above.
+
+**Qualify every column in a correlated subquery.** The vehicle log's status
+filter is one predicate shared by the rows query (aliased `t.`) and the totals
+query. Built with an empty qualifier for the totals, `NOT EXISTS (... WHERE
+e.ticket_id = id)` bound `id` to **valet_ticket_events' own** `id` column, so
+it compared an event to itself, matched nothing, and the filter silently did
+not apply -- to the totals only. The rows were right, so the page read
+"showing 14 of 16" and the 16 looked like a total rather than a bug. The unit
+test could not see it either: it stripped the alias from both queries before
+comparing them, which made the broken form byte-identical to the correct one.
+`visitStatusSql` now throws on an empty qualifier.
+
+**`deploy-valet.sh` REWRITES the systemd unit on every deploy**, so any value
+not supplied on the command line is replaced with nothing. This has now broken
+production three separate ways -- the CORS origin added for a laptop, the
+webhook secret (every inbound message 401ing behind six green health checks),
+and `WHATSAPP_PROVIDER`, which is the worst of them: `isConfigured()` returns
+false without it, so every guest message is reported `skipped`, which a ticket
+treats as a success. Nothing logs and nothing 500s.
+
+Every one of those values is therefore **inherited from the live unit** before
+the file is rewritten, and a deploy refuses to proceed if a provider key is set
+with no provider. The live unit is the record of what the box is configured
+with; a laptop that has forgotten a value must not be able to overwrite it with
+an empty one. `sync-and-deploy.sh` still forwards anything set in the calling
+shell, which wins -- that is how a value is changed, once.
 
 `deploy/deploy-valet.sh` is the deployment: idempotent, additive, and it health-checks
 the existing api-gateway and landing site afterwards so a valet deploy that broke
@@ -244,6 +332,82 @@ refusal (`canAskAgain === false`, Android stops prompting after two denials)
 from a one-off one, since only the first needs the OS settings screen, and
 carries the underlying reason into the on-screen message.
 
+### Shifts, valet points, ideas and promotions (063-066)
+
+Four concepts the admin portal gained from the staff-screen redesign. Each
+replaced something that was being written and never read, which is the pattern
+worth remembering here.
+
+**A shift is a row, not a column.** `residents.shift_started_at` was overwritten
+on every sign-in and read by nothing, so "who is on duty" and "who was on duty
+at 7pm yesterday" were both unanswerable — and the verified/confidence/reason
+`/shift/start` computes so carefully was returned to the app and dropped.
+`valet_shifts` holds one row per shift, opened at start and closed at
+`/shift/end`. A unique partial index allows one open shift per person, so a
+double tap cannot put somebody on duty twice.
+
+The redesign assumes Face ID gates sign-in ("they need it to sign in to the
+valet app"). **It does not** — `/shift/start` never blocks, because stranding a
+real attendant in bad light is the worse failure. Building the spec's version
+literally put "Can't start shift" against somebody who was on shift at that
+moment. The screen says "No Face ID / shifts start unverified" instead, and
+on-duty always wins the precedence.
+
+**Valet points are doors, not bays.** A hotel has a main porch and a banquet
+entrance; `valet_slots` is where a car is parked, `valet_points` is where a
+guest stands. Paused rather than deleted, because shifts reference the name and
+last month's log has to keep making sense.
+
+**Ideas are prose, guest feedback is a tally.** Deliberately separate tables:
+one is counted chips designed for a rollup, the other is a named person's
+sentence designed to be read once and answered. Status defaults to `received`,
+which means somebody has it, not that anybody has read it — claiming otherwise
+is the fastest way to stop a venue writing again.
+
+**Promotions count one view per valet ticket.** The guest page polls and
+reopens from WhatsApp, so raw impressions would turn one guest on a slow
+connection into forty. A unique index on (promotion, ticket, kind) enforces it,
+and the guest's offer code is the promotion's stem plus their claim code — which
+is what makes a redemption traceable to one car on one night.
+
+### The commercial layer (069)
+
+Ad pricing, the ad balance, top-ups, GST, the review queue and the shared car
+quota were held back for several rounds on the grounds that a rate card does
+not belong in a migration. Built on an explicit instruction to complete the
+design, and the way round that objection is the part worth keeping: **no rate
+is hardcoded anywhere.** Every figure -- cars per property, overage, price per
+view, monthly minimum, GST percent, prepaid vs invoiced -- is a column on
+`accounts` with a default, so a group on negotiated terms is representable and
+a price change is a settings edit rather than a release.
+
+- **`valet_ad_ledger` is append-only, and the balance is its sum.** A running
+  balance column is a number somebody has to keep correct under concurrency,
+  and the first time it drifts nobody can say when or why. It is also the only
+  shape that answers "why am I being charged this".
+- **Free credit and paid balance stay distinguishable for the life of the
+  ledger.** Credit is spent first and cannot be refunded; merging them makes
+  "how much free credit is left" unanswerable the moment a top-up lands.
+- **A top-up credits the NET, never the gross.** GST is tax collected, not ad
+  credit — crediting the gross hands every venue 18% of free spend. There is a
+  test, and it was mutation-checked.
+- **Crediting happens inside the request only because placeholder orders
+  cannot fail.** In live mode the route returns the order and credits nothing:
+  crediting on intent rather than on settlement would hand a venue a balance
+  for a payment they abandoned. Moving the credit to the payment webhook is
+  the first thing to do when OQ-01 is decided.
+- **There is no "stop the valet desk" over-quota option**, in the schema or the
+  dropdown. A billing arrangement must never be able to refuse a guest standing
+  at a porch with their keys out. The choices are bill or notify.
+- **Cars per property and the overage rate are not editable by a customer.**
+  They are contract terms, shown and not offered; a screen that let somebody
+  set their own allowance would be a billing hole.
+- **Only live properties contribute to the pool.** A group that signs four
+  hotels and opens one is not paying for three empty porches.
+- A promotion's **"show during"** window may cross midnight, because a late bar
+  wants 22:00–02:00. The guest-side predicate is an OR rather than a BETWEEN
+  for exactly that case, checked against real Postgres time arithmetic.
+
 ### WhatsApp (the default way into a ticket)
 
 The intake QR opens `/valet/w/<claimCode>`, a page offering WhatsApp first and
@@ -266,6 +430,23 @@ approved template is delivered — and a free-form send outside the window is
 *accepted by the API and silently dropped*, which would mean a multi-day guest
 never hearing their car was ready. Hence one template, and hence
 `notifyGuest()` being the only way out.
+
+**Not every stage sends.** Five points in a ticket's life can notify a guest;
+by default only two do. `WHATSAPP_NOTIFY_STAGES` names exactly the ones that
+send, defaulting to `bound,accepted` -- the welcome, and the acknowledgement
+that a typed CAR landed. `en_route`, `arrived` and `closed` are muted, because
+every send is billed and those three restate what the tracking link shows live.
+
+The gate lives in `notifyGuest()` and nowhere else, so a new call site is muted
+by the same rule without knowing the rule exists. A blank value reads as unset,
+not as silence: an empty env var is a deploy accident far more often than a
+decision, and reading it literally would take every guest notification down
+with nothing logged.
+
+`arrived` is the one to reconsider first. A guest waiting in a lobby is not
+watching the page, and that message is what sends them outside; muting it trades
+a billed message for a car blocking the porch. `WHATSAPP_NOTIFY_STAGES=bound,accepted,arrived`
+restores it without a release.
 
 **The rotating pickup QR cannot be sent over WhatsApp.** It rotates every 18
 seconds and only the newest validates, so any image is stale before it is read.

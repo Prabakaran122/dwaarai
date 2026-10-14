@@ -75,6 +75,18 @@ describe('ValetFlow', () => {
     await waitFor(() => expect(getByTestId('new-valet-ticket')).toBeTruthy());
   });
 
+  it('opens the check-in for a car a guest has brought back, and returns', async () => {
+    useValetStore.setState({ tickets: [ticket({ status: 'with_guest' })] });
+    const { getByTestId } = render(<ValetFlow />);
+
+    fireEvent.press(getByTestId('valet-tab-withGuest'));
+    fireEvent.press(getByTestId('checkin-a'));
+    await waitFor(() => expect(getByTestId('checkin-angle-front')).toBeTruthy());
+
+    fireEvent.press(getByTestId('checkin-close'));
+    await waitFor(() => expect(getByTestId('new-valet-ticket')).toBeTruthy());
+  });
+
   it('has no tab bar: the whole app is the valet flow', async () => {
     const { queryByTestId } = render(<ValetFlow />);
 

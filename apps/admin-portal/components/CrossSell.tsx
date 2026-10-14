@@ -12,10 +12,18 @@ import { ValetError, submitLead } from '@/lib/valet';
  * software, and pretending otherwise would promise a door that opens onto
  * nothing.
  */
+/**
+ * Short labels, as the design has them.
+ *
+ * `label` is what sits in a 64px-wide sidebar column; `product` is what the
+ * lead is logged against, where somebody in sales needs the full name. The
+ * long form wrapped to three lines and turned a quiet footer into the
+ * loudest thing on the page.
+ */
 const PRODUCTS = [
-  'Parking Management Solution',
-  'AI-Powered Gate Management Solution',
-  'Dwaar AI Attendance Management',
+  { label: 'Parking management',    product: 'Parking Management Solution' },
+  { label: 'Gate management',       product: 'AI-Powered Gate Management Solution' },
+  { label: 'Attendance management', product: 'Dwaar AI Attendance Management' },
 ];
 
 export default function CrossSell() {
@@ -61,11 +69,11 @@ export default function CrossSell() {
         <div className="space-y-1">
           {PRODUCTS.map((p) => (
             <button
-              key={p}
-              onClick={() => setOpen(p)}
+              key={p.product}
+              onClick={() => setOpen(p.product)}
               className="block w-full text-left text-xs text-gray-600 hover:text-gray-900 py-1.5 leading-snug"
             >
-              {p}
+              {p.label}
             </button>
           ))}
         </div>

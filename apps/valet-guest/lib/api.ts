@@ -14,7 +14,7 @@ export const VALET_BASE =
 export type ValetStatus =
   | 'requested' | 'accepted' | 'parking_in_progress'
   | 'parked' | 'retrieval_requested' | 'en_route' | 'arrived'
-  | 'parked_again' | 'final_closed' | 'expired';
+  | 'parked_again' | 'with_guest' | 'final_closed' | 'expired';
 
 export interface GuestTicket {
   displayId: string;
@@ -36,8 +36,26 @@ export interface GuestTicket {
   hasVenueLogo: boolean;
   /** A printed card is in the guest's hand and should be handed back. */
   hasCard: boolean;
-  /** The venue's own promo, when it has advertising. Null decides the slot. */
-  promo: { label: string; link: string | null } | null;
+  /**
+   * The venue's own promo, when it has advertising. Null decides the slot.
+   *
+   * Two shapes, both supported: the original single line of config text, and
+   * the richer banner a venue builds on the Promotions screen. Plenty of
+   * venues still use the first and it costs nothing to keep working.
+   */
+  promo:
+    | { label: string; link: string | null }
+    | {
+        id: string;
+        headline: string;
+        body: string | null;
+        hasImage: boolean;
+        buttonLabel: string | null;
+        buttonUrl: string | null;
+        /** This guest's own copy of the code, traceable to their ticket. */
+        guestCode: string | null;
+      }
+    | null;
   /** Seconds left to collect before the car is flagged. Null unless arrived. */
   collectBySeconds: number | null;
 }
@@ -139,3 +157,22 @@ export const submitFeedback = (
     method: 'POST',
     body: JSON.stringify({ satisfied, reasons }),
   });
+
+
+/** The banner image a venue uploaded, served by the valet service. */
+export const promoImageUrl = (promoId: string) =>
+  `${VALET_BASE}/guest/promotions/${promoId}/image`;
+
+/**
+ * Records that this guest saw or tapped the banner.
+ *
+ * Fire and forget, and deliberately unawaited by the page: a guest's screen
+ * must never stall or show an error because an analytics row could not be
+ * written.
+ */
+export function recordPromo(token: string, promoId: string, kind: 'view' | 'tap') {
+  fetch(`${VALET_BASE}/guest/tickets/${token}/promo/${promoId}/${kind}`, {
+    method: 'POST',
+    cache: 'no-store',
+  }).catch(() => {});
+}

@@ -52,18 +52,27 @@ const B = await venue('Claim Venue B', '9000000702');
 // database, which is exactly what seeding-and-deleting is meant to avoid.
 try {
   console.log('\n--- every ticket gets a code the guest can carry ---');
+  // The card IS the ticket now -- intake refuses without one -- so register a
+  // card for this first vehicle. The claim code still matters: it is what the
+  // guest types when the card is in a coat pocket or lost.
+  await api('/admin/cards', { method: 'POST', token: A.admin, body: { codes: ['C001'] } });
   const t1 = await api('/guard/tickets', {
     method: 'POST', token: A.guard,
-    body: { plate: 'KA 01 CC 1111', vehicleMake: 'Swift', stayEndAt: stay() },
+    body: { plate: 'KA 01 CC 1111', vehicleMake: 'Swift', stayEndAt: stay(), cardCode: 'C001' },
   });
   const claim = t1.body?.claimCode;
-  check('a card-less ticket still issues a claim code', typeof claim === 'string' && claim.length === 6, JSON.stringify(t1.body?.claimCode));
+  check('every ticket issues a claim code', typeof claim === 'string' && claim.length === 6, JSON.stringify(t1.body?.claimCode));
   check('and it avoids the characters that get misheard',
     /^[ABCDEFGHJKLMNPQRTUVWXYZ23456789]{6}$/.test(claim || ''), claim);
 
   const resolved = await api(`/guest/claim/${claim}`);
   check('the guest can type it and reach their vehicle', resolved.body?.sessionToken === t1.body.sessionToken);
-  check('and it returns nothing else', Object.keys(resolved.body || {}).join() === 'sessionToken');
+  // The venue's name rides along so the first screen can say where the car
+  // is; the guest is standing there, so it discloses nothing. Nothing about
+  // the vehicle itself comes back before the guest opens the ticket.
+  check('and it returns nothing else',
+    Object.keys(resolved.body || {}).sort().join() === 'sessionToken,venueName' && resolved.body.venueName === 'Claim Venue A',
+    JSON.stringify(resolved.body));
 
   const lower = await api(`/guest/claim/${claim.toLowerCase()}`);
   check('case does not matter', lower.body?.sessionToken === t1.body.sessionToken);

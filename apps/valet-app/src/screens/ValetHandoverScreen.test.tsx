@@ -35,13 +35,27 @@ beforeEach(() => {
   (api.scanPickup as jest.Mock).mockResolvedValue({});
   (api.uploadCondition as jest.Mock).mockResolvedValue({});
   (api.confirmPickup as jest.Mock).mockResolvedValue({});
-  (api.guestPhotoSource as jest.Mock).mockReturnValue({
-    uri: 'https://valet/photo.jpg', headers: { Authorization: 'Bearer t' },
-  });
+  (api.guestPhotoUrl as jest.Mock).mockResolvedValue(PHOTO_URL);
   (api.getTicket as jest.Mock).mockResolvedValue({
     data: { hasPhoto: true, plate: 'KA03NJ0435', vehicleMake: 'Swift', events: [] },
   });
 });
+
+const PHOTO_URL = 'https://valet/guard/photo-links/signed';
+
+// The match button only exists once the photo has actually rendered, so a
+// test standing in for the guard has to let the image load first.
+async function matchPhoto(screen: ReturnType<typeof render>) {
+  await waitFor(() => expect(screen.getByTestId('handover-guest-photo')).toBeTruthy());
+  await act(async () => { screen.getByTestId('handover-guest-photo').props.onLoad?.(); });
+  await act(async () => { fireEvent.press(screen.getByTestId('handover-match')); });
+}
+
+async function captureAllReturn(screen: ReturnType<typeof render>) {
+  for (const angle of ['front', 'right', 'back', 'left']) {
+    await act(async () => { fireEvent.press(screen.getByTestId(`handover-angle-${angle}`)); });
+  }
+}
 
 async function scanSuccessfully(screen: ReturnType<typeof render>) {
   const camera = screen.getByTestId('handover-camera');
@@ -110,7 +124,7 @@ describe('return condition capture', () => {
   async function reachCondition() {
     const screen = render(<ValetHandoverScreen sessionToken={TOKEN} />);
     await scanSuccessfully(screen);
-    await act(async () => { fireEvent.press(screen.getByTestId('handover-match')); });
+    await matchPhoto(screen);
     return screen;
   }
 
@@ -141,13 +155,34 @@ describe('return condition capture', () => {
     expect(screen.queryByTestId('handover-park-again')).toBeNull();
   });
 
-  it('reaches confirmation once something is captured', async () => {
+  // The same four views as intake, in the same order: one "after" photo
+  // against four "before" ones is not something a dispute can compare.
+  it('will not reach confirmation on a single side', async () => {
+    const screen = await reachCondition();
+
+    await act(async () => { fireEvent.press(screen.getByTestId('handover-angle-front')); });
+    await act(async () => { fireEvent.press(screen.getByTestId('handover-to-confirm')); });
+
+    expect(screen.queryByTestId('handover-park-again')).toBeNull();
+  });
+
+  it('takes the sides in the intake order, not whichever is tapped', async () => {
     const screen = await reachCondition();
 
     await act(async () => { fireEvent.press(screen.getByTestId('handover-angle-back')); });
+
+    expect(api.uploadCondition).not.toHaveBeenCalled();
+  });
+
+  it('reaches confirmation once all four sides are captured', async () => {
+    const screen = await reachCondition();
+
+    await captureAllReturn(screen);
     await act(async () => { fireEvent.press(screen.getByTestId('handover-to-confirm')); });
 
     await waitFor(() => expect(screen.getByTestId('handover-park-again')).toBeTruthy());
+    expect((api.uploadCondition as jest.Mock).mock.calls.map((c) => c[4]))
+      .toEqual(['front', 'right', 'back', 'left']);
   });
 });
 
@@ -155,8 +190,8 @@ describe('confirming the handover', () => {
   async function reachConfirm() {
     const screen = render(<ValetHandoverScreen sessionToken={TOKEN} />);
     await scanSuccessfully(screen);
-    await act(async () => { fireEvent.press(screen.getByTestId('handover-match')); });
-    await act(async () => { fireEvent.press(screen.getByTestId('handover-angle-front')); });
+    await matchPhoto(screen);
+    await captureAllReturn(screen);
     await act(async () => { fireEvent.press(screen.getByTestId('handover-to-confirm')); });
     return screen;
   }
@@ -181,8 +216,8 @@ describe('confirming the handover', () => {
     const onDone = jest.fn();
     const screen = render(<ValetHandoverScreen sessionToken={TOKEN} onDone={onDone} />);
     await scanSuccessfully(screen);
-    await act(async () => { fireEvent.press(screen.getByTestId('handover-match')); });
-    await act(async () => { fireEvent.press(screen.getByTestId('handover-angle-front')); });
+    await matchPhoto(screen);
+    await captureAllReturn(screen);
     await act(async () => { fireEvent.press(screen.getByTestId('handover-to-confirm')); });
     await act(async () => { fireEvent.press(screen.getByTestId('handover-park-again')); });
 
@@ -258,7 +293,7 @@ describe('when no photo was captured at intake', () => {
     await reachCompare(screen);
 
     await act(async () => { fireEvent.press(screen.getByTestId('handover-vehicle-confirmed')); });
-    await act(async () => { fireEvent.press(screen.getByTestId('handover-angle-front')); });
+    await captureAllReturn(screen);
     await act(async () => { fireEvent.press(screen.getByTestId('handover-to-confirm')); });
     await act(async () => { fireEvent.press(screen.getByTestId('handover-park-again')); });
 
@@ -288,16 +323,71 @@ describe('when no photo was captured at intake', () => {
     expect(screen.queryByTestId('handover-no-photo')).toBeNull();
   });
 
-  it('sends the photo request with the guard token', async () => {
-    // Without the header this endpoint answers 401 and the frame is blank.
-    (api.getTicket as jest.Mock).mockResolvedValue({
-      data: { hasPhoto: true, plate: 'KA03NJ0435', vehicleMake: 'Swift', events: [] },
-    });
+  // On a device the native image loader dropped an Authorization header put
+  // on the source, the request 401'd and the frame stayed empty -- while a
+  // test asserting the header was present passed. The image now loads a
+  // short-lived signed link that needs no header at all.
+  it('loads the photo from a signed link, with no credential on the image', async () => {
     const screen = render(<ValetHandoverScreen sessionToken={TOKEN} />);
     await reachCompare(screen);
 
+    await waitFor(() => expect(screen.getByTestId('handover-guest-photo')).toBeTruthy());
     const src = screen.getByTestId('handover-guest-photo').props.source;
-    expect(src.headers.Authorization).toBeTruthy();
+    expect(api.guestPhotoUrl).toHaveBeenCalledWith(TOKEN);
+    expect(src).toEqual({ uri: PHOTO_URL });
+  });
+
+  it('offers no match until the photo has actually rendered', async () => {
+    const screen = render(<ValetHandoverScreen sessionToken={TOKEN} />);
+    await reachCompare(screen);
+
+    await waitFor(() => expect(screen.getByTestId('handover-guest-photo')).toBeTruthy());
+    expect(screen.queryByTestId('handover-match')).toBeNull();
+
+    await act(async () => { screen.getByTestId('handover-guest-photo').props.onLoad(); });
+    expect(screen.getByTestId('handover-match')).toBeTruthy();
+  });
+
+  it('says the photo failed and offers the vehicle check, never a match', async () => {
+    const screen = render(<ValetHandoverScreen sessionToken={TOKEN} />);
+    await reachCompare(screen);
+
+    await waitFor(() => expect(screen.getByTestId('handover-guest-photo')).toBeTruthy());
+    await act(async () => { screen.getByTestId('handover-guest-photo').props.onError(); });
+
+    expect(screen.getByTestId('handover-photo-failed')).toBeTruthy();
+    expect(screen.queryByTestId('handover-match')).toBeNull();
+    expect(screen.getByTestId('handover-vehicle-confirmed')).toBeTruthy();
+  });
+
+  it('can retry a photo that failed to load, with a fresh link', async () => {
+    const screen = render(<ValetHandoverScreen sessionToken={TOKEN} />);
+    await reachCompare(screen);
+    await waitFor(() => expect(screen.getByTestId('handover-guest-photo')).toBeTruthy());
+    await act(async () => { screen.getByTestId('handover-guest-photo').props.onError(); });
+
+    await act(async () => { fireEvent.press(screen.getByTestId('handover-photo-retry')); });
+
+    expect(api.guestPhotoUrl).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId('handover-photo-failed')).toBeNull();
+  });
+
+  it('treats a link the service will not sign as a failed load', async () => {
+    (api.guestPhotoUrl as jest.Mock).mockRejectedValue(new Error('network'));
+    const screen = render(<ValetHandoverScreen sessionToken={TOKEN} />);
+    await reachCompare(screen);
+
+    await waitFor(() => expect(screen.getByTestId('handover-photo-failed')).toBeTruthy());
+    expect(screen.queryByTestId('handover-match')).toBeNull();
+  });
+
+  it('falls back to the vehicle check when the photo has gone', async () => {
+    (api.guestPhotoUrl as jest.Mock).mockRejectedValue(axiosError('no_photo'));
+    const screen = render(<ValetHandoverScreen sessionToken={TOKEN} />);
+    await reachCompare(screen);
+
+    await waitFor(() => expect(screen.getByTestId('handover-no-photo')).toBeTruthy());
+    expect(screen.queryByTestId('handover-match')).toBeNull();
   });
 });
 
@@ -330,7 +420,7 @@ describe('when the return-condition camera will not open', () => {
     await act(async () => {
       screen.getByTestId('handover-camera').props.onBarcodeScanned({ data: 'live-token' });
     });
-    await act(async () => { fireEvent.press(screen.getByTestId('handover-match')); });
+    await matchPhoto(screen);
     return screen;
   }
 

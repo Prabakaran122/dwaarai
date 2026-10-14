@@ -28,9 +28,34 @@ function findTicket(sessionToken) {
             (c.config->>'valetAdvertisingEnabled')::boolean AS promo_enabled,
             c.config->>'valetPromoLabel' AS promo_label,
             c.config->>'valetPromoLink'  AS promo_link,
+            pr.id AS promo_id, pr.headline AS promo_headline, pr.body AS promo_body,
+            pr.image_key AS promo_image_key, pr.offer_code AS promo_offer_code,
+            pr.button_label AS promo_button_label, pr.button_url AS promo_button_url,
             cg.name AS created_guard_name, ug.name AS current_guard_name
        FROM valet_tickets t
        JOIN communities c ON c.id = t.community_id
+       -- The one live promotion, if any. A unique partial index guarantees
+       -- there is at most one, so no ordering is needed to pick it.
+       LEFT JOIN valet_promotions pr
+              ON pr.community_id = t.community_id
+             AND pr.status = 'live'
+             AND (pr.starts_at IS NULL OR pr.starts_at <= NOW())
+             AND (pr.ends_at   IS NULL OR pr.ends_at   >= NOW())
+             -- The hours of the day it runs. Null at both ends means all day,
+             -- which is almost every promotion; the pair exists so a breakfast
+             -- buffet is not advertised at midnight.
+             --
+             -- A window that wraps past midnight (22:00 to 02:00) is the
+             -- reason for the OR rather than a plain BETWEEN: a late-bar offer
+             -- is exactly the kind that wants those hours, and a BETWEEN would
+             -- silently never match it.
+             AND (
+               pr.show_from IS NULL OR pr.show_to IS NULL
+               OR (pr.show_from <= pr.show_to
+                     AND NOW()::time BETWEEN pr.show_from AND pr.show_to)
+               OR (pr.show_from > pr.show_to
+                     AND (NOW()::time >= pr.show_from OR NOW()::time <= pr.show_to))
+             )
        JOIN residents cg ON cg.id = t.created_by_guard_id
        LEFT JOIN residents ug ON ug.id = t.current_guard_id
       WHERE t.session_token = $1`,
@@ -93,9 +118,27 @@ function guestView(t, isHandedOver = false, arrivedAt = null) {
           (new Date(arrivedAt).getTime() + COLLECTION_WINDOW_MS - Date.now()) / 1000
         ))
       : null,
-    promo: t.promo_enabled && t.promo_label
-      ? { label: t.promo_label, link: t.promo_link || null }
-      : null,
+    // The banner, when a venue is running one. Falls back to the old single
+    // line of config text, which plenty of venues still use and which costs
+    // nothing to keep working.
+    promo: t.promo_id
+      ? {
+          id: t.promo_id,
+          headline: t.promo_headline,
+          body: t.promo_body ?? null,
+          hasImage: !!t.promo_image_key,
+          buttonLabel: t.promo_button_label ?? null,
+          buttonUrl: t.promo_button_url ?? null,
+          // This guest's own copy of the code: the promotion's stem plus their
+          // claim code. That is what makes a redemption traceable to one car
+          // on one night rather than to "somebody saw a poster".
+          guestCode: t.promo_offer_code && t.claim_code
+            ? `${t.promo_offer_code}-${t.claim_code}`
+            : null,
+        }
+      : t.promo_enabled && t.promo_label
+        ? { label: t.promo_label, link: t.promo_link || null }
+        : null,
   };
 }
 
@@ -239,6 +282,60 @@ router.get('/tickets/:token/venue-logo', async (req, res) => {
 
   res.setHeader('Cache-Control', 'public, max-age=3600');
   stream.pipe(res);
+});
+
+/**
+ * What the banner produced.
+ *
+ * Once per valet ticket, enforced by a unique index rather than by the client
+ * remembering. The guest page polls every few seconds and reopens on every tap
+ * of the WhatsApp link, so counting raw impressions would turn one guest on a
+ * slow connection into forty -- and that is not a number anybody could charge
+ * for honestly.
+ */
+/**
+ * A promotion's banner image.
+ *
+ * Addressed by promotion id rather than session token, unlike the venue logo.
+ * The id is already in the payload the guest page holds, the image is the same
+ * public banner for every guest, and requiring a token would stop it being
+ * cached across the hundreds of guests who see it in an evening.
+ */
+router.get('/promotions/:id/image', async (req, res) => {
+  const promo = await queryOne(
+    `SELECT image_key FROM valet_promotions WHERE id = $1 AND status = 'live'`,
+    [req.params.id]
+  );
+  if (!promo?.image_key) return res.status(404).json({ error: 'no_image' });
+
+  const stream = await storage.getStream(promo.image_key);
+  if (!stream) return res.status(404).json({ error: 'no_image' });
+
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  stream.pipe(res);
+});
+
+router.post('/tickets/:token/promo/:promoId/:kind', async (req, res) => {
+  const kind = String(req.params.kind);
+  if (!['view', 'tap'].includes(kind)) return notFound(res);
+
+  const ticket = await queryOne(
+    'SELECT id FROM valet_tickets WHERE session_token = $1',
+    [req.params.token]
+  );
+  if (!ticket) return notFound(res);
+
+  await queryOne(
+    `INSERT INTO valet_promotion_events (promotion_id, ticket_id, kind)
+     VALUES ($1, $2, $3)
+     ON CONFLICT DO NOTHING
+     RETURNING id`,
+    [req.params.promoId, ticket.id, kind]
+  ).catch(() => null);
+
+  // Always 200. A guest's page must never show an error because an analytics
+  // row could not be written.
+  res.json({ ok: true });
 });
 
 router.get('/tickets/:token/rotating-qr', async (req, res) => {

@@ -16,16 +16,7 @@ vi.mock('../lib/storage.js', () => ({
 import { query, queryRows } from '../db.js';
 import { logEvent } from '../lib/events.js';
 import { storage } from '../lib/storage.js';
-import {
-  sweepExpiredTickets,
-  sweepExpiredPhotos,
-  sweepExpiredConditionMedia,
-  schedulePhotoDeletion,
-  scheduleConditionMediaDeletion,
-  runSweep,
-  forgetClosedGuestPhones,
-  sweepOverdueCollections,
-} from '../lib/expiry.js';
+import { sweepExpiredTickets, sweepExpiredPhotos, sweepExpiredConditionMedia, schedulePhotoDeletion, scheduleConditionMediaDeletion, runSweep, forgetClosedGuestPhones, sweepOverdueCollections, sweepUnacceptedRequests } from '../lib/expiry.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -65,7 +56,8 @@ describe('sweepExpiredTickets', () => {
     await sweepExpiredTickets();
 
     const [, params] = queryRows.mock.calls[0];
-    expect(params[0]).toEqual(['parked', 'retrieval_requested', 'en_route', 'arrived', 'parked_again']);
+    // with_guest too: a guest who drove off for good must not hold the card forever.
+    expect(params[0]).toEqual(['parked', 'retrieval_requested', 'en_route', 'arrived', 'parked_again', 'with_guest']);
   });
 
   it('does nothing and reports zero when no ticket is overdue', async () => {
@@ -173,12 +165,18 @@ describe('runSweep', () => {
       .mockResolvedValueOnce([])               // photos
       .mockResolvedValueOnce([{ id: 'c1', storage_key: 'k' }])  // condition
       .mockResolvedValueOnce([])                                // guest phones
-      .mockResolvedValueOnce([]);                               // overdue collections
-    query.mockResolvedValue({});
+      .mockResolvedValueOnce([])                                // overdue collections
+      .mockResolvedValueOnce([]);                               // unanswered requests
+    query.mockResolvedValue({ rowCount: 0 });
 
     const result = await runSweep();
 
-    expect(result).toEqual({ tickets: 1, photos: 0, condition: 1, phones: 0, overdue: 0 });
+    expect(result).toEqual({
+      tickets: 1, photos: 0, condition: 1, phones: 0, overdue: 0,
+      // A request nobody accepted, and the dedupe keys old enough that no
+      // client could still be retrying them.
+      unanswered: 0, idempotency: 0,
+    });
   });
 });
 
@@ -248,11 +246,65 @@ describe('a car left standing at the pickup point', () => {
     queryRows
       .mockResolvedValueOnce([]).mockResolvedValueOnce([])
       .mockResolvedValueOnce([]).mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ id: 't9' }]);
+      .mockResolvedValueOnce([{ id: 't9' }])   // overdue collections
+      .mockResolvedValueOnce([]);              // unanswered requests
     query.mockResolvedValue({});
 
     const result = await runSweep();
 
     expect(result.overdue).toBe(1);
+  });
+});
+
+describe('a request nobody came for', () => {
+  // sweepOverdueCollections covers the guest who never collected. This is the
+  // mirror: the guest asked, the server recorded it, and no attendant ever
+  // accepted. It exists because the device is the thing that can fail -- an
+  // app in a basement never polls, so the request reaches nobody while the
+  // guest has already been told "a valet will pick this up shortly".
+  //
+  // Server-side on purpose. Anything that depends on the offline device
+  // noticing its own silence is not a safety net.
+  it('flags a retrieval nobody accepted inside the window', async () => {
+    queryRows.mockResolvedValueOnce([{ id: 't1' }, { id: 't2' }]);
+
+    const n = await sweepUnacceptedRequests();
+
+    expect(n).toBe(2);
+    const sql = queryRows.mock.calls[0][0];
+    expect(sql).toMatch(/retrieval_requested/);
+    // The absence of an accept is the whole condition.
+    expect(sql).toMatch(/NOT EXISTS/i);
+    expect(sql).toMatch(/'accepted'/);
+  });
+
+  it('measures from the request, not from when the car was parked', async () => {
+    queryRows.mockResolvedValueOnce([]);
+    await sweepUnacceptedRequests();
+    const sql = queryRows.mock.calls[0][0];
+    expect(sql).toMatch(/event_type = 'requested'/);
+  });
+
+  it('does not flag the same request twice', async () => {
+    // The sweep runs repeatedly. Without this a duty manager gets a fresh
+    // alert every pass for a car somebody is already walking to.
+    queryRows.mockResolvedValueOnce([]);
+    await sweepUnacceptedRequests();
+    expect(queryRows.mock.calls[0][0]).toMatch(/request_unanswered/);
+  });
+
+  it('logs an event per flagged ticket so the timeline shows it', async () => {
+    queryRows.mockResolvedValueOnce([{ id: 't1' }]);
+    await sweepUnacceptedRequests();
+    expect(logEvent).toHaveBeenCalledWith('t1', 'request_unanswered', expect.anything());
+  });
+
+  it('is part of the scheduled sweep, not something to remember to call', async () => {
+    // mockResolvedValue, not Once: runSweep makes several passes and the
+    // point here is that it includes this one, not how many queries it takes.
+    queryRows.mockResolvedValue([]);
+    query.mockResolvedValue({ rowCount: 0 });
+    const res = await runSweep();
+    expect(res).toHaveProperty('unanswered');
   });
 });

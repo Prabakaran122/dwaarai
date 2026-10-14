@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockClient = {
   query: vi.fn(),
@@ -30,9 +30,10 @@ import pool, { query, queryOne, queryRows } from '../db.js';
 import { schedulePhotoDeletion, scheduleConditionMediaDeletion } from '../lib/expiry.js';
 import { sendClaimCode } from '../lib/sms.js';
 import { notifyGuest } from '../lib/whatsapp-guest.js';
-import { readPlate } from '../lib/anpr.js';
+import { readPlate, isConfigured as plateReaderConfigured } from '../lib/anpr.js';
 import { toDataUrl } from '../lib/qr.js';
-import guardRoutes from '../routes/guard.js';
+import guardRoutes, { conditionSchema } from '../routes/guard.js';
+import { readFileSync } from 'node:fs';
 import {
   createApp, request, ticketRow, guardToken, adminToken,
   SESSION_TOKEN, TICKET_ID, COMMUNITY_ID, GUARD_ID,
@@ -109,9 +110,14 @@ describe('community scoping', () => {
 // --- ticket creation -------------------------------------------------------
 
 describe('POST /guard/tickets', () => {
+  // A card is mandatory now, so every create here resolves one first: the
+  // lookup and the "is it already on an open ticket" check both run before
+  // the advisory lock.
   function mockCreateFlow(lastDisplayId) {
     mockClient.query
       .mockResolvedValueOnce({})                                        // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A001' }] }) // card lookup
+      .mockResolvedValueOnce({ rows: [] })                              // card not in use
       .mockResolvedValueOnce({})                                        // advisory lock
       .mockResolvedValueOnce({ rows: lastDisplayId ? [{ display_id: lastDisplayId }] : [] })
       .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })             // INSERT ticket
@@ -128,6 +134,7 @@ describe('POST /guard/tickets', () => {
         plate: 'ka 03 nj 0435',
         vehicleMake: 'Maruti Swift',
         stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+        cardCode: 'A001',
       },
     });
 
@@ -147,10 +154,11 @@ describe('POST /guard/tickets', () => {
         plate: 'ka 03 nj 0435',
         vehicleMake: 'Swift',
         stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+        cardCode: 'A001',
       },
     });
 
-    const insertParams = mockClient.query.mock.calls[3][1];
+    const insertParams = mockClient.query.mock.calls[5][1];  // +2: card lookup and in-use check
     expect(insertParams[3]).toBe('KA 03 NJ 0435'); // plate, uppercased but spaced as typed
     expect(insertParams[4]).toBe('KA03NJ0435');    // plate_normalized, for matching
   });
@@ -164,6 +172,7 @@ describe('POST /guard/tickets', () => {
         plate: 'KA01AA1111',
         vehicleMake: 'Swift',
         stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+        cardCode: 'A001',
         communityId: 'attacker-supplied-community',
       },
     });
@@ -193,7 +202,7 @@ describe('POST /guard/tickets', () => {
   ])('rejects incomplete input (%s)', async (_label, body) => {
     const res = await request(app, 'POST', '/guard/tickets', {
       token,
-      body: { stayEndAt: new Date(Date.now() + 86400000).toISOString(), ...body },
+      body: { stayEndAt: new Date(Date.now() + 86400000).toISOString(), cardCode: 'A001', ...body },
     });
 
     expect(res.status).toBe(400);
@@ -215,10 +224,11 @@ describe('POST /guard/tickets', () => {
         plate: 'KA01AA1111',
         vehicleMake: 'Swift',
         stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+        cardCode: 'A001',
       },
     });
 
-    const [sql, params] = mockClient.query.mock.calls[1];
+    const [sql, params] = mockClient.query.mock.calls[3];  // +2: card lookup and in-use check
     expect(sql).toContain('pg_advisory_xact_lock');
     // Keyed per community, so two venues never wait on each other.
     expect(params).toEqual([COMMUNITY_ID]);
@@ -235,6 +245,7 @@ describe('POST /guard/tickets', () => {
         plate: 'KA01AA1111',
         vehicleMake: 'Swift',
         stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+        cardCode: 'A001',
       },
     });
 
@@ -244,6 +255,8 @@ describe('POST /guard/tickets', () => {
   it('rolls back and releases the connection when the insert fails', async () => {
     mockClient.query
       .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A001' }] }) // card lookup
+      .mockResolvedValueOnce({ rows: [] })                              // card not in use
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [] })
       .mockRejectedValueOnce(new Error('duplicate key'));
@@ -254,6 +267,7 @@ describe('POST /guard/tickets', () => {
         plate: 'KA01AA1111',
         vehicleMake: 'Swift',
         stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+        cardCode: 'A001',
       },
     });
 
@@ -275,6 +289,10 @@ describe('GET /guard/plate-lookup', () => {
       isReturning: true,
       visitCount: 3,
       lastVisitAt: '2026-04-12T10:00:00Z',
+      // Present but empty: this visit recorded no make, name or type. The app
+      // prefills nothing from an empty object, which is the same outcome as
+      // before the field existed.
+      lastSeen: {},
     });
     expect(queryOne.mock.calls[0][1]).toEqual([COMMUNITY_ID, 'KA03NJ0435']);
   });
@@ -483,21 +501,26 @@ describe('POST /guard/tickets/:token/confirm-pickup', () => {
     expect(params[1]).toBe(arrival.created_at);
   });
 
-  it('parks the car again by default, keeping the same URL alive for a multi-day stay', async () => {
+  // The car has just been handed to the guest. It used to go straight to
+  // 'parked_again', so the lot, the slot and the guest's own page all said it
+  // was parked while the guest was driving it; it is 'with_guest' until a
+  // valet checks it back in (POST /tickets/:token/returned).
+  it('marks the car as with the guest by default, keeping the URL alive for a multi-day stay', async () => {
     queryOne
       .mockResolvedValueOnce(ticketRow({ status: 'arrived' }))
       .mockResolvedValueOnce(arrival)
       .mockResolvedValueOnce({ id: 'rt-1' })
       .mockResolvedValueOnce({ id: 'cond-1' })
       .mockResolvedValueOnce({ id: 'photo-1' })
-      .mockResolvedValueOnce(ticketRow({ status: 'parked_again' }));
+      .mockResolvedValueOnce(ticketRow({ status: 'with_guest' }));
 
     const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/confirm-pickup`, {
       token, body: {},
     });
 
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('parked_again');
+    expect(res.body.status).toBe('with_guest');
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("status = 'with_guest'"), [TICKET_ID]);
     // Media retention is not scheduled while the ticket can still be used.
     expect(schedulePhotoDeletion).not.toHaveBeenCalled();
   });
@@ -528,13 +551,13 @@ describe('POST /guard/tickets/:token/confirm-pickup', () => {
       .mockResolvedValueOnce({ id: 'rt-1' })
       .mockResolvedValueOnce({ id: 'cond-1' })
       .mockResolvedValueOnce({ id: 'photo-1' })
-      .mockResolvedValueOnce(ticketRow({ status: 'parked_again' }));
+      .mockResolvedValueOnce(ticketRow({ status: 'with_guest' }));
 
     const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/confirm-pickup`, {
       token, body: { final: 'yes' },
     });
 
-    expect(res.body.status).toBe('parked_again');
+    expect(res.body.status).toBe('with_guest');
   });
 });
 
@@ -617,6 +640,7 @@ describe('binding a printed card at intake', () => {
     plate: 'KA01AA1111',
     vehicleMake: 'Swift',
     stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+    cardCode: 'A001',
     ...extra,
   });
 
@@ -661,20 +685,20 @@ describe('binding a printed card at intake', () => {
     expect(res.body.error).toBe('unknown_card');
   });
 
-  it('still creates a ticket with no card at all — screen QR keeps working', async () => {
-    mockClient.query
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({});
+  it('refuses a ticket with no card — the card IS the ticket', async () => {
+    // This replaces "still creates a ticket with no card at all — screen QR
+    // keeps working". That was a real decision once: a venue with no printed
+    // stock fell back to a QR on the guard's screen. It is not how this works
+    // any more -- one card is scanned twice, by the guard to start intake and
+    // by the guest to reach WhatsApp -- so a cardless ticket is a guest
+    // holding nothing.
+    const { cardCode, ...noCard } = body();
+    const res = await request(app, 'POST', '/guard/tickets', { token, body: noCard });
 
-    const res = await request(app, 'POST', '/guard/tickets', { token, body: body() });
-
-    expect(res.status).toBe(201);
-    expect(res.body.cardCode).toBeNull();
-    expect(res.body.qrDataUrl).toBe('data:image/png;base64,QR');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('card_required');
+    // Refused before a transaction is opened at all.
+    expect(mockClient.query).not.toHaveBeenCalled();
   });
 
   it('scopes the card lookup to the caller\'s community', async () => {
@@ -888,6 +912,8 @@ describe('the claim code a guest carries away', () => {
     mockClient.query.mockReset();
     mockClient.query
       .mockResolvedValueOnce({})                              // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A001' }] }) // card lookup
+      .mockResolvedValueOnce({ rows: [] })                    // card not in use
       .mockResolvedValueOnce({})                              // advisory lock
       .mockResolvedValueOnce({ rows: [] })                    // display id
       .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })   // insert
@@ -896,10 +922,10 @@ describe('the claim code a guest carries away', () => {
   }
   const body = () => ({
     plate: 'KA01AA1111', vehicleMake: 'Swift',
-    stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+    stayEndAt: new Date(Date.now() + 86400000).toISOString(), cardCode: 'A001',
   });
 
-  it('issues one on every ticket, card or no card', async () => {
+  it('issues one on every ticket, alongside the card code', async () => {
     mockCreate();
 
     const res = await request(app, 'POST', '/guard/tickets', { token, body: body() });
@@ -912,8 +938,8 @@ describe('the claim code a guest carries away', () => {
 
     await request(app, 'POST', '/guard/tickets', { token, body: body() });
 
-    const params = mockClient.query.mock.calls[3][1];
-    expect(params[9]).toBeNull();                      // card_code, none here
+    const params = mockClient.query.mock.calls[5][1];  // +2: card lookup and in-use check
+    expect(params[9]).toBe('A001');                    // card_code
     expect(params[10]).toMatch(/^[A-Z0-9]{6}$/);       // claim_code
   });
 
@@ -934,9 +960,11 @@ describe('POST /guard/tickets — texting the guest the code', () => {
 
   function mockCreateFlow() {
     mockClient.query
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({})                                        // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A001' }] }) // card lookup
+      .mockResolvedValueOnce({ rows: [] })                              // card not in use
+      .mockResolvedValueOnce({})                                        // advisory lock
+      .mockResolvedValueOnce({ rows: [] })                              // display id
       .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({});
@@ -948,7 +976,7 @@ describe('POST /guard/tickets — texting the guest the code', () => {
 
     const res = await request(app, 'POST', '/guard/tickets', {
       token,
-      body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future(), phoneNumber: '9876543210' },
+      body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future(), cardCode: 'A001', phoneNumber: '9876543210' },
     });
 
     expect(res.status).toBe(201);
@@ -963,7 +991,7 @@ describe('POST /guard/tickets — texting the guest the code', () => {
 
     const res = await request(app, 'POST', '/guard/tickets', {
       token,
-      body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future() },
+      body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future(), cardCode: 'A001' },
     });
 
     expect(res.status).toBe(201);
@@ -974,7 +1002,7 @@ describe('POST /guard/tickets — texting the guest the code', () => {
   it('refuses a number that is not a real Indian mobile, before taking the car in', async () => {
     const res = await request(app, 'POST', '/guard/tickets', {
       token,
-      body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future(), phoneNumber: '12345' },
+      body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future(), cardCode: 'A001', phoneNumber: '12345' },
     });
 
     expect(res.status).toBe(400);
@@ -988,7 +1016,7 @@ describe('POST /guard/tickets — texting the guest the code', () => {
 
     const res = await request(app, 'POST', '/guard/tickets', {
       token,
-      body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future(), phoneNumber: '9876543210' },
+      body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future(), cardCode: 'A001', phoneNumber: '9876543210' },
     });
 
     // The guard needs to know it failed so they read the code out instead.
@@ -1041,6 +1069,8 @@ describe('what the intake QR points at', () => {
   it('always opens the door page, so WhatsApp is the path a guest meets first', async () => {
     mockClient.query
       .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A001' }] }) // card lookup
+      .mockResolvedValueOnce({ rows: [] })                              // card not in use
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })
@@ -1053,6 +1083,7 @@ describe('what the intake QR points at', () => {
         plate: 'KA03NJ0435',
         vehicleMake: 'Swift',
         stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+        cardCode: 'A001',
       },
     });
 
@@ -1080,7 +1111,7 @@ describe('a number the guest left on the card before intake finished', () => {
       token,
       body: {
         plate: 'KA03NJ0435', vehicleMake: 'Swift', cardCode: 'A047',
-        stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+        stayEndAt: new Date(Date.now() + 86400000).toISOString(), cardCode: 'A001',
       },
     });
 
@@ -1130,6 +1161,8 @@ describe('slots, at the stand', () => {
   it('records the slot the attendant picked', async () => {
     mockClient.query
       .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A001' }] }) // card lookup
+      .mockResolvedValueOnce({ rows: [] })                              // card not in use
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: SLOT_ID }] })       // slot is real and free
@@ -1141,7 +1174,7 @@ describe('slots, at the stand', () => {
       token,
       body: {
         plate: 'KA03NJ0435', vehicleMake: 'Swift', slotId: SLOT_ID,
-        stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+        stayEndAt: new Date(Date.now() + 86400000).toISOString(), cardCode: 'A001',
       },
     });
 
@@ -1151,6 +1184,8 @@ describe('slots, at the stand', () => {
   it('takes the car in anyway when no slot was given', async () => {
     mockClient.query
       .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A001' }] }) // card lookup
+      .mockResolvedValueOnce({ rows: [] })                              // card not in use
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })
@@ -1161,7 +1196,7 @@ describe('slots, at the stand', () => {
       token,
       body: {
         plate: 'KA03NJ0435', vehicleMake: 'Swift',
-        stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+        stayEndAt: new Date(Date.now() + 86400000).toISOString(), cardCode: 'A001',
       },
     });
 
@@ -1175,8 +1210,11 @@ describe('who the guest is and what they drive', () => {
   const future = () => new Date(Date.now() + 86400000).toISOString();
   function flow() {
     mockClient.query
-      .mockResolvedValueOnce({}).mockResolvedValueOnce({})
-      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({})                                        // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A001' }] }) // card lookup
+      .mockResolvedValueOnce({ rows: [] })                              // card not in use
+      .mockResolvedValueOnce({})                                        // advisory lock
+      .mockResolvedValueOnce({ rows: [] })                              // display id
       .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })
       .mockResolvedValueOnce({}).mockResolvedValueOnce({});
   }
@@ -1187,7 +1225,7 @@ describe('who the guest is and what they drive', () => {
     const res = await request(app, 'POST', '/guard/tickets', {
       token,
       body: {
-        plate: 'KA03NJ0435', vehicleMake: 'Fortuner', stayEndAt: future(),
+        plate: 'KA03NJ0435', vehicleMake: 'Fortuner', stayEndAt: future(), cardCode: 'A001',
         guestName: 'A. Mehta', carType: 'suv', isPremium: true,
       },
     });
@@ -1201,7 +1239,7 @@ describe('who the guest is and what they drive', () => {
     flow();
 
     const res = await request(app, 'POST', '/guard/tickets', {
-      token, body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future() },
+      token, body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future(), cardCode: 'A001' },
     });
 
     // A guest who declines a name still gets their car parked. An intake that
@@ -1213,7 +1251,7 @@ describe('who the guest is and what they drive', () => {
     const res = await request(app, 'POST', '/guard/tickets', {
       token,
       body: {
-        plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future(),
+        plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: future(), cardCode: 'A001',
         carType: 'spaceship',
       },
     });
@@ -1228,13 +1266,15 @@ describe('intake that starts when the card is scanned', () => {
   it('creates a job before the details exist', async () => {
     mockClient.query
       .mockResolvedValueOnce({})                              // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A001' }] }) // card lookup
+      .mockResolvedValueOnce({ rows: [] })                              // card not in use
       .mockResolvedValueOnce({})                              // advisory lock
       .mockResolvedValueOnce({ rows: [] })                    // last display id
       .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })   // INSERT
       .mockResolvedValueOnce({})                              // logEvent
       .mockResolvedValueOnce({});                             // COMMIT
 
-    const res = await request(app, 'POST', '/guard/tickets/start', { token, body: {} });
+    const res = await request(app, 'POST', '/guard/tickets/start', { token, body: { cardCode: 'A001' } });
 
     expect(res.status).toBe(201);
     expect(res.body.sessionToken).toHaveLength(32);
@@ -1285,7 +1325,7 @@ describe('intake that starts when the card is scanned', () => {
 describe('completing an intake', () => {
   const body = () => ({
     plate: 'KA03NJ0435', vehicleMake: 'Swift',
-    stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+    stayEndAt: new Date(Date.now() + 86400000).toISOString(), cardCode: 'A001',
   });
 
   it('fills the details in and parks the car', async () => {
@@ -1398,7 +1438,7 @@ describe('finishing a job the desk logged', () => {
       token,
       body: {
         plate: 'KA03NJ0435', vehicleMake: 'Swift',
-        stayEndAt: new Date(Date.now() + 86400000).toISOString(),
+        stayEndAt: new Date(Date.now() + 86400000).toISOString(), cardCode: 'A001',
       },
     });
 
@@ -1406,5 +1446,202 @@ describe('finishing a job the desk logged', () => {
     // through parking_in_progress would be a state transition for its own
     // sake, with an attendant standing at a car waiting for it.
     expect(res.status).toBe(200);
+  });
+});
+
+describe('what this deployment can actually do', () => {
+  it('advertises plate reading when a reader is configured', async () => {
+    vi.mocked(plateReaderConfigured).mockReturnValueOnce(true);
+
+    const res = await request(app, 'GET', '/guard/capabilities', { token });
+
+    expect(res.status).toBe(200);
+    expect(res.body.plateScan).toBe(true);
+  });
+
+  it('says so plainly when no reader is configured', async () => {
+    vi.mocked(plateReaderConfigured).mockReturnValueOnce(false);
+
+    const res = await request(app, 'GET', '/guard/capabilities', { token });
+
+    // The app hides the camera button on this answer. A button that opens a
+    // camera, waits, and then always says "could not read it" does not teach
+    // an attendant "this venue has no reader" -- it teaches them the feature
+    // is broken, and they stop trying where it does work.
+    expect(res.body.plateScan).toBe(false);
+  });
+
+  it('answers without touching the database', async () => {
+    // It is an env check behind the scenes. A capability call on every intake
+    // must not add a query to the busiest path in the product.
+    queryOne.mockClear();
+    await request(app, 'GET', '/guard/capabilities', { token });
+    expect(queryOne).not.toHaveBeenCalled();
+  });
+});
+
+describe('the plate photo taken at intake', () => {
+  // BRD Screen 4: the camera opens by default and the typed plate is the real
+  // data beneath it. The photo is worth keeping on its own -- it is what the
+  // registration looked like on arrival, and that survives a dispute whether
+  // or not a recogniser was ever deployed.
+  //
+  // Driven against the schema rather than over HTTP: this endpoint takes
+  // multipart, the test helper speaks JSON only, and a malformed request
+  // returns the same 400 as a rejected angle -- so an HTTP test here passes
+  // whether or not the code is right, which is worse than no test.
+  it("accepts 'plate' alongside the four condition angles", () => {
+    for (const angle of ['front', 'back', 'left', 'right', 'plate']) {
+      expect(conditionSchema.safeParse({ stage: 'intake', mediaType: 'photo', angle }).success).toBe(true);
+    }
+  });
+
+  it('still refuses an angle nobody defined', () => {
+    expect(conditionSchema.safeParse({ stage: 'intake', mediaType: 'photo', angle: 'windscreen' }).success).toBe(false);
+  });
+
+  it('matches the CHECK constraint in migration 060 exactly', () => {
+    // Drift here is a 500 at the stand rather than a readable 400: zod would
+    // wave through an angle Postgres then rejects.
+    const sql = readFileSync(
+      new URL('../../../api-gateway/migrations/060_valet_plate_photo.sql', import.meta.url), 'utf8'
+    );
+    const inDb = [...sql.matchAll(/'(front|back|left|right|plate)'/g)].map((m) => m[1]);
+    for (const angle of ['front', 'back', 'left', 'right', 'plate']) {
+      expect(inDb).toContain(angle);
+      expect(conditionSchema.safeParse({ stage: 'intake', mediaType: 'photo', angle }).success).toBe(true);
+    }
+  });
+});
+
+describe('a vehicle we have seen before', () => {
+  // An attendant re-typing "Toyota Innova" for the ninth time on a regular's
+  // car is doing data entry the system could have done. The plate is already
+  // being looked up to show the returning banner; the same row can carry what
+  // was recorded last time.
+  it('returns what was recorded on the most recent visit', async () => {
+    queryOne.mockResolvedValueOnce({
+      visit_count: 9,
+      last_visit_at: '2026-09-20T10:00:00Z',
+      vehicle_make: 'Toyota Innova',
+      guest_name: 'A. Mehta',
+      car_type: 'suv',
+      is_premium: true,
+    });
+
+    const res = await request(app, 'GET', '/guard/plate-lookup?plate=KA03NJ0435', { token });
+
+    expect(res.body.isReturning).toBe(true);
+    expect(res.body.visitCount).toBe(9);
+    expect(res.body.lastSeen).toEqual({
+      vehicleMake: 'Toyota Innova',
+      guestName: 'A. Mehta',
+      carType: 'suv',
+      isPremium: true,
+    });
+  });
+
+  it('says nothing about a plate it has never seen', async () => {
+    queryOne.mockResolvedValueOnce({ visit_count: 0 });
+
+    const res = await request(app, 'GET', '/guard/plate-lookup?plate=KA99ZZ9999', { token });
+
+    expect(res.body.isReturning).toBe(false);
+    expect(res.body.lastSeen).toBeUndefined();
+  });
+
+  it('omits fields the last visit never recorded, rather than sending nulls to prefill with', async () => {
+    // A car checked in with no guest name must not prefill the name box with
+    // "null" or blank out something the attendant has already typed.
+    queryOne.mockResolvedValueOnce({
+      visit_count: 2, last_visit_at: '2026-09-20T10:00:00Z',
+      vehicle_make: 'Swift', guest_name: null, car_type: null, is_premium: false,
+    });
+
+    const res = await request(app, 'GET', '/guard/plate-lookup?plate=KA03NJ0435', { token });
+
+    expect(res.body.lastSeen.vehicleMake).toBe('Swift');
+    expect('guestName' in res.body.lastSeen).toBe(false);
+    expect('carType' in res.body.lastSeen).toBe(false);
+  });
+
+  it('reads the latest visit, not an arbitrary one', async () => {
+    queryOne.mockResolvedValueOnce({ visit_count: 3, last_visit_at: '2026-09-20T10:00:00Z', vehicle_make: 'X' });
+    await request(app, 'GET', '/guard/plate-lookup?plate=KA03NJ0435', { token });
+    const sql = queryOne.mock.calls[0][0];
+    expect(sql).toMatch(/ORDER BY[\s\S]*created_at DESC/i);
+  });
+});
+
+describe('a ticket needs a card', () => {
+  // The card is the ticket. One printed QR is scanned twice -- by the guard to
+  // start intake, then by the guest off the same card to reach WhatsApp -- so
+  // a ticket with no card is a guest with nothing in their hand and no way in.
+  //
+  // Enforced here and not only in the app: an APK built before this rule, or
+  // one somebody sideloads, must not be able to create a ticket the guest can
+  // never reach.
+  it('refuses intake with no card', async () => {
+    const res = await request(app, 'POST', '/guard/tickets', {
+      token,
+      body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: '2026-12-01T10:00:00Z' },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('card_required');
+  });
+
+  it('refuses a blank card as firmly as a missing one', async () => {
+    const res = await request(app, 'POST', '/guard/tickets', {
+      token,
+      body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: '2026-12-01T10:00:00Z', cardCode: '   ' },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('card_required');
+  });
+
+  it('still complains about the missing plate first', async () => {
+    // Field validation before policy: an attendant who left the plate blank
+    // should be told that, not sent to look for a card they already scanned.
+    const res = await request(app, 'POST', '/guard/tickets', {
+      token,
+      body: { vehicleMake: 'Swift', stayEndAt: '2026-12-01T10:00:00Z' },
+    });
+
+    expect(res.body.error).toBe('missing_fields');
+  });
+});
+
+describe('retry safety on the intake routes', () => {
+  // The offline outbox replays whatever it could not send. Without a dedupe
+  // the same car is taken in twice, under two display ids, with one card bound
+  // to a ticket nobody is watching.
+  it('is wired after the auth middleware, not before it', async () => {
+    // The key is scoped per community and that comes off the token. Mounted
+    // ahead of auth this would see no user, decline to act on every request,
+    // and look exactly like it was working.
+    const src = readFileSync(new URL('../routes/guard.js', import.meta.url), 'utf8');
+    for (const route of ['/tickets', '/tickets/start', '/tickets/:token/complete']) {
+      const line = src.split('\n').find((l) => l.includes(`router.post('${route}'`));
+      expect(line).toBeTruthy();
+      expect(line).toMatch(/guard,\s*once,/);
+    }
+  });
+});
+
+describe('the doors an attendant can start a shift at', () => {
+  it('offers only the ones a shift can actually be worked at', async () => {
+    // A paused door must not appear in the picker: choosing it would file a
+    // shift against a place nobody is standing, and the shift log would then
+    // be confidently wrong about where somebody was.
+    queryRows.mockResolvedValueOnce([{ id: 'p1', name: 'Main porch' }]);
+
+    const res = await request(app, 'GET', '/guard/points', { token });
+
+    expect(res.status).toBe(200);
+    expect(res.body.points[0].name).toBe('Main porch');
+    expect(queryRows.mock.calls[0][0]).toMatch(/status <> 'paused'/);
+    expect(queryRows.mock.calls[0][1]).toContain(COMMUNITY_ID);
   });
 });

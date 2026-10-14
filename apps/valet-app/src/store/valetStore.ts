@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import * as api from '../api/valet';
+import { reachability } from '../lib/connectivity';
+import { saveQueue, loadQueue } from '../lib/queueCache';
 import type { ValetTicket, ValetStatus } from '../api/valet';
 import { rankRetrievals } from '../lib/retrievalScore';
 
@@ -65,7 +67,17 @@ export function forParking(tickets: ValetTicket[]): ValetTicket[] {
  * another, so parked cars stay here and the urgent ones sort to the top.
  */
 export function forDelivery(tickets: ValetTicket[]): ValetTicket[] {
-  return sortQueue(tickets.filter((t) => !INBOUND.includes(t.status)));
+  return sortQueue(tickets.filter((t) => !INBOUND.includes(t.status) && t.status !== 'with_guest'));
+}
+
+/**
+ * Cars handed to a multi-day guest and not yet brought back.
+ *
+ * Not on the lot and not a job until the guest returns -- these used to sit
+ * under "On the lot" as "Parked again" while the guest was driving them.
+ */
+export function forWithGuest(tickets: ValetTicket[]): ValetTicket[] {
+  return sortQueue(tickets.filter((t) => t.status === 'with_guest'));
 }
 
 /** States that no longer belong in a working queue. */
@@ -89,6 +101,8 @@ interface ValetState {
   search: string;
 
   fetch: () => Promise<void>;
+  /** Loads the last cached queue. Called once on launch, before the first poll. */
+  hydrate: () => Promise<void>;
   setSearch: (q: string) => void;
   /** The queue after the plate filter — what the screen actually renders. */
   visibleTickets: () => ValetTicket[];
@@ -110,19 +124,43 @@ export const useValetStore = create<ValetState>((set, get) => ({
   error: null,
   search: '',
 
+  /**
+   * Reads the queue cached by the last successful poll.
+   *
+   * The in-memory fallback below already covers a dropped connection mid-shift.
+   * This covers the other half: an attendant force-quitting the app in a
+   * basement and reopening it, where memory is gone and the radio still has
+   * nothing. Without it that launch shows an empty lot.
+   *
+   * Never overwrites live data. A poll that lands while this is still reading
+   * from disk is strictly fresher, and letting the cache win would walk the
+   * queue backwards in front of somebody.
+   */
+  hydrate: async () => {
+    if (get().tickets.length > 0) return;
+    const cached = await loadQueue();
+    if (!cached || get().tickets.length > 0) return;
+    set({ tickets: sortQueue(cached.tickets.filter((t) => !CLOSED.includes(t.status))) });
+  },
+
   fetch: async () => {
     set({ loading: true });
     try {
       const res = await api.listTickets();
-      set({
-        tickets: sortQueue((res.data.tickets || []).filter((t) => !CLOSED.includes(t.status))),
-        error: null,
-      });
+      const tickets = sortQueue((res.data.tickets || []).filter((t) => !CLOSED.includes(t.status)));
+      set({ tickets, error: null });
+      reachability.getState().noteSuccess();
+      // Fire and forget: the queue is already on screen, and a slow disk must
+      // not hold up the next poll.
+      void saveQueue(tickets);
     } catch (err) {
       // Keep whatever the guard is already looking at: a valet stand's
       // connection drops constantly and blanking the queue mid-shift is worse
       // than showing a slightly stale one.
       set({ error: codeOf(err) });
+      // Only a transport failure means "offline". A 500 here means the server
+      // answered, and saying otherwise sends an attendant hunting for signal.
+      reachability.getState().noteFailure(err);
     } finally {
       set({ loading: false });
     }

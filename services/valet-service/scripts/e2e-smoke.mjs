@@ -68,20 +68,48 @@ const tokenA = jwt.sign({ sub: guardA, role: 'guard', community_id: communityId,
 const tokenB = jwt.sign({ sub: guardB, role: 'guard', community_id: communityId, name: 'Suresh' }, SECRET);
 const adminToken = jwt.sign({ sub: guardA, role: 'community_admin', community_id: communityId }, SECRET);
 
+/** One condition capture as real multipart, the way the app sends it. */
+async function uploadCondition(stage, angle, token = tokenB) {
+  const form = new FormData();
+  form.append('stage', stage);
+  form.append('mediaType', 'photo');
+  form.append('angle', angle);
+  form.append('media', new Blob([Buffer.from('fake-jpeg-bytes')], { type: 'image/jpeg' }), `${angle}.jpg`);
+  const res = await fetch(`${BASE}/guard/tickets/${sessionToken}/condition`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form,
+  });
+  return res.status;
+}
+let sessionToken;
+
+// Cleanup runs even when an assertion throws: crashed runs of this script
+// have left 'E2E Hotel' rows behind before.
+try {
 console.log('\n--- health & auth ---');
 check('health responds', (await api('/health')).body?.status === 'ok');
 check('guard routes reject an anonymous caller', (await api('/guard/tickets')).status === 401);
 check('guard routes reject a resident token',
   (await api('/guard/tickets', { token: jwt.sign({ sub: guardA, role: 'resident', community_id: communityId }, SECRET) })).status === 403);
 
+console.log('\n--- card stock ---');
+// The card IS the ticket: intake refuses to start without one, and only
+// stock an operator registered can be scanned. So register a box first.
+const stock = await api('/admin/cards', { method: 'POST', token: adminToken, body: { prefix: 'A', from: 1, to: 3, width: 3 } });
+check('operator registers card stock', stock.status === 201, JSON.stringify(stock.body));
+
 console.log('\n--- ticket creation ---');
+const noCard = await api('/guard/tickets', {
+  method: 'POST', token: tokenA,
+  body: { plate: 'KA 03 NJ 0435', vehicleMake: 'Maruti Swift', stayEndAt: new Date(Date.now() + 864e5).toISOString() },
+});
+check('refuses a ticket with no card', noCard.status === 400 && noCard.body?.error === 'card_required', JSON.stringify(noCard.body));
 const created = await api('/guard/tickets', {
   method: 'POST', token: tokenA,
-  body: { plate: 'ka 03 nj 0435', vehicleMake: 'Maruti Swift', stayEndAt: new Date(Date.now() + 864e5).toISOString() },
+  body: { plate: 'ka 03 nj 0435', vehicleMake: 'Maruti Swift', stayEndAt: new Date(Date.now() + 864e5).toISOString(), cardCode: 'A001' },
 });
 check('creates a ticket', created.status === 201, JSON.stringify(created.body));
-const sessionToken = created.body?.sessionToken;
-check('display id is sequential', created.body?.displayId === 'SRT-0001', created.body?.displayId);
+sessionToken = created.body?.sessionToken;
+check('display id is sequential', created.body?.displayId === 'DWR-0001', created.body?.displayId);
 check('session token is long', sessionToken?.length === 32);
 check('returns a scannable QR', String(created.body?.qrDataUrl).startsWith('data:image/png;base64,'));
 check('guest URL embeds the token', String(created.body?.guestUrl).includes(sessionToken));
@@ -89,7 +117,7 @@ check('guest URL embeds the token', String(created.body?.guestUrl).includes(sess
 console.log('\n--- returning vehicle ---');
 await api('/guard/tickets', {
   method: 'POST', token: tokenA,
-  body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: new Date(Date.now() + 864e5).toISOString() },
+  body: { plate: 'KA03NJ0435', vehicleMake: 'Swift', stayEndAt: new Date(Date.now() + 864e5).toISOString(), cardCode: 'A002' },
 });
 const lookup = await api('/guard/plate-lookup?plate=KA%2003%20NJ%200435', { token: tokenA });
 check('matches a plate across spacing', lookup.body?.isReturning === true && lookup.body?.visitCount === 2,
@@ -105,7 +133,7 @@ const unknown = await api('/guest/tickets/definitely-not-a-real-token');
 check('unknown token 404s generically', unknown.status === 404 && unknown.body?.error === 'not_found');
 
 console.log('\n--- request / accept / arrive ---');
-check('guest requests their car', (await api(`/guest/tickets/${sessionToken}/request`, { method: 'POST' })).body?.status === 'requested');
+check('guest requests their car', (await api(`/guest/tickets/${sessionToken}/request`, { method: 'POST' })).body?.status === 'retrieval_requested');
 const accepted = await api(`/guard/tickets/${sessionToken}/accept`, { method: 'POST', token: tokenB, body: { etaMinutes: 5 } });
 check('a different valet accepts', accepted.body?.status === 'en_route' && accepted.body?.currentGuardName === 'Suresh',
   JSON.stringify(accepted.body));
@@ -137,22 +165,33 @@ const noCondition = await api(`/guard/tickets/${sessionToken}/confirm-pickup`, {
 check('refuses pickup without return condition media',
   noCondition.status === 409 && noCondition.body?.error === 'return_condition_required', JSON.stringify(noCondition.body));
 
-// Upload one return capture as real multipart.
-const form = new FormData();
-form.append('stage', 'return');
-form.append('mediaType', 'photo');
-form.append('angle', 'front');
-form.append('media', new Blob([Buffer.from('fake-jpeg-bytes')], { type: 'image/jpeg' }), 'front.jpg');
-const upload = await fetch(`${BASE}/guard/tickets/${sessionToken}/condition`, {
-  method: 'POST', headers: { Authorization: `Bearer ${tokenB}` }, body: form,
-});
-check('accepts a return condition upload', upload.status === 201, String(upload.status));
+check('accepts a return condition upload', (await uploadCondition('return', 'front')) === 201);
 
 const confirmed = await api(`/guard/tickets/${sessionToken}/confirm-pickup`, { method: 'POST', token: tokenB, body: {} });
-check('now confirms, keeping a multi-day ticket alive', confirmed.body?.status === 'parked_again', JSON.stringify(confirmed.body));
+// Not 'parked_again': the guest is driving the car now, and saying it was on
+// the lot misled the queue, the slot count and the guest's own page.
+check('now confirms, keeping a multi-day ticket alive with the guest',
+  confirmed.body?.status === 'with_guest', JSON.stringify(confirmed.body));
+
+console.log('\n--- the guest brings the car back ---');
+check('the guest cannot request a car they are driving',
+  (await api(`/guest/tickets/${sessionToken}/request`, { method: 'POST' })).status === 409);
+// Whatever happened to the car happened while the guest had it, so checking
+// it back in is an intake in its own right: all four sides, photographed
+// since it went out.
+for (const angle of ['front', 'right', 'back']) await uploadCondition('intake', angle);
+const partial = await api(`/guard/tickets/${sessionToken}/returned`, { method: 'POST', token: tokenB });
+check('refuses a check-in missing a side',
+  partial.status === 409 && partial.body?.error === 'condition_required' &&
+  JSON.stringify(partial.body?.missing) === JSON.stringify(['left']), JSON.stringify(partial.body));
+check('accepts the last intake photo', (await uploadCondition('intake', 'left')) === 201);
+const returned = await api(`/guard/tickets/${sessionToken}/returned`, { method: 'POST', token: tokenB });
+check('checks the car back in once all four sides are captured',
+  returned.status === 200 && returned.body?.status === 'parked_again', JSON.stringify(returned.body));
+const again = await api(`/guest/tickets/${sessionToken}/request`, { method: 'POST' });
+check('and the guest can request it again', again.body?.status === 'retrieval_requested', JSON.stringify(again.body));
 
 console.log('\n--- second pickup on the same ticket ---');
-await api(`/guest/tickets/${sessionToken}/request`, { method: 'POST' });
 await api(`/guard/tickets/${sessionToken}/accept`, { method: 'POST', token: tokenA, body: {} });
 await api(`/guard/tickets/${sessionToken}/arrived`, { method: 'POST', token: tokenA });
 const stale = await api(`/guard/tickets/${sessionToken}/confirm-pickup`, { method: 'POST', token: tokenA, body: { final: true } });
@@ -172,15 +211,18 @@ check('records the whole journey',
   kinds.join(','));
 check('attributes events to the acting valet', detail.body?.events?.some((e) => e.event_type === 'accepted' && e.guard_name === 'Suresh'));
 
-// Remove everything this run created, so it can be run repeatedly and leaves
-// no test hotel behind on a real database.
-await pool.query('DELETE FROM valet_discount_optins WHERE community_id = $1', [communityId]);
-await pool.query('DELETE FROM valet_tickets WHERE community_id = $1', [communityId]);
-await pool.query('DELETE FROM residents WHERE community_id = $1', [communityId]);
-await pool.query('DELETE FROM units WHERE community_id = $1', [communityId]);
-await pool.query('DELETE FROM blocks WHERE community_id = $1', [communityId]);
-await pool.query('DELETE FROM communities WHERE id = $1', [communityId]);
-await pool.end();
+} finally {
+  // Remove everything this run created, so it can be run repeatedly and leaves
+  // no test hotel behind on a real database.
+  await pool.query('DELETE FROM valet_discount_optins WHERE community_id = $1', [communityId]);
+  await pool.query('DELETE FROM valet_tickets WHERE community_id = $1', [communityId]);
+  await pool.query('DELETE FROM valet_cards WHERE community_id = $1', [communityId]);
+  await pool.query('DELETE FROM residents WHERE community_id = $1', [communityId]);
+  await pool.query('DELETE FROM units WHERE community_id = $1', [communityId]);
+  await pool.query('DELETE FROM blocks WHERE community_id = $1', [communityId]);
+  await pool.query('DELETE FROM communities WHERE id = $1', [communityId]);
+  await pool.end();
+}
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

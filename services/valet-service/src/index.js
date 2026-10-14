@@ -31,7 +31,15 @@ app.use((req, res, next) => {
   }
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Community-Id');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  // PATCH is load-bearing and was missing. Six routes answer it -- pausing a
+  // valet point, saving property details, running a promotion, editing a staff
+  // member -- and a browser refuses the preflight for a verb that is not
+  // listed, so every one of those failed before a request was ever sent. No
+  // 500, no access log line, no server-side trace at all: the failure exists
+  // only in the browser, which is why curl and the service tests both said the
+  // endpoints were fine. src/__tests__/cors.test.js now checks this header
+  // against the route table so a new verb cannot go unlisted again.
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });

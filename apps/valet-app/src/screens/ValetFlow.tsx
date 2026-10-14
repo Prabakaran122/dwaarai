@@ -3,6 +3,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { colors } from '../theme/colors';
 import ValetQueueScreen from './ValetQueueScreen';
 import NewValetTicketScreen from './NewValetTicketScreen';
+import ReturnCheckInScreen from './ReturnCheckInScreen';
 // Loaded lazily on purpose. This screen imports expo-camera, the one native
 // module DwaarAI Valet uses that the proven-working guard app does not. A native
 // module that fails while being imported takes the app down BEFORE React
@@ -35,13 +36,23 @@ interface HandoverProps {
 type Screen =
   | { name: 'queue' }
   | { name: 'new' }
-  | { name: 'handover'; sessionToken: string };
+  | { name: 'handover'; sessionToken: string }
+  | { name: 'checkin'; sessionToken: string };
 
 export default function ValetFlow() {
   const [view, setView] = useState<Screen>({ name: 'queue' });
 
   if (view.name === 'new') {
     return <NewValetTicketScreen onClose={() => setView({ name: 'queue' })} />;
+  }
+
+  if (view.name === 'checkin') {
+    return (
+      <ReturnCheckInScreen
+        sessionToken={view.sessionToken}
+        onDone={() => setView({ name: 'queue' })}
+      />
+    );
   }
 
   if (view.name === 'handover') {
@@ -61,6 +72,7 @@ export default function ValetFlow() {
       // The queue only offers this on a ticket already at the pickup point, so
       // handover always opens on a car a guest is standing next to.
       onOpenTicket={(sessionToken) => setView({ name: 'handover', sessionToken })}
+      onCheckIn={(sessionToken) => setView({ name: 'checkin', sessionToken })}
     />
   );
 }

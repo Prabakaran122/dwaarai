@@ -14,8 +14,9 @@ export const ALL_MODULES = ['gate', 'community', 'valet'];
  * to the full set — because the failure mode of getting this wrong is blanking
  * a working customer's portal, and that looks identical to losing access.
  */
-export function useModules(): { modules: string[]; valetOnly: boolean } {
+export function useModules(): { modules: string[]; valetOnly: boolean; communityName: string | null } {
   const [modules, setModules] = useState<string[]>(ALL_MODULES);
+  const [communityName, setCommunityName] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -25,8 +26,9 @@ export function useModules(): { modules: string[]; valetOnly: boolean } {
     if (typeof window !== 'undefined' && !localStorage.getItem('cg_admin_token')) {
       return () => { cancelled = true; };
     }
-    apiFetch<{ data?: { modules?: string[] } }>('/entitlements')
+    apiFetch<{ data?: { modules?: string[]; communityName?: string | null } }>('/entitlements')
       .then((res) => {
+        setCommunityName(res?.data?.communityName ?? null);
         const found = res?.data?.modules;
         if (!cancelled && found?.length) setModules(found);
       })
@@ -39,5 +41,6 @@ export function useModules(): { modules: string[]; valetOnly: boolean } {
   return {
     modules,
     valetOnly: modules.length === 1 && modules[0] === 'valet',
+    communityName,
   };
 }

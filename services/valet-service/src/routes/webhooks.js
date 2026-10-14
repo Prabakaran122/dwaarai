@@ -37,7 +37,10 @@ const REQUEST_PATTERN = /\b(car|gaadi|vehicle|bring|ready|pick\s*up|pickup)\b/i;
 const REQUESTABLE = ['parked', 'parked_again'];
 
 /** What to tell a guest whose message was not a request we could act on. */
-function statusKind(status) {
+export function statusKind(status) {
+  // Before anything else: falling through to 'bound' told a guest driving
+  // their own car that it was parked and to reply CAR for it.
+  if (status === 'with_guest') return 'with_guest';
   if (status === 'arrived') return 'arrived';
   if (status === 'en_route') return 'en_route';
   if (status === 'retrieval_requested') return 'accepted';

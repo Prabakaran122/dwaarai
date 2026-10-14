@@ -27,6 +27,8 @@ const STAGE_OF: Record<string, number> = {
   retrieval_requested: 1,
   en_route: 2,
   arrived: 3,
+  // Out with a multi-day guest: the last pickup completed the journey.
+  with_guest: 3,
 };
 
 const INK = '#0F2A38';

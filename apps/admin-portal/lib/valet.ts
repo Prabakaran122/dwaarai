@@ -79,12 +79,15 @@ export async function valetFetch<T = unknown>(path: string, options: RequestInit
 export const valetPost = <T = unknown>(path: string, body?: unknown) =>
   valetFetch<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
 
+export const valetPatch = <T = unknown>(path: string, body?: unknown) =>
+  valetFetch<T>(path, { method: 'PATCH', body: JSON.stringify(body ?? {}) });
+
 // --- shapes -----------------------------------------------------------------
 
 export type ValetStatus =
   | 'requested' | 'accepted' | 'parking_in_progress'
   | 'parked' | 'retrieval_requested' | 'en_route' | 'arrived'
-  | 'parked_again' | 'final_closed' | 'expired';
+  | 'parked_again' | 'with_guest' | 'final_closed' | 'expired';
 
 export interface ValetTicket {
   id: string;
@@ -150,6 +153,8 @@ export const STATUS_LABEL: Record<ValetStatus, string> = {
   en_route: 'On its way',
   arrived: 'At pickup point',
   parked_again: 'Parked again',
+  // Handed to a multi-day guest, not on the lot until checked back in.
+  with_guest: 'With guest',
   final_closed: 'Checked out',
   expired: 'Expired',
 };
@@ -168,10 +173,37 @@ export interface VisitRow {
   staySeconds: number;
   disputed: boolean;
   takenInBy: string;
+  /** Null while the car is still on the lot, and for a ticket that expired
+   *  rather than being handed over -- nobody brought that one out. */
+  handedOutBy: string | null;
+  /** Which visit this is for this plate at this venue. 1 is a first-timer. */
+  visitNumber: number;
+  /**
+   * Whether a person handed this car back, as opposed to the retention sweep
+   * closing the ticket days later. False means the parking time and the guest
+   * receipt are both missing, so the row is a record of arrival only.
+   */
+  handoverRecorded: boolean;
 }
+
+/** The vehicle log's narrowing, named so both the page and the export agree. */
+export type VisitStatus = 'returned' | 'no_handover' | 'parked';
+
+export const VISIT_STATUS_LABEL: Record<VisitStatus, string> = {
+  returned: 'Handed back by a person',
+  no_handover: 'No handover recorded',
+  parked: 'Still with your team',
+};
 
 export interface VisitsReport {
   days: number;
+  status: VisitStatus | null;
+  /**
+   * The explicit window, when one is in force; null when the report is a
+   * named one. The page says "last 30 days" or "20-22 Aug" from this rather
+   * than guessing from the parameters it happened to send.
+   */
+  range: { from: string; to: string } | null;
   totals: {
     visits: number;
     uniqueVehicles: number;
@@ -179,6 +211,8 @@ export interface VisitsReport {
     disputed: number;
     stillOpen: number;
     avgStaySeconds: number;
+    /** How many of `visits` a person actually handed back. The rest were swept. */
+    withHandover: number;
   };
   visits: VisitRow[];
   paging: { limit: number; offset: number; returned: number };
@@ -383,6 +417,20 @@ export interface FeedbackRollup {
   satisfied: number;
   notSatisfied: number;
   reasons: { reason: string; count: number }[];
+  /**
+   * The same responses, against the attendant the guest met at handover —
+   * "review with staff", from the redesign. `enoughToJudge` is the server's
+   * call, not the page's, so an export cannot quietly disagree about what
+   * counts as a pattern rather than a bad week.
+   */
+  byStaff: {
+    id: string;
+    name: string;
+    rated: number;
+    unhappy: number;
+    reasons: string[];
+    enoughToJudge: boolean;
+  }[];
 }
 
 export const REASON_LABEL: Record<string, string> = {
@@ -398,6 +446,9 @@ export const getFeedback = (days = 30) =>
 // --- promotions, leads and subscription -------------------------------------
 
 export interface Promotion {
+  spendLimitPaise?: number | null;
+  showFrom?: string | null;
+  showTo?: string | null;
   enabled: boolean;
   label: string | null;
   link: string | null;
@@ -436,12 +487,49 @@ export const getSubscription = () => valetFetch<Subscription>('/admin/subscripti
  * pointed at with an <a href>: the route is admin-only and a browser sends no
  * Authorization header on a plain navigation, so a direct link would 401.
  */
-export async function downloadVisitsCsv(days = 30): Promise<void> {
+/**
+ * The two date inputs, as the instants they mean.
+ *
+ * `<input type="date">` hands back a bare 2026-08-20, which `new Date()` reads
+ * as UTC midnight. For a manager in India that is half past five in the
+ * morning -- so a Saturday night's cars land in the wrong day at both ends.
+ * Constructing from the parts builds the date in the browser's own zone, which
+ * is the venue's, which is what they meant.
+ *
+ * `to` is the END of the day typed, because a range of 20th to 22nd that
+ * silently excluded the 22nd would be wrong in the quiet way: nobody notices
+ * until they count.
+ */
+export function dayRangeToInstants(from: string, to: string): { from: string; to: string } | null {
+  const parse = (d: string, endOfDay: boolean) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+    if (!m) return null;
+    const [, y, mo, da] = m;
+    return endOfDay
+      ? new Date(+y, +mo - 1, +da, 23, 59, 59, 999)
+      : new Date(+y, +mo - 1, +da, 0, 0, 0, 0);
+  };
+  const a = parse(from, false);
+  const b = parse(to, true);
+  if (!a || !b) return null;
+  return { from: a.toISOString(), to: b.toISOString() };
+}
+
+export async function downloadVisitsCsv(
+  days = 30,
+  range: { from: string; to: string } | null = null,
+  status: VisitStatus | null = null
+): Promise<void> {
   const token = typeof window === 'undefined' ? '' : localStorage.getItem('cg_admin_token') || '';
   const communityId =
     typeof window === 'undefined' ? null : localStorage.getItem('cg_selected_community_id');
 
-  const res = await fetch(`${VALET_BASE}/admin/visits.csv?days=${days}`, {
+  const qs = range
+    ? new URLSearchParams({ from: range.from, to: range.to })
+    : new URLSearchParams({ days: String(days) });
+  if (status) qs.set('status', status);
+
+  const res = await fetch(`${VALET_BASE}/admin/visits.csv?${qs}`, {
     cache: 'no-store',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -465,12 +553,49 @@ export interface Location {
   name: string;
   address: string | null;
   plan: 'basic' | 'enterprise';
+  parkedNow: number;
+  waiting: number;
+  onShift: number;
+  carsThisMonth: number;
+  /** Today's request-to-handover average. Null when nothing was handed over. */
+  avgWaitSeconds: number | null;
+  /**
+   * Whether this desk has ever taken a car in.
+   *
+   * Deliberately not a sync status. Valet has no edge node — the app talks
+   * straight to the API — so "last synced 12 minutes ago" would be a number
+   * with nothing behind it.
+   */
+  status: 'live' | 'setting_up';
+}
+
+/**
+ * Point the whole portal at one property.
+ *
+ * The same key every other screen already reads, so switching here switches
+ * the queue, the vehicle log and the staff list with it. The server checks the
+ * property actually belongs to the caller's account before honouring it — this
+ * is a convenience, never the permission.
+ */
+export function selectCommunity(id: string | null) {
+  if (typeof window === 'undefined') return;
+  if (id) localStorage.setItem('cg_selected_community_id', id);
+  else localStorage.removeItem('cg_selected_community_id');
+}
+
+export function selectedCommunity(): string | null {
+  return typeof window === 'undefined'
+    ? null
+    : localStorage.getItem('cg_selected_community_id');
 }
 
 export const listLocations = () =>
-  valetFetch<{ locations: Location[] }>('/admin/locations');
+  valetFetch<{
+    locations: Location[];
+    totals: { properties: number; parkedNow: number; waiting: number; onShift: number };
+  }>('/admin/locations');
 
-export type StaffRole = 'valet_manager' | 'temporary_driver';
+export type StaffRole = 'valet' | 'valet_manager' | 'temporary_driver';
 
 export interface StaffMember {
   id: string;
@@ -482,14 +607,73 @@ export interface StaffMember {
   expired: boolean;
   /** Whether their face is on file. Somebody unenrolled cannot start a shift. */
   faceEnrolled: boolean;
+
+  /** On duty right now, i.e. an open shift exists. */
+  onShift: boolean;
+  /** When the open shift began. Null when off duty. */
+  shiftStartedAt: string | null;
+  /** When the last finished shift ended. Null if they have never worked one. */
+  lastEndedAt: string | null;
+
 }
 
+export interface Shift {
+  id: string;
+  name: string;
+  role: StaffRole;
+  startedAt: string;
+  /** Null means still on shift, not missing. */
+  endedAt: string | null;
+  secondsOnShift: number;
+  valetPoint: string | null;
+  /** 'face_id' only on a real match; null carries a `reason` instead. */
+  verifiedBy: 'face_id' | null;
+  reason: string | null;
+}
+
+/** Why a shift started without the attendant being verified. */
+export const SHIFT_REASON_LABEL: Record<string, string> = {
+  no_photo: 'No photo taken',
+  attendant_not_enrolled: 'Face ID not set up',
+  recognition_not_configured: 'Face check unavailable',
+  no_match: 'Face did not match',
+};
+
 export const STAFF_ROLE_LABEL: Record<StaffRole, string> = {
+  // First, because it is what most of a valet desk is.
+  valet: 'Valet',
   valet_manager: 'Valet manager',
   temporary_driver: 'Temporary driver',
 };
 
 export const listStaff = () => valetFetch<{ staff: StaffMember[] }>('/admin/staff');
+
+/**
+ * Correct a member of staff in place.
+ *
+ * `until: null` clears the end date; omitting it leaves it alone. Mobile is
+ * not editable — it is how they sign in, and changing that mid-shift is a
+ * different and more dangerous operation.
+ */
+export const editStaff = (id: string, body: {
+  name?: string; role?: StaffRole; until?: string | null;
+}) => valetPatch<{ id: string; name: string }>(`/admin/staff/${id}`, body);
+
+export const listShifts = (
+  days = 7,
+  staffId = '',
+  range: { from: string; to: string } | null = null
+) => {
+  const qs = range
+    ? new URLSearchParams({ from: range.from, to: range.to })
+    : new URLSearchParams({ days: String(days) });
+  if (staffId) qs.set('staffId', staffId);
+  return valetFetch<{
+    days: number;
+    range: { from: string; to: string } | null;
+    shifts: Shift[];
+  }>(`/admin/shifts?${qs}`);
+};
 
 export const addStaff = (body: {
   name: string; mobile: string; password: string; role: StaffRole; until?: string;
@@ -520,3 +704,352 @@ export const retireStaff = (id: string) =>
  */
 export const logArrival = (plate?: string) =>
   valetPost<{ displayId: string }>('/admin/tickets/request', { plate });
+
+
+/* ---------------------------------------------------------------- ideas -- */
+
+export type IdeaCategory = 'not_working' | 'make_better' | 'our_hotel' | 'something_new';
+export type IdeaStatus =
+  | 'received' | 'looking_into_it' | 'planned' | 'being_built' | 'live' | 'not_planned';
+export type IdeaImpact = 'a_little' | 'daily' | 'a_lot';
+
+export interface Idea {
+  id: string;
+  category: IdeaCategory;
+  title: string;
+  body: string;
+  impact: IdeaImpact | null;
+  callback: boolean;
+  status: IdeaStatus;
+  /** The one line we have said about it. Null until somebody has. */
+  latestUpdate: string | null;
+  createdAt: string;
+}
+
+/** What each category is for. The description is the half that makes it clear. */
+export const IDEA_CATEGORY: Record<IdeaCategory, { label: string; hint: string }> = {
+  not_working:   { label: "Something isn't working", hint: 'A bug, an error, or a screen that behaves oddly' },
+  make_better:   { label: 'Make something better',   hint: "A step that's slow, confusing or takes too many taps" },
+  our_hotel:     { label: 'A problem unique to our hotel', hint: 'Your layout, events, guests or way of working' },
+  something_new: { label: 'An idea for something new', hint: "A feature or service you'd pay for" },
+};
+
+export const IDEA_IMPACT: Record<IdeaImpact, string> = {
+  a_little: 'A little',
+  daily: 'Every day',
+  a_lot: 'A lot — it costs us real time',
+};
+
+/**
+ * Status as a venue reads it, not as the database stores it.
+ *
+ * "Received" is deliberately honest: it means somebody has it, not that
+ * anybody has read it yet. Claiming otherwise is the fastest way to stop a
+ * hotel bothering to write again.
+ */
+export const IDEA_STATUS: Record<IdeaStatus, { label: string; tone: string }> = {
+  received:        { label: 'Received',        tone: 'bg-gray-100 text-gray-700' },
+  looking_into_it: { label: 'Looking into it', tone: 'bg-blue-100 text-blue-800' },
+  planned:         { label: 'Planned',         tone: 'bg-indigo-100 text-indigo-800' },
+  being_built:     { label: 'Being built',     tone: 'bg-amber-100 text-amber-800' },
+  live:            { label: 'Live',            tone: 'bg-teal-100 text-teal-800' },
+  not_planned:     { label: 'Not planned',     tone: 'bg-gray-100 text-gray-500' },
+};
+
+export const listIdeas = () =>
+  valetFetch<{ totals: { sent: number; live: number }; ideas: Idea[] }>('/admin/ideas');
+
+export const sendIdea = (body: {
+  category: IdeaCategory; title: string; body: string;
+  impact?: IdeaImpact; callback?: boolean;
+}) => valetPost<{ id: string; createdAt: string }>('/admin/ideas', body);
+
+
+/* -------------------------------------------------------- valet points -- */
+
+export type PointStatus = 'active' | 'events_only' | 'paused';
+
+export interface ValetPoint {
+  id: string;
+  name: string;
+  status: PointStatus;
+  /** Null when the venue genuinely does not know; never faked as 0. */
+  capacity: number | null;
+  onShift: number;
+}
+
+export const POINT_STATUS: Record<PointStatus, { label: string; tone: string }> = {
+  active:      { label: 'Active',      tone: 'bg-teal-100 text-teal-800' },
+  events_only: { label: 'Events only', tone: 'bg-indigo-100 text-indigo-800' },
+  paused:      { label: 'Paused',      tone: 'bg-gray-100 text-gray-500' },
+};
+
+export const listPoints = () => valetFetch<{ points: ValetPoint[] }>('/admin/points');
+
+export const addPoint = (body: { name: string; capacity?: number; status?: PointStatus }) =>
+  valetPost<{ id: string; name: string }>('/admin/points', body);
+
+export const setPointStatus = (id: string, status: PointStatus) =>
+  valetPatch<{ id: string; status: PointStatus }>(`/admin/points/${id}`, { status });
+
+/**
+ * Rename a point, re-count its bays, or both.
+ *
+ * `capacity: null` is a real value — "we have never counted" — so it is sent
+ * rather than omitted. Omitting a field is how the server is told to leave it
+ * alone, and the two must not be the same thing.
+ */
+export const editPoint = (
+  id: string,
+  body: { name?: string; capacity?: number | null; status?: PointStatus }
+) => valetPatch<{ id: string; name: string; capacity: number | null; status: PointStatus }>(
+  `/admin/points/${id}`, body
+);
+
+
+/* --------------------------------------------------- quota and advertising -- */
+
+/**
+ * Money arrives as integer paise and is NEVER recomputed here.
+ *
+ * The server owns every rate, the GST and the totals, exactly as the Events
+ * module does — a second implementation of the arithmetic is a second answer,
+ * and the one on the invoice has to be the one on the screen.
+ */
+export function rupees(paise: number | null | undefined): string {
+  if (paise === null || paise === undefined) return '—';
+  // Paise are shown only when there are any: a rate card reading "₹1.5"
+  // looks like a typo, and "₹2,000.00" beside it is noise. Whole rupees stay
+  // whole, anything with paise gets both digits.
+  const hasPaise = Math.abs(paise) % 100 !== 0;
+  return `₹${(paise / 100).toLocaleString('en-IN', {
+    minimumFractionDigits: hasPaise ? 2 : 0,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+export type QuotaMode = 'shared' | 'fixed';
+export type OverBehaviour = 'bill' | 'notify';
+
+export interface QuotaReport {
+  settings: {
+    mode: QuotaMode;
+    carsPerProperty: number;
+    alertPercent: number;
+    overBehaviour: OverBehaviour;
+    /** Null when no overage rate has been agreed — the screen says so. */
+    overagePaise: number | null;
+  };
+  pool: {
+    mode: QuotaMode;
+    includedCars: number;
+    usedCars: number;
+    heldBackCars: number;
+    /** Null under a fixed limit: there is no shared remainder to report. */
+    sharedRemaining: number | null;
+    overageCars: number;
+    daysLeft: number;
+  };
+  properties: {
+    id: string; name: string; holdBack: number;
+    carsThisMonth: number; includedCars: number;
+    status: 'live' | 'setting_up';
+  }[];
+}
+
+export const getQuota = () => valetFetch<QuotaReport>('/admin/quota');
+
+export const saveQuota = (body: {
+  mode?: QuotaMode;
+  alertPercent?: number;
+  overBehaviour?: OverBehaviour;
+  holdBack?: Record<string, number>;
+}) => valetPatch<{ saved: boolean }>('/admin/quota', body);
+
+export interface AdsReport {
+  pricing: {
+    perViewPaise: number;
+    monthlyMinimumPaise: number;
+    gstPercent: number;
+    billing: 'prepaid' | 'invoiced';
+  };
+  balance: { creditPaise: number; paidPaise: number; totalPaise: number };
+  monthToDate: { views: number; netPaise: number; gstPaise: number; totalPaise: number };
+  ledger: {
+    kind: string; amountPaise: number; isCredit: boolean;
+    note: string | null; orderRef: string | null; at: string;
+  }[];
+  /** True while no money can actually be collected. Never inferred. */
+  paymentPlaceholder: boolean;
+}
+
+export const getAds = () => valetFetch<AdsReport>('/admin/ads');
+
+export const topUpAds = (amountPaise: number) =>
+  valetPost<{
+    orderId: string; netPaise: number; gstPaise: number; totalPaise: number;
+    paymentPlaceholder: boolean; credited: boolean;
+  }>('/admin/ads/topup', { amountPaise });
+
+export const submitPromotion = (id: string) =>
+  valetPost<{ id: string; status: PromotionStatus }>(`/admin/promotions/${id}/submit`, {});
+
+/* ----------------------------------------------------- promotion banner -- */
+
+export type PromotionStatus = 'draft' | 'in_review' | 'live' | 'paused' | 'ended';
+
+export interface Promotion {
+  id: string;
+  headline: string;
+  body: string | null;
+  hasImage: boolean;
+  buttonLabel: string | null;
+  buttonUrl: string | null;
+  offerCode: string | null;
+  redeemNote: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  status: PromotionStatus;
+  createdAt: string;
+  /** One per valet ticket, not per page load. See the migration for why. */
+  views: number;
+  taps: number;
+  redeems: number;
+}
+
+export const PROMOTION_STATUS: Record<PromotionStatus, { label: string; tone: string }> = {
+  draft:  { label: 'Draft',  tone: 'bg-gray-100 text-gray-700' },
+  // Sent to us and not yet in front of a guest. Distinct from Draft because
+  // the venue can no longer edit it, and from Live because nobody has seen it.
+  in_review: { label: 'In review', tone: 'bg-indigo-100 text-indigo-800' },
+  live:   { label: 'Live',   tone: 'bg-teal-100 text-teal-800' },
+  paused: { label: 'Paused', tone: 'bg-amber-100 text-amber-800' },
+  ended:  { label: 'Ended',  tone: 'bg-gray-100 text-gray-500' },
+};
+
+export const listPromotions = () =>
+  valetFetch<{ promotions: Promotion[] }>('/admin/promotions');
+
+export const createPromotion = (body: {
+  headline: string; body?: string; buttonLabel?: string; buttonUrl?: string;
+  offerCode?: string; redeemNote?: string; startsAt?: string; endsAt?: string;
+  spendLimitPaise?: number; showFrom?: string; showTo?: string;
+}) => valetPost<{ id: string; status: PromotionStatus }>('/admin/promotions', body);
+
+export const setPromotionStatus = (id: string, status: PromotionStatus) =>
+  valetPatch<{ id: string; status: PromotionStatus }>(`/admin/promotions/${id}`, { status });
+
+export const redeemGuestCode = (promotionId: string, code: string) =>
+  valetPost<{ redeemed: boolean }>(`/admin/promotions/${promotionId}/redeem`, { code });
+
+/** Multipart, like the venue logo: the banner is a file, not a field. */
+export async function uploadPromotionImage(id: string, file: File): Promise<void> {
+  const token = typeof window === 'undefined' ? '' : localStorage.getItem('cg_admin_token') || '';
+  const communityId =
+    typeof window === 'undefined' ? null : localStorage.getItem('cg_selected_community_id');
+
+  const form = new FormData();
+  form.append('image', file);
+
+  const res = await fetch(`${VALET_BASE}/admin/promotions/${id}/image`, {
+    method: 'POST',
+    body: form,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(communityId ? { 'X-Community-Id': communityId } : {}),
+    },
+  });
+  if (!res.ok) throw new ValetError(res.status, 'upload_failed', 'Could not upload that image');
+}
+
+
+/* ------------------------------------------------------ property details -- */
+
+export interface PropertyDetails {
+  name: string;
+  address: string | null;
+  deskPhone: string | null;
+  hours: string | null;
+  wentLiveAt: string | null;
+  /** Who to call about this property. */
+  admin: string | null;
+  /** Cars on the lot right now — the other half of "on shift now". */
+  parkedNow: number;
+  /** Reported, not stored: it is what the product does, not a venue setting. */
+  ticketType: string;
+  /** One number per deployment, so not editable per property. */
+  guestWhatsApp: string | null;
+}
+
+export const getProperty = () => valetFetch<PropertyDetails>('/admin/property');
+
+export const saveProperty = (body: {
+  address?: string; deskPhone?: string; hours?: string;
+}) => valetPatch<{ saved: boolean }>('/admin/property', body);
+
+async function downloadCsv(path: string, name: string): Promise<void> {
+  const token = typeof window === 'undefined' ? '' : localStorage.getItem('cg_admin_token') || '';
+  const communityId =
+    typeof window === 'undefined' ? null : localStorage.getItem('cg_selected_community_id');
+
+  const res = await fetch(`${VALET_BASE}${path}`, {
+    cache: 'no-store',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(communityId ? { 'X-Community-Id': communityId } : {}),
+    },
+  });
+  if (!res.ok) throw new ValetError(res.status, 'export_failed', 'Could not build that export');
+
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${name}-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** The shift log and promotion numbers, line by line. */
+/**
+ * The shift log as a file, narrowed exactly as the screen is.
+ *
+ * A manager who has filtered to one attendant on one day and then downloads a
+ * month has the wrong evidence in their hand, and a CSV looks right until
+ * somebody counts it.
+ */
+export const downloadShiftsCsv = (
+  days = 30,
+  staffId = '',
+  range: { from: string; to: string } | null = null
+) => {
+  const qs = range
+    ? new URLSearchParams({ from: range.from, to: range.to })
+    : new URLSearchParams({ days: String(days) });
+  if (staffId) qs.set('staffId', staffId);
+  return downloadCsv(`/admin/shifts.csv?${qs}`, 'shift-log');
+};
+/** The group screen as a file — what a regional manager forwards. */
+export const downloadLocationsCsv = () =>
+  downloadCsv('/admin/locations.csv', 'properties');
+export const downloadPromotionsCsv = () =>
+  downloadCsv('/admin/promotions.csv', 'promotions');
+
+/** A screenshot on an idea. Sent after the idea exists, like a promo banner. */
+export async function uploadIdeaImage(id: string, file: File): Promise<void> {
+  const token = typeof window === 'undefined' ? '' : localStorage.getItem('cg_admin_token') || '';
+  const communityId =
+    typeof window === 'undefined' ? null : localStorage.getItem('cg_selected_community_id');
+
+  const form = new FormData();
+  form.append('image', file);
+
+  const res = await fetch(`${VALET_BASE}/admin/ideas/${id}/image`, {
+    method: 'POST',
+    body: form,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(communityId ? { 'X-Community-Id': communityId } : {}),
+    },
+  });
+  if (!res.ok) throw new ValetError(res.status, 'upload_failed', 'Could not upload that image');
+}

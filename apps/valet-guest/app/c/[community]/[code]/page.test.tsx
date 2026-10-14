@@ -57,6 +57,40 @@ describe('the card the guard scanned, now shown to the guest', () => {
     expect(screen.queryByRole('button', { name: /browser/i })).not.toBeInTheDocument();
   });
 
+  // A card with no car on it said "Your car is with us" -- to a guest who had
+  // just checked out and kept the card, and to one who scanned before intake
+  // finished. Only a card with a ticket on it may say the car is here.
+  it('does not claim the car is here when no ticket is on the card', async () => {
+    resolvesTo({ waRef: 'H7M2QP', sessionToken: null });
+
+    render(<CardPage />);
+
+    expect(await screen.findByText(/no car is on this card yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/your car is with us/i)).not.toBeInTheDocument();
+  });
+
+  it('says the car is here once a ticket is on the card', async () => {
+    render(<CardPage />);
+
+    expect(await screen.findByText(/your car is with us/i)).toBeInTheDocument();
+  });
+
+  it('keeps checking, and offers the browser the moment check-in completes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ waRef: 'H7M2QP', sessionToken: null }) })
+      .mockResolvedValue({ ok: true, json: async () => ({ waRef: 'H7M2QP', sessionToken: 'tok-9' }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<CardPage />);
+    await screen.findByText(/no car is on this card yet/i);
+    await vi.advanceTimersByTimeAsync(6000);
+
+    expect(await screen.findByRole('button', { name: /browser/i })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+    vi.useRealTimers();
+  });
+
   it('says so when the card was never registered here', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
 

@@ -1,8 +1,11 @@
 import { query, queryRows } from '../db.js';
+import { sweepIdempotencyKeys } from './idempotency.js';
 import { logEvent } from './events.js';
 import { storage } from './storage.js';
 
-const OPEN_STATUSES = ['parked', 'retrieval_requested', 'en_route', 'arrived', 'parked_again'];
+// with_guest included: a guest who drove off for good must not hold the card
+// (and the ticket) open past the end of their stay.
+const OPEN_STATUSES = ['parked', 'retrieval_requested', 'en_route', 'arrived', 'parked_again', 'with_guest'];
 
 function retentionInterval() {
   const hours = Number(process.env.PHOTO_RETENTION_HOURS || 24);
@@ -179,13 +182,82 @@ export async function sweepOverdueCollections() {
   return overdue.length;
 }
 
+/**
+ * How long a guest waits before nobody having come is worth telling someone.
+ */
+function responseWindow() {
+  const minutes = Number(process.env.RESPONSE_WINDOW_MINUTES || 4);
+  return `${minutes} minutes`;
+}
+
+/**
+ * Requests no attendant ever accepted.
+ *
+ * The mirror of sweepOverdueCollections: that one catches a guest who never
+ * came for an arrived car, this one catches a car nobody set off to fetch.
+ *
+ * It exists because the failing part can be the device. A guest's request
+ * travels from their phone to this server and never touches the attendant's
+ * handset -- the app learns about it by polling. An app in a basement polls
+ * nothing, so the request lands perfectly, the guest is told "a valet will
+ * pick this up shortly", and no one is walking anywhere. That is worse than a
+ * request that failed outright, because the guest has been given a promise.
+ *
+ * Deliberately server-side and deliberately blind to the reason. Offline, flat
+ * battery, app closed, attendant already carrying keys for another car -- all
+ * the same from here, and anything that relied on the silent device noticing
+ * its own silence would not be a safety net.
+ *
+ * Flags rather than reassigns. Who picks the car up is a floor decision; this
+ * only makes sure a human is told there is one to make.
+ */
+export async function sweepUnacceptedRequests() {
+  const stale = await queryRows(
+    `SELECT t.id
+       FROM valet_tickets t
+       JOIN valet_ticket_events r
+         ON r.ticket_id = t.id AND r.event_type = 'requested'
+      WHERE t.status = 'retrieval_requested'
+        AND r.created_at < NOW() - ($1)::interval
+        -- Nobody took it. An accept after the request is the thing that makes
+        -- this fine, so it has to be compared against that request, not any
+        -- earlier one on a multi-day ticket.
+        AND NOT EXISTS (
+          SELECT 1 FROM valet_ticket_events a
+           WHERE a.ticket_id = t.id
+             AND a.event_type = 'accepted'
+             AND a.created_at > r.created_at
+        )
+        -- And it has not already been raised for this request. The sweep runs
+        -- repeatedly; without this a duty manager gets a fresh alert every
+        -- pass for a car somebody is already walking to.
+        AND NOT EXISTS (
+          SELECT 1 FROM valet_ticket_events u
+           WHERE u.ticket_id = t.id
+             AND u.event_type = 'request_unanswered'
+             AND u.created_at > r.created_at
+        )
+      GROUP BY t.id`,
+    [responseWindow()]
+  );
+
+  for (const { id } of stale ?? []) {
+    await logEvent(id, 'request_unanswered', {
+      metadata: { window: responseWindow() },
+    });
+  }
+  return (stale ?? []).length;
+}
+
 export async function runSweep() {
   const tickets = await sweepExpiredTickets();
   const photos = await sweepExpiredPhotos();
   const condition = await sweepExpiredConditionMedia();
   const phones = await forgetClosedGuestPhones();
   const overdue = await sweepOverdueCollections();
-  return { tickets, photos, condition, phones, overdue };
+  const unanswered = await sweepUnacceptedRequests();
+  const idempotency = await sweepIdempotencyKeys().catch(() => 0);
+  return { tickets, photos, condition, phones, overdue, unanswered, idempotency };
 }
 
 /**

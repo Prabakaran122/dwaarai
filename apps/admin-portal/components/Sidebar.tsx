@@ -72,21 +72,49 @@ const superAdminNav = [
 const valetNav = [
   { href: '/valet', label: 'Queue' },
   { href: '/valet/search', label: 'Find a vehicle' },
+  // Naming and order follow the staff-screen redesign. "Vehicle log" sits
+  // third because it is what a manager opens when a guest is asking about a
+  // car, which happens far more often than checking inventory.
+  { href: '/valet/visits', label: 'Vehicle log' },
   { href: '/valet/slots', label: 'Inventory' },
-  { href: '/valet/cards', label: 'Cards' },
-  { href: '/valet/visits', label: 'Vehicles in' },
-  { href: '/valet/plate-history', label: 'Plate history' },
-  { href: '/valet/feedback', label: 'Feedback' },
+  { href: '/valet/cards', label: 'Valet cards' },
+  // "Plate history" used to sit here. It and "Find a vehicle" were one
+  // question asked twice -- one needed the whole plate typed from memory, the
+  // other finds the car from four digits -- so a manager had to choose between
+  // two lookups before knowing what they were looking for. The history now
+  // hangs off a search result, where the plate is already correct.
+  { href: '/valet/feedback', label: 'Guest feedback' },
+  { href: '/valet/ideas', label: 'Ideas for Dwaar AI' },
   { href: '/valet/promotions', label: 'Promotions' },
-  { href: '/valet/branding', label: 'Branding' },
-  { href: '/valet/staff', label: 'Staff' },
-  { href: '/valet/locations', label: 'Locations' },
-  { href: '/valet/subscription', label: 'Plan' },
+  { href: '/valet/staff', label: 'Staff and shifts' },
+  { href: '/valet/locations', label: 'Properties' },
 ];
+
+
+/**
+ * The breadcrumb's second half, derived from the nav rather than restated.
+ *
+ * Kept here so adding a valet screen gives it a header title for free. A
+ * separate list would drift the first time somebody added a page and only
+ * remembered one of the two.
+ */
+export const VALET_PAGE_TITLE: Record<string, string> = Object.fromEntries(
+  valetNav.map((n) => [n.href, n.label])
+);
+
+/**
+ * Branding and Plan are deliberately absent above.
+ *
+ * This list is worked out of all day -- Queue, Cards, Staff. A logo is set
+ * once when a property is opened and a plan is read when somebody is deciding
+ * whether to pay for more; neither belongs beside the jobs. They live under
+ * the account menu instead, and the pages themselves are unchanged and still
+ * directly addressable.
+ */
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { user, logout, selectedCommunityId } = useAuth();
+  const { user, selectedCommunityId } = useAuth();
 
   const { modules, valetOnly } = useModules();
 
@@ -134,6 +162,36 @@ export default function Sidebar() {
           // Valet's own screens sit under it, opened when you are in valet —
           // or always, for a property that has nothing else.
           if (item.href === '/valet' && (isActive || valetOnly)) {
+            // A valet-only property gets the flat list the design shows: there
+            // is nothing to nest it under, and a "Valet" header above eleven
+            // valet screens is a word that narrows nothing. A property that
+            // also runs gate or community keeps the nesting, where it is doing
+            // real work telling two groups of screens apart.
+            if (valetOnly) {
+              return (
+                <div key={item.href} className="space-y-0.5">
+                  {valetNav.map((sub) => {
+                    const subActive = sub.href === '/valet'
+                      ? pathname === '/valet'
+                      : pathname.startsWith(sub.href);
+                    return (
+                      <Link
+                        key={sub.href}
+                        href={sub.href}
+                        className={`block px-3 py-2.5 rounded-xl text-sm transition-colors ${
+                          subActive
+                            ? 'bg-teal-50 text-teal-700 font-semibold'
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                        }`}
+                      >
+                        {sub.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              );
+            }
+
             return (
               <div key={item.href}>
                 <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold bg-teal-50 text-teal-700 border border-teal-100">
@@ -187,18 +245,11 @@ export default function Sidebar() {
       </nav>
       <CrossSell />
       <div className="p-4 border-t border-gray-200 space-y-3">
-        <button
-          onClick={logout}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-gray-400 hover:text-red-600 hover:bg-red-50 transition-all duration-200"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
-          Logout
-        </button>
+        {/* Sign-out moved to the account menu in the header. Down here it
+            sat below the cross-sell block, off-screen on a laptop. */}
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-[11px] text-gray-400">System Online</span>
+          <span className="text-[11px] text-gray-400">System online</span>
         </div>
       </div>
     </aside>
