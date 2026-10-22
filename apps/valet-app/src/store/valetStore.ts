@@ -4,6 +4,7 @@ import { reachability } from '../lib/connectivity';
 import { saveQueue, loadQueue } from '../lib/queueCache';
 import type { ValetTicket, ValetStatus } from '../api/valet';
 import { rankRetrievals } from '../lib/retrievalScore';
+import { isStatusChanged, errorCode } from '../lib/errors';
 
 /**
  * Valet queue state, one store per domain like the rest of this app.
@@ -109,109 +110,146 @@ interface ValetState {
   accept: (token: string, etaMinutes: number | null) => Promise<void>;
   arrived: (token: string) => Promise<void>;
   acceptIntake: (token: string) => Promise<void>;
+  /** Abandons an intake that never finished, freeing its card. */
+  cancelIntake: (token: string) => Promise<void>;
   waitingCount: () => number;
+  /**
+   * A short translation key for the queue to show after an action, or null.
+   *
+   * Separate from `error`, which is also set by every failed poll: a dropped
+   * connection is the offline banner's job, and repeating it here on every
+   * tick would bury the one message the attendant needs to read.
+   */
+  notice: string | null;
+  clearNotice: () => void;
 }
 
 /** Turns an axios failure into the service's own error code where there is one. */
 function codeOf(err: unknown): string {
-  const e = err as { response?: { data?: { error?: string } } };
-  return e?.response?.data?.error || 'request_failed';
+  return errorCode(err) || 'request_failed';
 }
 
-export const useValetStore = create<ValetState>((set, get) => ({
-  tickets: [],
-  loading: false,
-  error: null,
-  search: '',
-
+export const useValetStore = create<ValetState>((set, get) => {
   /**
-   * Reads the queue cached by the last successful poll.
+   * Every queue action is a status transition, and they all fail the same
+   * two ways.
    *
-   * The in-memory fallback below already covers a dropped connection mid-shift.
-   * This covers the other half: an attendant force-quitting the app in a
-   * basement and reopening it, where memory is gone and the radio still has
-   * nothing. Without it that launch shows an empty lot.
-   *
-   * Never overwrites live data. A poll that lands while this is still reading
-   * from disk is strictly fresher, and letting the cache win would walk the
-   * queue backwards in front of somebody.
+   * 409 `status_changed` is not a fault: another valet got to the car first,
+   * which two people reading the same queue will do. Saying "that failed, try
+   * again" sends this one to try again on a car somebody else is already
+   * driving. Say what happened and show the queue as it now is.
    */
-  hydrate: async () => {
-    if (get().tickets.length > 0) return;
-    const cached = await loadQueue();
-    if (!cached || get().tickets.length > 0) return;
-    set({ tickets: sortQueue(cached.tickets.filter((t) => !CLOSED.includes(t.status))) });
-  },
-
-  fetch: async () => {
-    set({ loading: true });
+  async function transition(call: () => Promise<unknown>): Promise<void> {
     try {
-      const res = await api.listTickets();
-      const tickets = sortQueue((res.data.tickets || []).filter((t) => !CLOSED.includes(t.status)));
-      set({ tickets, error: null });
-      reachability.getState().noteSuccess();
-      // Fire and forget: the queue is already on screen, and a slow disk must
-      // not hold up the next poll.
-      void saveQueue(tickets);
-    } catch (err) {
-      // Keep whatever the guard is already looking at: a valet stand's
-      // connection drops constantly and blanking the queue mid-shift is worse
-      // than showing a slightly stale one.
-      set({ error: codeOf(err) });
-      // Only a transport failure means "offline". A 500 here means the server
-      // answered, and saying otherwise sends an attendant hunting for signal.
-      reachability.getState().noteFailure(err);
-    } finally {
-      set({ loading: false });
-    }
-  },
-
-  accept: async (token, etaMinutes) => {
-    try {
-      await api.acceptTicket(token, etaMinutes);
+      await call();
       await get().fetch();
     } catch (err) {
-      set({ error: codeOf(err) });
+      if (isStatusChanged(err)) {
+        set({ error: 'status_changed', notice: 'valetStatusChanged' });
+        await get().fetch();
+        return;
+      }
+      set({ error: codeOf(err), notice: 'valetFailed' });
     }
-  },
+  }
 
-  /**
-   * Takes a job the desk logged.
-   *
-   * Refetches immediately: two attendants reading a stale queue is exactly
-   * how they both walk to the same car.
-   */
-  acceptIntake: async (token) => {
-    try {
-      await api.acceptIntake(token);
+  return {
+    tickets: [],
+    loading: false,
+    error: null,
+    search: '',
+
+    /**
+     * Reads the queue cached by the last successful poll.
+     *
+     * The in-memory fallback below already covers a dropped connection mid-shift.
+     * This covers the other half: an attendant force-quitting the app in a
+     * basement and reopening it, where memory is gone and the radio still has
+     * nothing. Without it that launch shows an empty lot.
+     *
+     * Never overwrites live data. A poll that lands while this is still reading
+     * from disk is strictly fresher, and letting the cache win would walk the
+     * queue backwards in front of somebody.
+     */
+    hydrate: async () => {
+      if (get().tickets.length > 0) return;
+      const cached = await loadQueue();
+      if (!cached || get().tickets.length > 0) return;
+      set({ tickets: sortQueue(cached.tickets.filter((t) => !CLOSED.includes(t.status))) });
+    },
+
+    fetch: async () => {
+      set({ loading: true });
+      try {
+        const res = await api.listTickets();
+        const tickets = sortQueue((res.data.tickets || []).filter((t) => !CLOSED.includes(t.status)));
+        set({ tickets, error: null });
+        reachability.getState().noteSuccess();
+        // Fire and forget: the queue is already on screen, and a slow disk must
+        // not hold up the next poll.
+        void saveQueue(tickets);
+      } catch (err) {
+        // Keep whatever the guard is already looking at: a valet stand's
+        // connection drops constantly and blanking the queue mid-shift is worse
+        // than showing a slightly stale one.
+        set({ error: codeOf(err) });
+        // Only a transport failure means "offline". A 500 here means the server
+        // answered, and saying otherwise sends an attendant hunting for signal.
+        reachability.getState().noteFailure(err);
+      } finally {
+        set({ loading: false });
+      }
+    },
+
+    accept: (token, etaMinutes) =>
+      transition(() => api.acceptTicket(token, etaMinutes)),
+
+    /**
+     * Takes a job the desk logged.
+     *
+     * Refetches immediately: two attendants reading a stale queue is exactly
+     * how they both walk to the same car.
+     */
+    acceptIntake: (token) => transition(() => api.acceptIntake(token)),
+
+    arrived: (token) => transition(() => api.markArrived(token)),
+
+    /**
+     * A 409 `not_cancellable` means the car moved on -- somebody finished the
+     * intake, or it was already cancelled -- while this attendant was deciding.
+     * The fresh queue shows which; there is nothing to retry.
+     */
+    cancelIntake: async (token) => {
+      try {
+        await api.cancelIntake(token);
+        set({ notice: 'valetIntakeCancelled' });
+      } catch (err) {
+        const code = errorCode(err);
+        set({
+          error: codeOf(err),
+          notice: code === 'not_cancellable' ? 'valetNotCancellable' : 'valetFailed',
+        });
+      }
       await get().fetch();
-    } catch (err) {
-      set({ error: codeOf(err) });
-    }
-  },
+    },
 
-  arrived: async (token) => {
-    try {
-      await api.markArrived(token);
-      await get().fetch();
-    } catch (err) {
-      set({ error: codeOf(err) });
-    }
-  },
+    notice: null,
+    clearNotice: () => set({ notice: null }),
 
-  setSearch: (search) => set({ search }),
+    setSearch: (search) => set({ search }),
 
-  // Filters what is already held rather than asking the server: a valet
-  // hunting for one of forty parked cars needs the list to narrow as they
-  // type, and the open queue is small enough that this is instant. Matching
-  // is on the normalized plate so spacing and case never matter — the same
-  // rule the server uses, so what they see here agrees with a wider search.
-  visibleTickets: () => {
-    const { tickets, search } = get();
-    const q = search.replace(/\s+/g, '').toUpperCase();
-    if (!q) return tickets;
-    return tickets.filter((t) => t.plate.replace(/\s+/g, '').toUpperCase().includes(q));
-  },
+    // Filters what is already held rather than asking the server: a valet
+    // hunting for one of forty parked cars needs the list to narrow as they
+    // type, and the open queue is small enough that this is instant. Matching
+    // is on the normalized plate so spacing and case never matter — the same
+    // rule the server uses, so what they see here agrees with a wider search.
+    visibleTickets: () => {
+      const { tickets, search } = get();
+      const q = search.replace(/\s+/g, '').toUpperCase();
+      if (!q) return tickets;
+      return tickets.filter((t) => t.plate.replace(/\s+/g, '').toUpperCase().includes(q));
+    },
 
-  waitingCount: () => get().tickets.filter((t) => NEEDS_ACTION.includes(t.status)).length,
-}));
+    waitingCount: () => get().tickets.filter((t) => NEEDS_ACTION.includes(t.status)).length,
+  };
+});

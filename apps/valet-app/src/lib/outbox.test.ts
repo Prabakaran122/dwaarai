@@ -135,3 +135,39 @@ describe('what a shift change leaves behind', () => {
     expect(await pending()).toHaveLength(0);
   });
 });
+
+describe('captures that arrive while a drain is running', () => {
+  it('are not overwritten when the drain writes back', async () => {
+    // The drain now runs from the app root while photos are still being
+    // taken. Writing back only its own snapshot deleted anything queued
+    // during the upload.
+    await enqueue(item({ angle: 'front' }));
+
+    await drain(async () => {
+      await enqueue(item({ angle: 'right' }));
+    });
+
+    expect((await pending()).map((e) => e.payload.angle)).toEqual(['right']);
+  });
+});
+
+describe('entries the current session cannot send', () => {
+  it('are kept untouched and charged no attempt', async () => {
+    await enqueue(item({ community: 'other-venue' }));
+    const send = jest.fn();
+
+    const result = await drain(send, (e) => e.payload.community === 'other-venue');
+
+    expect(send).not.toHaveBeenCalled();
+    expect(result.remaining).toBe(1);
+    expect((await pending())[0].attempts).toBe(0);
+  });
+});
+
+describe('a disk that will not take the write', () => {
+  it('reports the enqueue as failed, so nobody is told the photo is safe', async () => {
+    (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error('ENOSPC'));
+
+    expect(await enqueue(item())).toBe(false);
+  });
+});

@@ -263,6 +263,9 @@ WorkingDirectory=$APP_DIR/apps/valet-guest
 Environment=NODE_ENV=production
 Environment=PORT=3110
 Environment=NEXT_PUBLIC_VALET_API_URL=https://$PUBLIC_HOST/valet-api
+# Server-side fetches (the /t share image) go straight to the service, so they
+# are not counted against the per-IP guest limit as one busy client.
+Environment=VALET_INTERNAL_API_URL=http://127.0.0.1:3060
 Environment=NEXT_PUBLIC_WHATSAPP_NUMBER=${WHATSAPP_NUMBER:-}
 ExecStart=/usr/bin/npx next start -p 3110
 Restart=always
@@ -358,6 +361,15 @@ if [ -f "$NGINX_CONF" ] && ! grep -q 'location \^~ /valet' "$NGINX_CONF"; then
   # /valet/_next/ to the landing site's static root and the guest page would
   # load with no CSS or JS. `^~` stops regex evaluation for this prefix, which
   # is exactly why the existing /admin block uses it too.
+  # The rate-limit zone. `limit_req_zone` is only legal at the http level, so
+  # it cannot ride in the server block below; conf.d/ is included at http
+  # level, which is exactly where it has to be. Coarse on purpose -- the
+  # per-route limits live in valet-service itself (src/index.js); this only
+  # stops a flood before it costs a Node process anything.
+  sudo tee /etc/nginx/conf.d/valet-ratelimit.conf >/dev/null <<'NGXEOF'
+limit_req_zone $binary_remote_addr zone=valet_guest:10m rate=5r/s;
+NGXEOF
+
   sudo python3 - "$NGINX_CONF" <<'PYEOF'
 import io, re, sys
 path = sys.argv[1]
@@ -366,9 +378,28 @@ s = io.open(path, encoding='utf-8').read()
 block = """
     # ---- Valet (DwaarAI Valet) ----
     # `^~` so the css/js regex location above cannot steal /valet/_next/ assets.
+    # The public guest API: same upstream, plus a per-IP flood limit. Longer
+    # prefix, so nginx picks it over /valet-api/ for these paths.
+    location ^~ /valet-api/guest/ {
+        limit_req zone=valet_guest burst=30 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:3060/guest/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 1m;
+    }
+
+    # Upgrade headers for the live-update socket (/valet-api/valet/socket.io/).
+    # Without them nginx speaks plain HTTP/1.1 upstream, the websocket never
+    # opens, and every client quietly falls back to long-polling.
     location ^~ /valet-api/ {
         proxy_pass http://127.0.0.1:3060/;
         proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -406,6 +437,9 @@ PYEOF
     die "nginx config test failed — restored $NEWEST_BAK, nginx left as it was"
   fi
 elif [ -f "$NGINX_CONF" ]; then
+  # Including the guest rate limit and websocket headers added since: they
+  # reach only a box wiring nginx for the first time. An existing box needs
+  # them added by hand (valet-service's own limiter covers it meanwhile).
   echo "valet locations already present — leaving nginx alone"
 else
   echo "$NGINX_CONF not found; route /valet -> :3110 and /valet-api/ -> :3060 by hand"

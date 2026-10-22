@@ -15,7 +15,7 @@ import { useLangStore } from '../store/langStore';
 
 beforeEach(() => {
   jest.clearAllMocks();
-  useAuthStore.setState({ token: null, user: null, loading: false, restoring: false, error: null, sessionExpired: false });
+  useAuthStore.setState({ token: null, user: null, loading: false, restoring: false, error: null, sessionExpired: false, staffInactive: false });
   useLangStore.setState({ lang: 'en' });
 });
 
@@ -101,6 +101,17 @@ describe('coming back from an expired shift session', () => {
   it('says nothing of the sort on an ordinary first sign-in', () => {
     const { queryByTestId } = render(<LoginScreen />);
 
+    expect(queryByTestId('login-session-expired')).toBeNull();
+  });
+});
+
+describe('a deactivated staff member', () => {
+  it('is told their access was turned off and who to ask, not that the session ended', () => {
+    useAuthStore.setState({ staffInactive: true });
+
+    const { getByTestId, queryByTestId } = render(<LoginScreen />);
+
+    expect(getByTestId('login-staff-inactive')).toHaveTextContent(/contact your manager/);
     expect(queryByTestId('login-session-expired')).toBeNull();
   });
 });

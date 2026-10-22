@@ -11,6 +11,7 @@ import LoginScreen from '../src/screens/LoginScreen';
 import ValetFlow from '../src/screens/ValetFlow';
 import ShiftStartScreen from '../src/screens/ShiftStartScreen';
 import { installAuthRefresh } from '../src/api/valet';
+import { startOutboxSync } from '../src/lib/outboxSync';
 
 /**
  * DwaarAI Valet's entry point.
@@ -57,6 +58,14 @@ export default function App() {
     restore();
     rehydrateLang();
   }, []);
+
+  // Queued condition photos drain from here, on every screen, for as long as
+  // any session exists -- not only while the queue is mounted. Keyed on the
+  // token so a sign-in after a shift change sends what the last one left.
+  useEffect(() => {
+    if (!token) return;
+    return startOutboxSync();
+  }, [token]);
 
   return (
     <ErrorBoundary>

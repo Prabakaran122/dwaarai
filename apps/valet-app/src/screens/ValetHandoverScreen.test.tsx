@@ -146,6 +146,20 @@ describe('return condition capture', () => {
     );
   });
 
+  it('does not tick off a side the server refused, and lets it be retaken', async () => {
+    // A 422 is not queued (it would only be refused again), so the photo is
+    // nowhere. It used to be marked captured anyway.
+    (api.uploadCondition as jest.Mock).mockRejectedValueOnce({ response: { status: 422 } });
+    const screen = await reachCondition();
+
+    await act(async () => { fireEvent.press(screen.getByTestId('handover-angle-front')); });
+    expect(screen.getByTestId('handover-error')).toHaveTextContent(/did not save/);
+
+    await act(async () => { fireEvent.press(screen.getByTestId('handover-angle-front')); });
+    expect((api.uploadCondition as jest.Mock).mock.calls.map((c) => c[4])).toEqual(['front', 'front']);
+    expect(screen.queryByTestId('handover-error')).toBeNull();
+  });
+
   it('will not let the valet reach confirmation with nothing captured', async () => {
     const screen = await reachCondition();
 
@@ -231,6 +245,19 @@ describe('confirming the handover', () => {
     await act(async () => { fireEvent.press(screen.getByTestId('handover-park-again')); });
 
     await waitFor(() => expect(screen.getByTestId('handover-error')).toBeTruthy());
+  });
+
+  it('says another valet already closed it, and refreshes the queue', async () => {
+    (api.confirmPickup as jest.Mock).mockRejectedValue({
+      response: { status: 409, data: { error: 'status_changed', status: 'final_closed' } },
+    });
+    (api.listTickets as jest.Mock).mockResolvedValue({ data: { tickets: [] } });
+    const screen = await reachConfirm();
+
+    await act(async () => { fireEvent.press(screen.getByTestId('handover-park-again')); });
+
+    expect(screen.getByTestId('handover-error')).toHaveTextContent(/Another valet/);
+    expect(api.listTickets).toHaveBeenCalled();
   });
 
   it('explains a server-side missing scan too', async () => {

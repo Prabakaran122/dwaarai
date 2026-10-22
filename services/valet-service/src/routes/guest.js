@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { asyncRouter } from '../lib/async-router.js';
 import { query, queryOne } from '../db.js';
 import { newRotatingToken } from '../lib/tokens.js';
@@ -56,7 +57,8 @@ function findTicket(sessionToken) {
                OR (pr.show_from > pr.show_to
                      AND (NOW()::time >= pr.show_from OR NOW()::time <= pr.show_to))
              )
-       JOIN residents cg ON cg.id = t.created_by_guard_id
+       -- LEFT: a car logged from the desk has no attendant on it yet.
+       LEFT JOIN residents cg ON cg.id = t.created_by_guard_id
        LEFT JOIN residents ug ON ug.id = t.current_guard_id
       WHERE t.session_token = $1`,
     [sessionToken]
@@ -155,17 +157,22 @@ router.get('/tickets/:token', async (req, res) => {
 });
 
 /**
- * Resolves a printed card to the ticket it is currently on.
+ * The device a card lookup came from, as the hash we store -- or null.
  *
- * This is what the QR on a physical card encodes: /valet/c/<code>. Unlike the
- * session token, a card code is short and guessable, so this deliberately
- * returns ONLY a redirect target — the caller still needs the session token to
- * read anything about the vehicle, and that token is never in the card's QR.
- *
- * A card between guests resolves to nothing, which is the same 404 shape as an
- * unknown code: someone trying codes learns neither which exist nor which are
- * in use.
+ * The guest page mints a random id once per browser and sends it as
+ * X-Valet-Device. It proves nothing about who is holding the phone; what it
+ * gives us is "the same browser as last time", which is all binding needs.
+ * Shape-checked so an arbitrary header value cannot become a stored key, and
+ * hashed so a database read is not enough to replay it.
  */
+const DEVICE_ID = /^[A-Za-z0-9-]{16,128}$/;
+
+function deviceHash(req) {
+  const raw = String(req.get('x-valet-device') || '').trim();
+  if (!DEVICE_ID.test(raw)) return null;
+  return createHash('sha256').update(raw, 'utf8').digest('hex');
+}
+
 /**
  * Resolves a printed card to its ticket. Venue-scoped, and that is not
  * optional.
@@ -176,6 +183,13 @@ router.get('/tickets/:token', async (req, res) => {
  * venue the database returned first, and a guest could be shown a stranger's
  * vehicle at a property they have never visited. So the card's QR carries the
  * venue and the lookup is scoped to it.
+ *
+ * The session token goes only to the device the card is bound to (072). Card
+ * codes are sequential and printed, so "knows the code" is not a credential:
+ * this used to hand the token -- and with it the right to summon the car -- to
+ * anyone who typed A002 after A001. The first browser to scan while a ticket
+ * is on the card now owns it; every other one is told the card is open
+ * elsewhere and pointed at the claim code, which only the real guest was given.
  */
 router.get('/cards/:communityId/:code', async (req, res) => {
   const code = String(req.params.code || '').trim();
@@ -196,7 +210,8 @@ router.get('/cards/:communityId/:code', async (req, res) => {
   // promptly to a dead end. What is disclosed is that a card code is
   // registered stock at a venue, to someone already holding the card.
   const row = await queryOne(
-    `SELECT c.wa_ref, t.session_token, cm.name AS community_name
+    `SELECT c.wa_ref, t.id AS ticket_id, t.session_token, t.status,
+            t.card_device_hash, cm.name AS community_name
        FROM valet_cards c
        JOIN communities cm ON cm.id = c.community_id
        LEFT JOIN valet_tickets t
@@ -211,11 +226,48 @@ router.get('/cards/:communityId/:code', async (req, res) => {
   // The venue's name, because this is the first screen a guest sees after
   // scanning and it said only "Your car is with us" over a code. They are
   // standing in the place; naming it discloses nothing they cannot see.
-  res.json({
-    waRef: row.wa_ref,
-    sessionToken: row.session_token ?? null,
-    venueName: row.community_name ?? null,
-  });
+  const venueName = row.community_name ?? null;
+
+  // No car on the card: nothing to protect yet, and the guest who scanned
+  // before intake finished needs the WhatsApp reference to get the welcome.
+  if (!row.ticket_id) {
+    return res.json({ waRef: row.wa_ref, sessionToken: null, venueName, status: null, locked: false });
+  }
+
+  const mine = deviceHash(req);
+  let bound = row.card_device_hash ?? null;
+
+  if (!bound && mine) {
+    // Conditional on still being unbound, so two phones scanning in the same
+    // instant cannot both win: one UPDATE matches, the other matches nothing.
+    // Re-read rather than trusting our own write, because the loser needs to
+    // learn whose hash got there first.
+    await query(
+      `UPDATE valet_tickets SET card_device_hash = $2, card_bound_at = NOW()
+        WHERE id = $1 AND card_device_hash IS NULL`,
+      [row.ticket_id, mine]
+    );
+    const after = await queryOne(
+      'SELECT card_device_hash FROM valet_tickets WHERE id = $1',
+      [row.ticket_id]
+    );
+    bound = after?.card_device_hash ?? null;
+  }
+
+  if (mine && bound === mine) {
+    return res.json({
+      waRef: row.wa_ref,
+      sessionToken: row.session_token,
+      venueName,
+      status: row.status,
+      locked: false,
+    });
+  }
+
+  // Someone else's phone, or a browser that sent no id. No waRef either:
+  // messaging it binds the sender's number to whatever ticket is on the card
+  // (webhooks.js), which would be the same takeover by another door.
+  res.json({ sessionToken: null, locked: true, venueName, status: row.status });
 });
 
 /**
@@ -302,6 +354,11 @@ router.get('/tickets/:token/venue-logo', async (req, res) => {
  * cached across the hundreds of guests who see it in an evening.
  */
 router.get('/promotions/:id/image', async (req, res) => {
+  // Checked before the query: the column is a uuid, and Postgres rejects a
+  // malformed one with an error rather than no rows, which surfaced as a 500
+  // for any mistyped or probed URL.
+  if (!UUID.test(String(req.params.id))) return res.status(404).json({ error: 'no_image' });
+
   const promo = await queryOne(
     `SELECT image_key FROM valet_promotions WHERE id = $1 AND status = 'live'`,
     [req.params.id]
@@ -405,6 +462,16 @@ router.get('/tickets/:token/guard-badge/:which/photo', async (req, res) => {
   stream.pipe(res);
 });
 
+/** How long after the close a guest may still take up the discount. */
+const DISCOUNT_OPTIN_WINDOW_MS = Number(process.env.DISCOUNT_OPTIN_WINDOW_HOURS || 24) * 3600000;
+
+function existingDiscount(ticketId) {
+  return queryOne(
+    'SELECT code, expiry FROM valet_discount_optins WHERE ticket_id = $1 ORDER BY issued_at LIMIT 1',
+    [ticketId]
+  );
+}
+
 /**
  * Marketing contact, a separate DPDP collection purpose from the vehicle
  * handover photo, so it carries its own consent timestamp on its own table.
@@ -420,17 +487,42 @@ router.post('/tickets/:token/discount-optin', async (req, res) => {
     return res.status(409).json({ error: 'wrong_status', status: ticket.status });
   }
 
+  // A window after the close, not forever. The thank-you page is reachable by
+  // its link for as long as the token resolves, and an offer that could be
+  // claimed weeks later is a code generator rather than a thank-you.
+  if (ticket.status === 'final_closed' && ticket.closed_at
+      && Date.now() - new Date(ticket.closed_at).getTime() > DISCOUNT_OPTIN_WINDOW_MS) {
+    return res.status(410).json({ error: 'offer_expired', message: 'This offer has expired.' });
+  }
+
   const phoneNumber = String(req.body.phoneNumber || '').replace(/\s+/g, '');
   if (!/^(\+91)?[6-9]\d{9}$/.test(phoneNumber)) {
     return res.status(400).json({ error: 'invalid_phone', message: 'Enter a valid 10-digit mobile number' });
   }
 
-  const { code, expiry } = await issueDiscountCode({
-    phoneNumber,
-    communityId: ticket.community_id,
-    ticketId: ticket.id,
-    consentAt: new Date().toISOString(),
-  });
+  // One code per ticket. This used to mint a fresh code on every tap, so a
+  // single stay could print as many as anyone cared to ask for. A second
+  // request gets the code already issued -- a retry on a flaky connection is
+  // the common case, and telling that guest "no" would read as a failure.
+  const existing = await existingDiscount(ticket.id);
+  if (existing) return res.status(200).json({ code: existing.code, expiry: existing.expiry });
+
+  let issued;
+  try {
+    issued = await issueDiscountCode({
+      phoneNumber,
+      communityId: ticket.community_id,
+      ticketId: ticket.id,
+      consentAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    // Two taps racing past the check above: the unique index in 072 fails
+    // the loser's insert. Whichever row won is the answer for both.
+    const winner = await existingDiscount(ticket.id);
+    if (winner) return res.status(200).json({ code: winner.code, expiry: winner.expiry });
+    throw err;
+  }
+  const { code, expiry } = issued;
 
   await logEvent(ticket.id, 'discount_optin', { metadata: { code } });
   res.status(201).json({ code, expiry });

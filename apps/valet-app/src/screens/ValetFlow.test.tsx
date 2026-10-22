@@ -87,6 +87,36 @@ describe('ValetFlow', () => {
     await waitFor(() => expect(getByTestId('new-valet-ticket')).toBeTruthy());
   });
 
+  // An intake the app lost -- killed after the card scan, or /complete failed
+  // -- must be reachable again, on the SAME ticket, or its card stays locked.
+  it('resumes an unfinished intake on its own ticket, and returns', async () => {
+    (api.completeIntake as jest.Mock).mockResolvedValue({ data: {} });
+    useValetStore.setState({
+      tickets: [ticket({ status: 'parking_in_progress', sessionToken: 'tok-p', plate: '', vehicleMake: '', cardCode: 'A047' })],
+    });
+    const { getByTestId } = render(<ValetFlow />);
+
+    fireEvent.press(getByTestId('valet-tab-parking'));
+    fireEvent.press(getByTestId('valet-resume-a'));
+    await waitFor(() => expect(getByTestId('valet-plate-input')).toBeTruthy());
+    // The card it was started with is still on it.
+    expect(getByTestId('valet-card-chip')).toBeTruthy();
+
+    fireEvent.changeText(getByTestId('valet-plate-input'), 'KA01AB1234');
+    fireEvent.changeText(getByTestId('valet-make-input'), 'Swift');
+    fireEvent.press(getByTestId('valet-create'));
+
+    // Finished, not started again: /start would refuse the card it holds.
+    await waitFor(() => expect(api.completeIntake).toHaveBeenCalledWith(
+      'tok-p', 'KA01AB1234', 'Swift', expect.any(String), expect.any(Object)
+    ));
+    expect(api.startIntake).not.toHaveBeenCalled();
+    expect(api.createTicket).not.toHaveBeenCalled();
+
+    fireEvent.press(getByTestId('valet-close'));
+    await waitFor(() => expect(getByTestId('new-valet-ticket')).toBeTruthy());
+  });
+
   it('has no tab bar: the whole app is the valet flow', async () => {
     const { queryByTestId } = render(<ValetFlow />);
 

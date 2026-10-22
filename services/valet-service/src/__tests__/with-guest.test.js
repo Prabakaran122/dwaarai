@@ -138,9 +138,14 @@ describe('POST /guard/tickets/:token/returned', () => {
     queryOne
       .mockResolvedValueOnce(ticketRow({ status: 'with_guest', slot_id: 'slot-7' }))
       .mockResolvedValueOnce(HANDED_OVER)
-      .mockResolvedValueOnce(null)                                    // slot still free
       .mockResolvedValueOnce(ticketRow({ status: 'parked_again' }));
     queryRows.mockResolvedValueOnce(ALL_FOUR);
+    // Checked inside the transaction, under a lock on the slot row.
+    client.query.mockImplementation(async (sql) => {
+      if (/FROM valet_slots/.test(sql)) return { rows: [{ id: 'slot-7' }] };   // still ours to lock
+      if (/SELECT id FROM valet_tickets/.test(sql)) return { rows: [] };      // slot still free
+      return { rows: [], rowCount: 1 };
+    });
 
     await returned();
 
@@ -151,12 +156,36 @@ describe('POST /guard/tickets/:token/returned', () => {
     queryOne
       .mockResolvedValueOnce(ticketRow({ status: 'with_guest', slot_id: 'slot-7' }))
       .mockResolvedValueOnce(HANDED_OVER)
-      .mockResolvedValueOnce({ id: 'other-ticket' })                  // slot taken
       .mockResolvedValueOnce(ticketRow({ status: 'parked_again' }));
     queryRows.mockResolvedValueOnce(ALL_FOUR);
+    client.query.mockImplementation(async (sql) => {
+      if (/FROM valet_slots/.test(sql)) return { rows: [{ id: 'slot-7' }] };
+      if (/SELECT id FROM valet_tickets/.test(sql)) return { rows: [{ id: 'other-ticket' }] }; // slot taken
+      return { rows: [], rowCount: 1 };
+    });
 
     await returned();
 
     expect(ran()).toContainEqual([expect.stringContaining('parked_again'), [TICKET_ID, null]]);
+  });
+
+  // Conditional on still being with the guest: two valets checking the same
+  // car in must not both write the event.
+  it('answers 409 status_changed when another valet checked it in first', async () => {
+    queryOne
+      .mockResolvedValueOnce(ticketRow({ status: 'with_guest', slot_id: null }))
+      .mockResolvedValueOnce(HANDED_OVER)
+      .mockResolvedValueOnce({ status: 'parked_again' });
+    queryRows.mockResolvedValueOnce(ALL_FOUR);
+    client.query.mockImplementation(async (sql) =>
+      (/UPDATE valet_tickets/.test(sql) ? { rows: [], rowCount: 0 } : { rows: [], rowCount: 1 }));
+
+    const res = await returned();
+
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: 'status_changed', status: 'parked_again' });
+    const sqls = client.query.mock.calls.map((c) => String(c[0]));
+    expect(sqls).toContain('ROLLBACK');
+    expect(sqls.some((q) => q.includes('valet_ticket_events'))).toBe(false);
   });
 });

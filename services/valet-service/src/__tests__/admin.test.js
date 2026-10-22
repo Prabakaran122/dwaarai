@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Readable } from 'stream';
 
+const mockClient = { query: vi.fn(), release: vi.fn() };
 vi.mock('../db.js', () => ({
-  default: {},
+  default: { connect: vi.fn(async () => mockClient) },
   query: vi.fn(),
   queryOne: vi.fn(),
   queryRows: vi.fn(),
@@ -36,6 +37,8 @@ beforeEach(() => {
   query.mockReset();
   queryOne.mockReset();
   queryRows.mockReset();
+  mockClient.query.mockReset();
+  mockClient.query.mockResolvedValue({ rows: [], rowCount: 1 });
 });
 
 describe('GET /admin/plate-history', () => {
@@ -1229,23 +1232,30 @@ describe('the staff directory', () => {
 
 describe('logging a car that has just pulled up', () => {
   it('creates a job waiting for an attendant', async () => {
-    queryOne.mockResolvedValueOnce({ display_id: null }).mockResolvedValueOnce({ id: 'new-id' });
-    query.mockResolvedValue({});
+    mockClient.query.mockImplementation(async (sql) =>
+      (/INSERT INTO valet_tickets/.test(sql)
+        ? { rows: [{ id: 'new-id', display_id: 'DWR-0001', session_token: 's', claim_code: 'C' }] }
+        : { rows: [] }));
 
     const res = await request(app, 'POST', '/admin/tickets/request', {
       token: adminToken(), body: { plate: 'KA03NJ0435' },
     });
 
     expect(res.status).toBe(201);
-    const sql = queryOne.mock.calls.map((c) => c[0]).join(' ');
+    const sql = mockClient.query.mock.calls.map((c) => c[0]).join(' ');
     // A desk that logs cars as they arrive is what puts anything in the
     // parking queue; without it those three states have no producer.
     expect(sql).toMatch(/'requested'/);
   });
 
   it('logs one with no plate, since the desk may only have a car', async () => {
-    queryOne.mockResolvedValueOnce({ display_id: 'DWR-0004' }).mockResolvedValueOnce({ id: 'new-id' });
-    query.mockResolvedValue({});
+    mockClient.query.mockImplementation(async (sql) => {
+      if (/SELECT display_id/.test(sql)) return { rows: [{ display_id: 'DWR-0004' }] };
+      if (/INSERT INTO valet_tickets/.test(sql)) {
+        return { rows: [{ id: 'new-id', display_id: 'DWR-0005', session_token: 's', claim_code: 'C' }] };
+      }
+      return { rows: [] };
+    });
 
     const res = await request(app, 'POST', '/admin/tickets/request', {
       token: adminToken(), body: {},
@@ -1955,13 +1965,16 @@ describe('a promotion on the thank-you page', () => {
 });
 
 describe('redeeming a guest’s offer code', () => {
+  const PROMO_ID = '55555555-5555-5555-5555-555555555555';
+
   it('traces the code back to the ticket it came from', async () => {
     // "Each guest gets their own version of this code, so every use can be
     // traced back to a real valet ticket." Without that a code is a poster.
+    queryOne.mockResolvedValueOnce({ id: PROMO_ID });   // this property's promotion
     queryOne.mockResolvedValueOnce({ id: 't1', community_id: COMMUNITY_ID });
     queryOne.mockResolvedValueOnce({ id: 'ev1' });
 
-    const res = await request(app, 'POST', '/admin/promotions/pr1/redeem', {
+    const res = await request(app, 'POST', `/admin/promotions/${PROMO_ID}/redeem`, {
       token: adminToken(), body: { code: 'VALET25-4K7QP2' },
     });
 
@@ -1970,9 +1983,10 @@ describe('redeeming a guest’s offer code', () => {
   });
 
   it('refuses a code that matches no ticket here', async () => {
+    queryOne.mockResolvedValueOnce({ id: PROMO_ID });
     queryOne.mockResolvedValueOnce(null);
 
-    const res = await request(app, 'POST', '/admin/promotions/pr1/redeem', {
+    const res = await request(app, 'POST', `/admin/promotions/${PROMO_ID}/redeem`, {
       token: adminToken(), body: { code: 'VALET25-ZZZZZZ' },
     });
 
@@ -1983,10 +1997,11 @@ describe('redeeming a guest’s offer code', () => {
   it('says so when a code has already been used', async () => {
     // A restaurant scanning the same screenshot twice is the thing this
     // protects against, and the second person needs a clear answer.
+    queryOne.mockResolvedValueOnce({ id: PROMO_ID });
     queryOne.mockResolvedValueOnce({ id: 't1', community_id: COMMUNITY_ID });
     queryOne.mockResolvedValueOnce(null);   // ON CONFLICT DO NOTHING matched
 
-    const res = await request(app, 'POST', '/admin/promotions/pr1/redeem', {
+    const res = await request(app, 'POST', `/admin/promotions/${PROMO_ID}/redeem`, {
       token: adminToken(), body: { code: 'VALET25-4K7QP2' },
     });
 

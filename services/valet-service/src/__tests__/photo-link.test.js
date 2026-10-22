@@ -102,3 +102,13 @@ describe('GET /guard/photo-links/:sig', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('admin media links are a separate purpose', () => {
+  it('a media link does not verify as a guest-photo link, nor the reverse', async () => {
+    const { signMediaLink, verifyMediaLink, verifyPhotoLink } = await import('../lib/photo-link.js');
+    const media = signMediaLink('m1', COMMUNITY_ID);
+    expect(verifyMediaLink(media)).toEqual({ mediaId: 'm1', communityId: COMMUNITY_ID });
+    expect(verifyPhotoLink(media)).toBeNull();
+    expect(verifyMediaLink(signPhotoLink(TICKET_ID, COMMUNITY_ID))).toBeNull();
+  });
+});

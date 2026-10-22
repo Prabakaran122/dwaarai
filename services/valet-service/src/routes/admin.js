@@ -1,6 +1,6 @@
 import multer from 'multer';
 import { asyncRouter } from '../lib/async-router.js';
-import { query, queryOne, queryRows } from '../db.js';
+import pool, { query, queryOne, queryRows } from '../db.js';
 import { normalizePlate } from '../lib/plate.js';
 import { storage, extensionFor } from '../lib/storage.js';
 import { newClaimCode, normalizeClaimCode } from '../lib/claim-code.js';
@@ -9,6 +9,7 @@ import bcrypt from 'bcryptjs';
 import { logEvent } from '../lib/events.js';
 import { vectorize, isRecognitionConfigured } from '../lib/face.js';
 import { authenticateJWT } from '../middleware/auth.js';
+import { signMediaLink, verifyMediaLink, contentTypeFor, MEDIA_LINK_TTL_SECONDS } from '../lib/photo-link.js';
 import {
   viewCostPaise, withGst, monthlyCeilingPaise, balanceFromLedger, splitSpend, quotaFor,
 } from '../lib/ads.js';
@@ -26,6 +27,9 @@ const logoUpload = multer({
 });
 
 const admin = authenticateJWT(['admin']);
+
+/** A path id that Postgres will accept as a uuid, checked before it is asked. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The venue's own logo key, kept in communities.config rather than a column. */
 function logoKeyOf(communityId) {
@@ -56,7 +60,9 @@ router.get('/plate-history', authenticateJWT(['admin']), async (req, res) => {
     `SELECT t.display_id, t.plate, t.created_at, t.closed_at, t.status, t.disputed,
             cg.name AS created_guard_name
        FROM valet_tickets t
-       JOIN residents cg ON cg.id = t.created_by_guard_id
+       -- LEFT: a car the desk logged has no attendant until one accepts it
+       -- (073). An inner join dropped those rows without a word.
+       LEFT JOIN residents cg ON cg.id = t.created_by_guard_id
       WHERE t.community_id = $1 AND t.plate_normalized = $2
       ORDER BY t.created_at DESC`,
     [req.user.community_id, normalized]
@@ -215,9 +221,20 @@ router.get('/visits', authenticateJWT(['admin']), async (req, res) => {
             ) AS visit_number,
             cg.name AS created_guard_name,
             hg.name AS handed_out_guard_name,
+            -- Why an expired ticket closed: a valet cancelling a check-in and
+            -- the sweep giving up on an unfinished one both land in 'expired',
+            -- and neither is a car that sat out its stay.
+            CASE WHEN t.status = 'expired' THEN COALESCE((
+              SELECT e.event_type FROM valet_ticket_events e
+               WHERE e.ticket_id = t.id
+                 AND e.event_type IN ('intake_cancelled', 'intake_abandoned')
+               ORDER BY e.created_at DESC LIMIT 1), 'expired')
+            END AS closed_reason,
             EXTRACT(EPOCH FROM (COALESCE(t.closed_at, NOW()) - t.created_at))::bigint AS stay_seconds
        FROM valet_tickets t
-       JOIN residents cg ON cg.id = t.created_by_guard_id
+       -- LEFT: a car the desk logged has no attendant until one accepts it
+       -- (073). An inner join dropped those rows without a word.
+       LEFT JOIN residents cg ON cg.id = t.created_by_guard_id
        -- Who released the car.
        --
        -- Not available on the ticket: current_guard_id is set when a valet
@@ -276,6 +293,16 @@ router.get('/visits', authenticateJWT(['admin']), async (req, res) => {
             COUNT(DISTINCT plate_normalized)::int           AS unique_vehicles,
             COUNT(*) FILTER (WHERE disputed)::int           AS disputed_count,
             COUNT(*) FILTER (WHERE status NOT IN ('final_closed','expired'))::int AS open_count,
+            -- Check-ins that never became a parked car: a valet cancelled them
+            -- or the sweep gave up. Not a missing handover -- there was no car
+            -- to hand over -- so the page must not count them as one.
+            COUNT(*) FILTER (
+              WHERE status = 'expired' AND EXISTS (
+                SELECT 1 FROM valet_ticket_events e
+                 WHERE e.ticket_id = valet_tickets.id
+                   AND e.event_type IN ('intake_cancelled', 'intake_abandoned')
+              )
+            )::int                                          AS unfinished_intakes,
             COALESCE(AVG(EXTRACT(EPOCH FROM (COALESCE(closed_at, NOW()) - created_at))), 0)::bigint AS avg_stay_seconds
        FROM valet_tickets
       WHERE community_id = $1
@@ -296,6 +323,7 @@ router.get('/visits', authenticateJWT(['admin']), async (req, res) => {
     totals: {
       visits: totals?.total_visits ?? 0,
       withHandover: totals?.with_handover ?? 0,
+      unfinishedIntakes: totals?.unfinished_intakes ?? 0,
       uniqueVehicles: totals?.unique_vehicles ?? 0,
       // A vehicle seen more than once in the window. The interesting number
       // for a venue is repeat custom, not raw footfall.
@@ -320,6 +348,7 @@ router.get('/visits', authenticateJWT(['admin']), async (req, res) => {
       // string would make an open visit indistinguishable from a closed one
       // whose event went missing.
       handedOutBy: r.handed_out_guard_name ?? null,
+      closedReason: r.closed_reason ?? null,
       visitNumber: Number(r.visit_number),
       // The difference between "a person handed this car back" and "the sweep
       // closed the ticket days later". Showing an auto-close timestamp in a
@@ -535,7 +564,9 @@ router.get('/tickets/search', authenticateJWT(['admin']), async (req, res) => {
             t.created_at, t.closed_at, t.disputed, t.card_code, t.claim_code,
             cg.name AS created_guard_name
        FROM valet_tickets t
-       JOIN residents cg ON cg.id = t.created_by_guard_id
+       -- LEFT: a car the desk logged has no attendant until one accepts it
+       -- (073). An inner join dropped those rows without a word.
+       LEFT JOIN residents cg ON cg.id = t.created_by_guard_id
       WHERE t.community_id = $1
         AND t.plate_normalized LIKE '%' || $2 || '%'
       ORDER BY (t.status NOT IN ('final_closed','expired')) DESC, t.created_at DESC
@@ -1078,7 +1109,9 @@ router.get('/visits.csv', admin, async (req, res) => {
             hg.name AS handed_out_guard_name,
             EXTRACT(EPOCH FROM (COALESCE(t.closed_at, NOW()) - t.created_at))::bigint AS stay_seconds
        FROM valet_tickets t
-       JOIN residents cg ON cg.id = t.created_by_guard_id
+       -- LEFT: a car the desk logged has no attendant until one accepts it
+       -- (073). An inner join dropped those rows without a word.
+       LEFT JOIN residents cg ON cg.id = t.created_by_guard_id
        -- Same lateral as GET /visits, and it has to stay the same: the export
        -- is what gets mailed to a GM or handed to an insurer, and a CSV that
        -- disagrees with the screen it was exported from is worse than either.
@@ -1598,6 +1631,19 @@ router.post('/promotions/:id/redeem', admin, async (req, res) => {
   const code = String(req.body.code ?? '').trim().toUpperCase();
   const claim = code.includes('-') ? code.slice(code.lastIndexOf('-') + 1) : code;
   if (!claim) return res.status(400).json({ error: 'missing_fields' });
+
+  // The promotion has to be this property's own. The ticket lookup below was
+  // scoped and this was not, so a counter at one hotel could pass another
+  // venue's promotion id and file redemptions against its campaign -- the
+  // numbers that venue's ad spend is judged on. Not-found and not-yours are
+  // one answer, so the id of somebody else's promotion is not confirmed.
+  // A malformed id is the same 404 rather than a uuid cast error and a 500.
+  if (!UUID_RE.test(String(req.params.id))) return res.status(404).json({ error: 'not_found' });
+  const promotion = await queryOne(
+    'SELECT id FROM valet_promotions WHERE id = $1 AND community_id = $2',
+    [req.params.id, req.user.community_id]
+  );
+  if (!promotion) return res.status(404).json({ error: 'not_found' });
 
   const ticket = await queryOne(
     `SELECT id, community_id FROM valet_tickets
@@ -2214,23 +2260,52 @@ router.post('/tickets/request', admin, async (req, res) => {
   const communityId = req.user.community_id;
   const plate = String(req.body.plate ?? '').trim().toUpperCase();
 
-  const last = await queryOne(
-    `SELECT display_id FROM valet_tickets
-      WHERE community_id = $1 ORDER BY created_at DESC LIMIT 1`,
-    [communityId]
-  );
+  const client = await pool.connect();
+  let created;
+  try {
+    await client.query('BEGIN');
 
-  const created = await queryOne(
-    `INSERT INTO valet_tickets
-       (community_id, display_id, session_token, claim_code, status,
-        created_by_guard_id, plate, plate_normalized)
-     VALUES ($1, $2, $3, $4, 'requested', $5, $6, $7)
-     RETURNING id, display_id, session_token, claim_code`,
-    [communityId, nextDisplayId(last?.display_id), newSessionToken(), newClaimCode(),
-     req.user.sub, plate || null, plate ? normalizePlate(plate) : null]
-  );
+    // The same per-venue advisory lock every other way of minting a display id
+    // takes (see POST /guard/tickets). Without it a desk log racing a card
+    // scan read the same "last" id, and one of them died on
+    // UNIQUE (community_id, display_id).
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext('valet_display_id'), hashtext($1))`,
+      [communityId]
+    );
+    const last = await client.query(
+      `SELECT display_id FROM valet_tickets
+        WHERE community_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [communityId]
+    );
 
-  await logEvent(created.id, 'logged_at_desk', { metadata: plate ? { plate } : null });
+    // created_by_guard_id stays NULL. It references residents(id) and the
+    // caller is an admin, so writing req.user.sub there failed the foreign key
+    // and every desk log answered 500. Nobody has driven the car yet; the
+    // attendant who accepts the job fills it in, and who logged it is on the
+    // event below.
+    const inserted = await client.query(
+      `INSERT INTO valet_tickets
+         (community_id, display_id, session_token, claim_code, status,
+          created_by_guard_id, plate, plate_normalized)
+       VALUES ($1, $2, $3, $4, 'requested', NULL, $5, $6)
+       RETURNING id, display_id, session_token, claim_code`,
+      [communityId, nextDisplayId(last.rows[0]?.display_id), newSessionToken(), newClaimCode(),
+       plate || null, plate ? normalizePlate(plate) : null]
+    );
+    created = inserted.rows[0];
+
+    await logEvent(created.id, 'logged_at_desk', {
+      metadata: { loggedBy: req.user.sub, role: req.user.role, ...(plate ? { plate } : {}) },
+      client,
+    });
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 
   res.status(201).json({
     id: created.id,
@@ -2238,6 +2313,64 @@ router.post('/tickets/request', admin, async (req, res) => {
     sessionToken: created.session_token,
     claimCode: created.claim_code,
   });
+});
+
+/**
+ * Short-lived links to a ticket's condition photos and videos, for the portal.
+ *
+ * The portal's ticket page rendered <img src> straight at the guard media
+ * route, which needs a bearer token -- and an <img> sends none, so every tile
+ * was a broken image. Same fix as the valet app's handover photo
+ * (lib/photo-link.js): ask for links signed for one item each, then load them
+ * with no header at all.
+ *
+ * Every link names one media record in the admin's own community, carries its
+ * own purpose claim, and lives two minutes. The page asks again when it is
+ * reopened; nothing here is meant to be bookmarked.
+ */
+router.post('/tickets/:token/media-links', admin, async (req, res) => {
+  const ticket = await queryOne(
+    'SELECT id FROM valet_tickets WHERE session_token = $1 AND community_id = $2',
+    [req.params.token, req.user.community_id]
+  );
+  if (!ticket) return res.status(404).json({ error: 'not_found' });
+
+  const rows = await queryRows(
+    `SELECT id FROM valet_condition_records
+      WHERE ticket_id = $1 AND deleted_at IS NULL
+      ORDER BY captured_at ASC`,
+    [ticket.id]
+  );
+
+  const links = {};
+  for (const r of rows) {
+    links[r.id] = `/admin/media-links/${signMediaLink(r.id, req.user.community_id)}`;
+  }
+  res.json({ links, expiresIn: MEDIA_LINK_TTL_SECONDS });
+});
+
+// No admin middleware: the signature is the credential. Every refusal is the
+// same bare 404 -- bad signature, expired, another property's media, or media
+// the retention sweep has since deleted -- so a probe learns nothing.
+router.get('/media-links/:sig', async (req, res) => {
+  const link = verifyMediaLink(req.params.sig);
+  if (!link) return res.status(404).json({ error: 'not_found' });
+
+  // Re-checked at read time, community included, rather than trusting what
+  // was true when the link was signed.
+  const record = await queryOne(
+    `SELECT r.storage_key FROM valet_condition_records r
+       JOIN valet_tickets t ON t.id = r.ticket_id
+      WHERE r.id = $1 AND t.community_id = $2 AND r.deleted_at IS NULL`,
+    [link.mediaId, link.communityId]
+  );
+  if (!record) return res.status(404).json({ error: 'not_found' });
+
+  const stream = await storage.getStream(record.storage_key);
+  if (!stream) return res.status(404).json({ error: 'not_found' });
+  res.setHeader('Content-Type', contentTypeFor(record.storage_key));
+  res.setHeader('Cache-Control', 'private, no-store');
+  stream.pipe(res);
 });
 
 /**

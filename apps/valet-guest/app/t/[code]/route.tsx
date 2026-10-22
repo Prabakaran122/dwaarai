@@ -1,4 +1,5 @@
 import { ImageResponse } from 'next/og';
+import { resolveValetBase } from '@/lib/api';
 
 /**
  * The guest's status as a picture.
@@ -13,10 +14,25 @@ import { ImageResponse } from 'next/og';
  * token forwarded to somebody else would keep working.
  */
 export const runtime = 'nodejs';
-// Rendered fresh every time. A cached timeline is a timeline that is wrong.
+// Rendered on request, never at build. Caching downstream is bounded by
+// CACHE_CONTROL below: a long-cached timeline is a timeline that is wrong.
 export const dynamic = 'force-dynamic';
 
-const API = process.env.NEXT_PUBLIC_VALET_API_URL || 'http://localhost:3060';
+// Server-side, so it may skip the public hop: VALET_INTERNAL_API_URL (e.g.
+// http://127.0.0.1:3060 on the same box) keeps these renders out of the guest
+// API's per-IP rate limit, which would otherwise count every WhatsApp image
+// against this server's single address. Falls back to the public URL, and that
+// to localhost only outside production (resolveValetBase throws there).
+const API = process.env.VALET_INTERNAL_API_URL || resolveValetBase();
+
+/**
+ * Short and shared. ImageResponse defaults to a year-long `immutable` cache in
+ * production, and this URL is the same for every message of a stay -- so a
+ * provider or proxy honouring that would show the check-in picture under the
+ * "at the door" message. A few seconds still absorbs a burst of fetches for
+ * one message without letting a stage go stale.
+ */
+const CACHE_CONTROL = 'public, max-age=10, s-maxage=10, must-revalidate';
 
 const STAGES = ['Checked in', 'Requested', 'On the way', 'At the door'] as const;
 
@@ -142,6 +158,9 @@ export async function GET(
         </div>
       </div>
     ),
-    { width: 1200, height: 630 }
+    // Lowercase on purpose: ImageResponse spreads this over its own
+    // 'cache-control' key, and a 'Cache-Control' key would be a second header
+    // appended to the year-long one rather than a replacement for it.
+    { width: 1200, height: 630, headers: { 'cache-control': CACHE_CONTROL } }
   );
 }

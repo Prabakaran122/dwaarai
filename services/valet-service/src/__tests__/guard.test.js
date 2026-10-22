@@ -44,8 +44,12 @@ const token = guardToken();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Status transitions are conditional UPDATEs now; by default they move one
+  // row, the way an uncontended transition does.
+  query.mockReset();
+  query.mockResolvedValue({ rows: [{ id: TICKET_ID }], rowCount: 1 });
   mockClient.query.mockReset();
-  mockClient.query.mockResolvedValue({ rows: [] });
+  mockClient.query.mockResolvedValue({ rows: [], rowCount: 1 });
   mockClient.release.mockReset();
 });
 
@@ -1031,7 +1035,6 @@ describe('keeping the WhatsApp thread up to date', () => {
     queryOne
       .mockResolvedValueOnce(ticketRow({ status: 'retrieval_requested', phone_number: '919876543210' }))
       .mockResolvedValueOnce(ticketRow({ status: 'en_route', phone_number: '919876543210' }));
-    query.mockResolvedValue({});
 
     await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/accept`, {
       token, body: { etaMinutes: 4 },
@@ -1044,7 +1047,6 @@ describe('keeping the WhatsApp thread up to date', () => {
     queryOne
       .mockResolvedValueOnce(ticketRow({ status: 'en_route', phone_number: '919876543210' }))
       .mockResolvedValueOnce(ticketRow({ status: 'arrived', phone_number: '919876543210' }));
-    query.mockResolvedValue({});
 
     await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/arrived`, { token });
 
@@ -1055,7 +1057,6 @@ describe('keeping the WhatsApp thread up to date', () => {
     queryOne
       .mockResolvedValueOnce(ticketRow({ status: 'retrieval_requested', phone_number: null }))
       .mockResolvedValueOnce(ticketRow({ status: 'en_route', phone_number: null }));
-    query.mockResolvedValue({});
 
     await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/accept`, {
       token, body: { etaMinutes: 4 },
@@ -1165,7 +1166,8 @@ describe('slots, at the stand', () => {
       .mockResolvedValueOnce({ rows: [] })                              // card not in use
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ id: SLOT_ID }] })       // slot is real and free
+      .mockResolvedValueOnce({ rows: [{ id: SLOT_ID }] })       // slot is real (locked)
+      .mockResolvedValueOnce({ rows: [] })                      // and nobody is in it
       .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] })
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({});
@@ -1306,6 +1308,50 @@ describe('intake that starts when the card is scanned', () => {
     expect(sql).toMatch(/pending_wa_phone/);
   });
 
+  // The card page hands its WhatsApp reference out while the card sits idle,
+  // so a reference collected then must not keep working on the next guest.
+  it('gives the card a fresh WhatsApp reference for the new stay', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [{ id: 'card-1', code: 'A047' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: TICKET_ID }] });
+
+    const res = await request(app, 'POST', '/guard/tickets/start', { token, body: { cardCode: 'A047' } });
+
+    expect(res.status).toBe(201);
+    const rotate = mockClient.query.mock.calls.find((c) => /SET wa_ref/.test(c[0]));
+    expect(rotate[1][0]).toBe('card-1');
+    expect(rotate[1][1]).toMatch(/^[A-Z0-9]{6}$/);
+  });
+
+  it('survives a reference collision by trying another', async () => {
+    let first = true;
+    mockClient.query.mockImplementation(async (sql) => {
+      if (/SET wa_ref/.test(sql) && first) { first = false; throw Object.assign(new Error('dup'), { code: '23505' }); }
+      if (/FROM valet_cards/.test(sql)) return { rows: [{ id: 'card-1', code: 'A047' }] };
+      if (/INSERT INTO valet_tickets/.test(sql)) return { rows: [{ id: TICKET_ID }] };
+      return { rows: [], rowCount: 1 };
+    });
+
+    const res = await request(app, 'POST', '/guard/tickets/start', { token, body: { cardCode: 'A047' } });
+
+    expect(res.status).toBe(201);
+    const sql = mockClient.query.mock.calls.map((c) => c[0]);
+    expect(sql.filter((q) => /SET wa_ref/.test(q))).toHaveLength(2);
+    expect(sql).toContain('ROLLBACK TO SAVEPOINT rotate_card_ref');
+  });
+
+  // A number left on an idle card long ago is not a guest at the porch.
+  it('only honours a held number left in the last few minutes', async () => {
+    await request(app, 'POST', '/guard/tickets/start', { token, body: { cardCode: 'A047' } });
+
+    const lookup = mockClient.query.mock.calls.find((c) => /FROM valet_cards/.test(c[0]));
+    expect(lookup[0]).toMatch(/pending_wa_at > NOW\(\) - INTERVAL '15 minutes'/);
+  });
+
   it('refuses a card already on another open ticket', async () => {
     mockClient.query
       .mockResolvedValueOnce({})
@@ -1332,14 +1378,13 @@ describe('completing an intake', () => {
     queryOne
       .mockResolvedValueOnce(ticketRow({ status: 'parking_in_progress' }))
       .mockResolvedValueOnce(ticketRow({ status: 'parked' }));
-    query.mockResolvedValue({});
 
     const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/complete`, {
       token, body: body(),
     });
 
     expect(res.status).toBe(200);
-    const sql = query.mock.calls.map((c) => c[0]).join(' ');
+    const sql = mockClient.query.mock.calls.map((c) => c[0]).join(' ');
     expect(sql).toMatch(/status = 'parked'/);
     expect(sql).toMatch(/plate/);
   });
@@ -1407,7 +1452,6 @@ describe('accepting a job from the queue', () => {
     queryOne
       .mockResolvedValueOnce(ticketRow({ status: 'requested' }))
       .mockResolvedValueOnce(ticketRow({ status: 'accepted' }));
-    query.mockResolvedValue({});
 
     const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/accept-intake`, { token });
 
@@ -1432,7 +1476,6 @@ describe('finishing a job the desk logged', () => {
     queryOne
       .mockResolvedValueOnce(ticketRow({ status: 'accepted' }))
       .mockResolvedValueOnce(ticketRow({ status: 'parked' }));
-    query.mockResolvedValue({});
 
     const res = await request(app, 'POST', `/guard/tickets/${SESSION_TOKEN}/complete`, {
       token,

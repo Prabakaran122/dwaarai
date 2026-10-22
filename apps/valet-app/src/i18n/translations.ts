@@ -141,6 +141,20 @@ export const translations: Dict = {
   valetOpenSettings: { en: 'Open settings', hi: 'सेटिंग्स खोलें', kn: 'ಸೆಟ್ಟಿಂಗ್‌ಗಳನ್ನು ತೆರೆಯಿರಿ' },
   valetCameraFailed: { en: 'The camera did not open', hi: 'कैमरा नहीं खुला', kn: 'ಕ್ಯಾಮೆರಾ ತೆರೆಯಲಿಲ್ಲ' },
   valetOrTellGuest: { en: 'Or the guest can go here and enter', hi: 'या मेहमान यहां जाकर डाल सकते हैं', kn: 'ಅಥವಾ ಅತಿಥಿ ಇಲ್ಲಿಗೆ ಹೋಗಿ ನಮೂದಿಸಬಹುದು' },
+  // Unfinished intakes (0.9.0). A scanned card creates its ticket at once, so
+  // an intake the app lost must be resumable or cancellable from the queue.
+  valetResumeIntake: { en: 'Resume', hi: 'जारी रखें', kn: 'ಮುಂದುವರಿಸಿ' },
+  valetCancelIntake: { en: 'Cancel', hi: 'रद्द करें', kn: 'ರದ್ದುಮಾಡಿ' },
+  valetCancelIntakeTitle: { en: 'Cancel intake for {plate}?', hi: '{plate} की एंट्री रद्द करें?', kn: '{plate} ದಾಖಲಾತಿ ರದ್ದುಮಾಡುವುದೇ?' },
+  valetCancelIntakeBody: { en: 'The ticket is closed and its card is freed for the next car. This cannot be undone.', hi: 'टिकट बंद हो जाएगा और कार्ड अगली गाड़ी के लिए खाली हो जाएगा। इसे वापस नहीं किया जा सकता।', kn: 'ಟಿಕೆಟ್ ಮುಚ್ಚಲಾಗುತ್ತದೆ ಮತ್ತು ಕಾರ್ಡ್ ಮುಂದಿನ ಕಾರಿಗೆ ಬಿಡುಗಡೆಯಾಗುತ್ತದೆ. ಇದನ್ನು ಹಿಂಪಡೆಯಲಾಗುವುದಿಲ್ಲ.' },
+  valetCancelIntakeConfirm: { en: 'Cancel intake', hi: 'एंट्री रद्द करें', kn: 'ದಾಖಲಾತಿ ರದ್ದುಮಾಡಿ' },
+  valetCancelIntakeKeep: { en: 'Keep it', hi: 'रहने दें', kn: 'ಇರಲಿ' },
+  valetIntakeCancelled: { en: 'Intake cancelled — the card is free', hi: 'एंट्री रद्द — कार्ड खाली है', kn: 'ದಾಖಲಾತಿ ರದ್ದಾಗಿದೆ — ಕಾರ್ಡ್ ಖಾಲಿ ಇದೆ' },
+  valetNotCancellable: { en: 'This car has moved on and can no longer be cancelled', hi: 'यह गाड़ी आगे बढ़ चुकी है, अब रद्द नहीं हो सकती', kn: 'ಈ ಕಾರು ಮುಂದಿನ ಹಂತಕ್ಕೆ ಹೋಗಿದೆ, ಈಗ ರದ್ದುಮಾಡಲಾಗುವುದಿಲ್ಲ' },
+  valetStatusChanged: { en: 'Another valet already took this — list updated', hi: 'दूसरे वैले ने यह पहले ही ले लिया — सूची अपडेट हुई', kn: 'ಇನ್ನೊಬ್ಬ ವ್ಯಾಲೆ ಈಗಾಗಲೇ ತೆಗೆದುಕೊಂಡಿದ್ದಾರೆ — ಪಟ್ಟಿ ನವೀಕರಿಸಲಾಗಿದೆ' },
+  valetStaffInactive: { en: 'Your access has been turned off — contact your manager', hi: 'आपकी पहुँच बंद कर दी गई है — अपने मैनेजर से संपर्क करें', kn: 'ನಿಮ್ಮ ಪ್ರವೇಶವನ್ನು ನಿಲ್ಲಿಸಲಾಗಿದೆ — ನಿಮ್ಮ ಮ್ಯಾನೇಜರ್ ಅನ್ನು ಸಂಪರ್ಕಿಸಿ' },
+  valetPhotoNotSaved: { en: 'That photo did not save — take it again', hi: 'फोटो सेव नहीं हुई — फिर से लें', kn: 'ಫೋಟೋ ಉಳಿಯಲಿಲ್ಲ — ಮತ್ತೆ ತೆಗೆಯಿರಿ' },
+  valetUnsentPhotos: { en: '{n} photo(s) not uploaded yet. They stay on this phone and send after the next sign-in here.', hi: '{n} फोटो अभी अपलोड नहीं हुईं। ये इसी फोन पर रहेंगी और अगले साइन इन के बाद भेजी जाएँगी।', kn: '{n} ಫೋಟೋ ಇನ್ನೂ ಅಪ್‌ಲೋಡ್ ಆಗಿಲ್ಲ. ಅವು ಈ ಫೋನ್‌ನಲ್ಲೇ ಇರುತ್ತವೆ ಮತ್ತು ಮುಂದಿನ ಸೈನ್ ಇನ್ ನಂತರ ಕಳುಹಿಸಲಾಗುತ್ತದೆ.' },
 };
 
 export function translate(key: string, lang: Lang): string {

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { valetFetch, valetPost, ValetError, STATUS_LABEL, NEEDS_ACTION, ValetStatus, formatStay,
+import { finishedVisits, valetFetch, valetPost, ValetError, STATUS_LABEL, NEEDS_ACTION, ValetStatus, formatStay,
   previewRange, listCards, registerCards, setCardActive, searchPlates,
-  groupSlots, dayRangeToInstants, rupees } from './valet';
+  groupSlots, dayRangeToInstants, rupees, resolveValetBase, valetErrorMessage, PICK_PROPERTY_MESSAGE,
+  ticketStatusLabel, visitStatusCell } from './valet';
 
 const originalFetch = global.fetch;
 
@@ -340,5 +341,97 @@ describe('rupees', () => {
     expect(rupees(null)).toBe('—');
     expect(rupees(undefined)).toBe('—');
     expect(rupees(0)).toBe('₹0');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The valet-service base URL
+//
+// A production build with NEXT_PUBLIC_VALET_API_URL unset used to ship a
+// localhost fallback, so every valet screen called the operator's own laptop.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('resolveValetBase', () => {
+  it('refuses to fall back to localhost in a production build', () => {
+    expect(() => resolveValetBase(undefined, 'production')).toThrow(/NEXT_PUBLIC_VALET_API_URL/);
+    expect(() => resolveValetBase('', 'production')).toThrow(/NEXT_PUBLIC_VALET_API_URL/);
+  });
+
+  it('keeps the localhost fallback for development and tests', () => {
+    expect(resolveValetBase(undefined, 'development')).toBe('http://localhost:3060');
+    expect(resolveValetBase(undefined, 'test')).toBe('http://localhost:3060');
+  });
+
+  it('uses the configured URL whenever there is one', () => {
+    expect(resolveValetBase('https://dwaarai.com/valet-api', 'production')).toBe('https://dwaarai.com/valet-api');
+  });
+});
+
+describe('no property chosen', () => {
+  it('turns no_community into something the operator can act on', async () => {
+    vi.mocked(global.fetch).mockResolvedValue(
+      mockResponse(403, { error: 'no_community', message: 'Token carries no community' })
+    );
+
+    const err = (await valetFetch('/admin/visits').catch((e: unknown) => e)) as ValetError;
+
+    expect(err).toBeInstanceOf(ValetError);
+    expect(err.code).toBe('no_community');
+    expect(err.message).toBe(PICK_PROPERTY_MESSAGE);
+    expect(err.message).not.toMatch(/Token carries/);
+  });
+
+  // The vehicle log said "needs an admin account" for every 403, including a
+  // super admin who has every permission and had simply not picked a property.
+  it('only blames the account when the service said the role was wrong', () => {
+    expect(valetErrorMessage(new ValetError(403, 'no_community', 'x'), 'f')).toBe(PICK_PROPERTY_MESSAGE);
+    expect(valetErrorMessage(new ValetError(403, 'forbidden', 'Insufficient permissions'), 'f'))
+      .toMatch(/admin account/);
+    expect(valetErrorMessage(new ValetError(403, 'not_your_property', 'That property is not in this account'), 'f'))
+      .toBe('That property is not in this account');
+    expect(valetErrorMessage(new Error('boom'), 'fallback')).toBe('fallback');
+  });
+});
+
+describe('status wording', () => {
+  it('names a car out with its guest the way the valet app does', () => {
+    expect(STATUS_LABEL.with_guest).toBe('With guest');
+  });
+
+  it('does not call a ticket cancelled at intake "Expired"', () => {
+    expect(ticketStatusLabel('expired', ['created', 'intake_cancelled'])).toBe('Cancelled at intake');
+    expect(ticketStatusLabel('expired', ['intake_started', 'intake_abandoned'])).toBe('Intake not finished');
+    expect(ticketStatusLabel('expired', ['created', 'expired'])).toBe('Expired');
+    expect(ticketStatusLabel('with_guest')).toBe('With guest');
+  });
+
+  it('does not flag a car still with the team as a missing handover', () => {
+    expect(visitStatusCell({ status: 'parked', handoverRecorded: false }))
+      .toEqual({ label: 'Parked', warn: false });
+    expect(visitStatusCell({ status: 'with_guest', handoverRecorded: true }))
+      .toEqual({ label: 'With guest', warn: false });
+  });
+
+  it('reads an intake closed before parking as that, not as an alarm', () => {
+    expect(visitStatusCell({ status: 'expired', handoverRecorded: false, closedReason: 'intake_cancelled' }))
+      .toEqual({ label: 'Cancelled at intake', warn: false });
+  });
+
+  it('still warns on a closed ticket nobody recorded handing back', () => {
+    expect(visitStatusCell({ status: 'expired', handoverRecorded: false }))
+      .toEqual({ label: 'Expired, no handover recorded', warn: true });
+    expect(visitStatusCell({ status: 'final_closed', handoverRecorded: false }))
+      .toEqual({ label: 'No handover recorded', warn: true });
+  });
+});
+
+describe('which visits a missing handover counts against', () => {
+  it('leaves out cars still parked and check-ins that never became a car', () => {
+    // The log that read "only 3 of 5 have a handover, the rest were closed
+    // by the system": one was parked, one a valet had cancelled.
+    expect(finishedVisits({ visits: 5, stillOpen: 1, unfinishedIntakes: 1 })).toBe(3);
+  });
+
+  it('treats an older server that sends no count as having none', () => {
+    expect(finishedVisits({ visits: 4, stillOpen: 1 })).toBe(3);
   });
 });

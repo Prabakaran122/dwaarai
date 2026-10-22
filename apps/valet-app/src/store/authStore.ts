@@ -1,11 +1,11 @@
 import { clearQueue } from '../lib/queueCache';
-import { clearOutbox } from '../lib/outbox';
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { setValetAuthToken, clearValetAuthToken } from '../api/valet';
 import {
-  TOKEN_KEY, USER_KEY, saveTokens, clearSession, setSessionExpiredHandler,
+  USER_KEY, saveTokens, clearSession, setSessionExpiredHandler, loadAccessToken,
+  type SessionEndReason,
 } from '../api/session';
 
 /**
@@ -30,11 +30,13 @@ interface AuthState {
   error: string | null;
   /** The hour ran out and the refresh token could not save it either. */
   sessionExpired: boolean;
+  /** A manager turned this person's access off (401 staff_inactive). */
+  staffInactive: boolean;
 
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   restore: () => Promise<void>;
-  expireSession: () => void;
+  expireSession: (reason?: SessionEndReason) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -44,6 +46,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   restoring: true,
   error: null,
   sessionExpired: false,
+  staffInactive: false,
 
   login: async (username, password) => {
     set({ loading: true, error: null });
@@ -65,10 +68,13 @@ export const useAuthStore = create<AuthState>((set) => ({
       await saveTokens(token, data.refreshToken);
       await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
 
-      set({ token, user, loading: false, sessionExpired: false });
+      set({ token, user, loading: false, sessionExpired: false, staffInactive: false });
       return true;
-    } catch {
-      set({ loading: false, error: 'loginFailed' });
+    } catch (err) {
+      // A deactivated account is not a typo. "Login failed" sends them round
+      // the password again; this tells them who can actually fix it.
+      const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      set({ loading: false, error: code === 'staff_inactive' ? 'valetStaffInactive' : 'loginFailed' });
       return false;
     }
   },
@@ -80,20 +86,30 @@ export const useAuthStore = create<AuthState>((set) => ({
     // passes between attendants at every shift change. Dropping the token
     // while leaving the list behind hands the next person this shift's guests.
     await clearQueue();
-    await clearOutbox();
-    set({ token: null, user: null, sessionExpired: false });
+    // The condition-photo outbox is deliberately NOT cleared. Those photos are
+    // evidence for cars already on the lot, and a shift ending in the basement
+    // is exactly when some are still waiting for signal; deleting them here
+    // used to lose them for good. They carry their ticket token and upload
+    // under whichever staff session of the same venue signs in next -- the
+    // upload endpoint asks for nothing more -- and the app-level sync
+    // (lib/outboxSync) sends them as soon as one exists.
+    set({ token: null, user: null, sessionExpired: false, staffInactive: false });
   },
 
   // Reached from the API layer when a 401 could not be refreshed away. Storage
   // is already cleared by then; this is what moves the app off the screen the
   // valet is stuck on and tells them what to do about it.
-  expireSession: () => {
+  expireSession: (reason = 'expired') => {
     clearValetAuthToken();
-    // Same reasoning as logout. An expired session is still the end of that
-    // attendant's access, and it is the more common of the two.
+    // Same reasoning as logout, queue and outbox alike. An expired session is
+    // still the end of that attendant's access, and it is the more common of
+    // the two.
     void clearQueue();
-    void clearOutbox();
-    set({ token: null, user: null, sessionExpired: true });
+    set({
+      token: null, user: null,
+      sessionExpired: reason === 'expired',
+      staffInactive: reason === 'inactive',
+    });
   },
 
   // A valet stand's shift outlives the app being backgrounded, so a stored
@@ -101,7 +117,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   restore: async () => {
     try {
       const [token, raw] = await Promise.all([
-        AsyncStorage.getItem(TOKEN_KEY),
+        loadAccessToken(),
         AsyncStorage.getItem(USER_KEY),
       ]);
       if (token) {
@@ -118,4 +134,4 @@ export const useAuthStore = create<AuthState>((set) => ({
 
 // Wired here rather than in the API module so session.ts stays free of any
 // import back into the store.
-setSessionExpiredHandler(() => useAuthStore.getState().expireSession());
+setSessionExpiredHandler((reason) => useAuthStore.getState().expireSession(reason));

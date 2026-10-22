@@ -9,14 +9,12 @@
  *
  *   node scripts/valet-sweep.js
  */
-import { runSweep } from '../src/lib/expiry.js';
+import { runSweep, describeSweep } from '../src/lib/expiry.js';
 import pool from '../src/db.js';
 
 try {
   const result = await runSweep();
-  console.log(
-    `valet sweep: expired ${result.tickets} ticket(s), deleted ${result.photos} photo(s), ${result.condition} condition record(s)`
-  );
+  console.log(describeSweep(result));
   await pool.end();
 } catch (err) {
   console.error('valet sweep failed:', err);

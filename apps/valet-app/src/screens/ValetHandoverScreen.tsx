@@ -11,6 +11,8 @@ import { uploadOrQueue } from '../lib/conditionQueue';
 import { useT } from '../store/langStore';
 import { takePhoto, openAppSettings } from '../lib/camera';
 import { CONDITION_ANGLES, nextAngle } from '../lib/conditionAngles';
+import { isStatusChanged } from '../lib/errors';
+import { useValetStore } from '../store/valetStore';
 
 /**
  * Handing a car back: scan the guest's rotating QR, compare their face against
@@ -135,11 +137,18 @@ export default function ValetHandoverScreen({
       // Queues rather than failing when the server cannot be reached.
       // Condition media is evidence, and the bays where it is captured
       // are exactly where the signal is not.
-      await uploadOrQueue(sessionToken, res.uri, 'return', 'photo', angle);
+      const up = await uploadOrQueue(sessionToken, res.uri, 'return', 'photo', angle);
+      // Neither uploaded nor safely queued: not captured. The angle stays the
+      // live one, so tapping it again is the retake -- ticking it off here
+      // used to let a set that was missing a photo look complete.
+      if (!up.ok) {
+        setError(t('valetPhotoNotSaved'));
+        return;
+      }
       setCaptured((prev) => [...prev, angle]);
       setError(null);
     } catch {
-      setError(t('valetFailed'));
+      setError(t('valetPhotoNotSaved'));
     } finally {
       setBusy(false);
     }
@@ -155,8 +164,11 @@ export default function ValetHandoverScreen({
       setError(
         code === 'return_condition_required' ? t('valetConditionRequired')
           : code === 'scan_required' ? t('valetScanRequired')
+          // Another valet closed this handover first. Not a retry case.
+          : isStatusChanged(err) ? t('valetStatusChanged')
           : t('valetFailed')
       );
+      if (isStatusChanged(err)) void useValetStore.getState().fetch();
     } finally {
       setBusy(false);
     }

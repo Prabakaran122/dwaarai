@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { isValidIndianMobile, formatCountdown } from './api';
+import { describe, it, expect, vi } from 'vitest';
+import { isValidIndianMobile, formatCountdown, resolveValetBase, valetDeviceId } from './api';
 
 describe('isValidIndianMobile', () => {
   it.each(['9876543210', '6123456789', '+919876543210', '98765 43210', '+91 98765 43210'])(
@@ -39,5 +39,44 @@ describe('formatCountdown', () => {
 
   it('handles a sub-minute remainder', () => {
     expect(formatCountdown(9)).toBe('0:09');
+  });
+});
+
+describe('resolveValetBase', () => {
+  it('uses the configured URL', () => {
+    expect(resolveValetBase('https://dwaarai.com/valet-api', 'production')).toBe('https://dwaarai.com/valet-api');
+  });
+
+  it('falls back to localhost only outside production', () => {
+    expect(resolveValetBase(undefined, 'development')).toBe('http://localhost:3060');
+    expect(resolveValetBase(undefined, 'test')).toBe('http://localhost:3060');
+  });
+
+  // A production build that silently called localhost failed on every guest's
+  // phone with nothing in any server log.
+  it('throws in production with the variable unset', () => {
+    expect(() => resolveValetBase(undefined, 'production')).toThrow(/NEXT_PUBLIC_VALET_API_URL/);
+    expect(() => resolveValetBase('', 'production')).toThrow();
+  });
+});
+
+describe('valetDeviceId', () => {
+  it('is made once and then reused', () => {
+    localStorage.clear();
+    const first = valetDeviceId();
+    expect(first).toMatch(/^[A-Za-z0-9-]{16,128}$/);
+    expect(valetDeviceId()).toBe(first);
+  });
+
+  it('replaces a stored value that is not a device id', () => {
+    localStorage.setItem('dwaarai.valet.deviceId', 'junk');
+    expect(valetDeviceId()).toMatch(/^[A-Za-z0-9-]{16,128}$/);
+  });
+
+  it('survives storage that throws, keeping one id for the tab', () => {
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
+    const a = valetDeviceId();
+    expect(valetDeviceId()).toBe(a);
+    spy.mockRestore();
   });
 });

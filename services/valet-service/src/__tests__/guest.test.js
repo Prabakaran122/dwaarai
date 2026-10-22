@@ -16,6 +16,7 @@ vi.mock('../lib/realtime.js', () => ({ emitTicketUpdate: vi.fn(), getIO: vi.fn()
 vi.mock('../lib/discount.js', () => ({ issueDiscountCode: vi.fn() }));
 
 import { Readable } from 'stream';
+import { createHash } from 'node:crypto';
 import { query, queryOne } from '../db.js';
 import { storage } from '../lib/storage.js';
 import { issueDiscountCode } from '../lib/discount.js';
@@ -23,6 +24,11 @@ import guestRoutes from '../routes/guest.js';
 import { createApp, request, ticketRow, SESSION_TOKEN, TICKET_ID, COMMUNITY_ID } from './helpers.js';
 
 const app = createApp(guestRoutes, '/guest');
+
+// A card page's device id, and the hash the server stores for it (072).
+const DEVICE_ID = 'device-0000-1111-2222-333344445555';
+const DEVICE = { 'X-Valet-Device': DEVICE_ID };
+const DEVICE_HASH = createHash('sha256').update(DEVICE_ID).digest('hex');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -311,9 +317,12 @@ describe('GET /guest/cards/:communityId/:code (legacy shape)', () => {
   beforeEach(() => { queryOne.mockReset(); });
 
   it('resolves a bound card to its ticket', async () => {
-    queryOne.mockResolvedValueOnce({ session_token: SESSION_TOKEN });
+    // The device the ticket is bound to (072) -- any other gets locked: true.
+    queryOne.mockResolvedValueOnce({
+      ticket_id: TICKET_ID, session_token: SESSION_TOKEN, card_device_hash: DEVICE_HASH,
+    });
 
-    const res = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A047`);
+    const res = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A047`, { headers: DEVICE });
 
     expect(res.status).toBe(200);
     expect(res.body.sessionToken).toBe(SESSION_TOKEN);
@@ -328,12 +337,15 @@ describe('GET /guest/cards/:communityId/:code (legacy shape)', () => {
     // place being named. The vehicle is not, and the exact key list is
     // asserted so adding a field is a decision rather than an accident.
     queryOne.mockResolvedValueOnce({
-      session_token: SESSION_TOKEN, wa_ref: 'K7P2QM', community_name: 'The Leela Palace',
+      ticket_id: TICKET_ID, session_token: SESSION_TOKEN, wa_ref: 'K7P2QM',
+      community_name: 'The Leela Palace', status: 'parked', card_device_hash: DEVICE_HASH,
     });
 
-    const res = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A047`);
+    const res = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A047`, { headers: DEVICE });
 
-    expect(Object.keys(res.body).sort()).toEqual(['sessionToken', 'venueName', 'waRef']);
+    // status so the card page can tell a parked car from one out with the
+    // guest; locked so it can tell "yours" from "open on another phone".
+    expect(Object.keys(res.body).sort()).toEqual(['locked', 'sessionToken', 'status', 'venueName', 'waRef']);
     expect(res.body.plate).toBeUndefined();
   });
 
@@ -612,10 +624,12 @@ describe('a card scanned before the guard has finished intake', () => {
     expect(res.body.sessionToken).toBeNull();
   });
 
-  it('hands back the ticket too once there is one', async () => {
-    queryOne.mockResolvedValueOnce({ wa_ref: 'H7M2QP', session_token: SESSION_TOKEN });
+  it('hands back the ticket too once there is one, to the device it is bound to', async () => {
+    queryOne.mockResolvedValueOnce({
+      wa_ref: 'H7M2QP', ticket_id: TICKET_ID, session_token: SESSION_TOKEN, card_device_hash: DEVICE_HASH,
+    });
 
-    const res = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A047`);
+    const res = await request(app, 'GET', `/guest/cards/${COMMUNITY_ID}/A047`, { headers: DEVICE });
 
     expect(res.body.sessionToken).toBe(SESSION_TOKEN);
   });

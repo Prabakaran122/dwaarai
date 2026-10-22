@@ -7,7 +7,28 @@
  * expires logs the operator out of both consistently.
  */
 
-const VALET_BASE = process.env.NEXT_PUBLIC_VALET_API_URL || 'http://localhost:3060';
+/**
+ * Where valet-service lives, decided once at module load.
+ *
+ * The localhost fallback is a dev convenience only. A production bundle built
+ * without NEXT_PUBLIC_VALET_API_URL used to ship it silently, so every valet
+ * screen called the operator's own laptop and reported "could not reach the
+ * valet service" -- a build that looked healthy and could not work. Throwing
+ * here fails `next build` (it prerenders every page that imports this) instead.
+ */
+export function resolveValetBase(configured: string | undefined, nodeEnv: string | undefined): string {
+  if (configured) return configured;
+  if (nodeEnv === 'production') {
+    throw new Error(
+      'NEXT_PUBLIC_VALET_API_URL is not set. A production admin-portal build must name the ' +
+      'valet-service URL (e.g. https://dwaarai.com/valet-api); refusing to fall back to localhost.'
+    );
+  }
+  return 'http://localhost:3060';
+}
+
+// Both reads stay literal so Next inlines them into the client bundle.
+export const VALET_BASE = resolveValetBase(process.env.NEXT_PUBLIC_VALET_API_URL, process.env.NODE_ENV);
 
 function getToken(): string {
   if (typeof window === 'undefined') return '';
@@ -70,6 +91,10 @@ export async function valetFetch<T = unknown>(path: string, options: RequestInit
     } catch {
       /* non-JSON error body; keep the status text */
     }
+    // "Token carries no community" is the server talking to itself. Every
+    // screen prints err.message, so translate it once here, into the thing the
+    // operator can actually do about it.
+    if (code === 'no_community') message = PICK_PROPERTY_MESSAGE;
     throw new ValetError(res.status, code, message);
   }
 
@@ -159,6 +184,60 @@ export const STATUS_LABEL: Record<ValetStatus, string> = {
   expired: 'Expired',
 };
 
+/**
+ * The status line for one ticket, given what happened to it.
+ *
+ * 'expired' is two different stories. A car that overstayed its booked stay is
+ * genuinely expired; a ticket closed while still being taken in (a valet
+ * cancelled it, or the stale-intake sweep closed one nobody finished) never
+ * held a car at all, and "Expired" next to it reads as a car we lost track of.
+ */
+export function ticketStatusLabel(status: ValetStatus, eventTypes: string[] = []): string {
+  if (status === 'expired') {
+    if (eventTypes.includes('intake_cancelled')) return 'Cancelled at intake';
+    if (eventTypes.includes('intake_abandoned')) return 'Intake not finished';
+  }
+  return STATUS_LABEL[status];
+}
+
+/**
+ * The vehicle log's status cell.
+ *
+ * `handoverRecorded` is false for three different reasons, and only one of
+ * them is an alarm: the car is still with us (not closed yet), the ticket was
+ * closed at intake (no car was ever parked), or a closed ticket has no
+ * handover on record (the sweep closed it). Painting all three amber as "No
+ * handover recorded" made every car on the lot read as a missing handover.
+ */
+export function visitStatusCell(v: Pick<VisitRow, 'status' | 'handoverRecorded' | 'closedReason'>):
+  { label: string; warn: boolean } {
+  if (v.handoverRecorded) return { label: STATUS_LABEL[v.status], warn: false };
+  if (v.status !== 'final_closed' && v.status !== 'expired') {
+    return { label: STATUS_LABEL[v.status], warn: false };
+  }
+  if (v.closedReason === 'intake_cancelled') return { label: 'Cancelled at intake', warn: false };
+  if (v.closedReason === 'intake_abandoned') return { label: 'Intake not finished', warn: false };
+  return {
+    label: v.status === 'expired' ? 'Expired, no handover recorded' : 'No handover recorded',
+    warn: true,
+  };
+}
+
+/**
+ * What to show for a failed valet call, by the service's code rather than the
+ * bare status: a 403 is "no property chosen" far more often than "wrong kind of
+ * account", and reporting the first as the second sends a super admin hunting
+ * for a permission they already have.
+ */
+export const PICK_PROPERTY_MESSAGE = 'Pick a property to view its valet data.';
+
+export function valetErrorMessage(err: unknown, fallback: string): string {
+  if (!(err instanceof ValetError)) return fallback;
+  if (err.code === 'no_community') return PICK_PROPERTY_MESSAGE;
+  if (err.code === 'forbidden') return 'This needs an admin account.';
+  return err.message || fallback;
+}
+
 /** Which states need a guard to do something next. */
 export const NEEDS_ACTION: ValetStatus[] = ['retrieval_requested', 'arrived'];
 
@@ -184,6 +263,11 @@ export interface VisitRow {
    * receipt are both missing, so the row is a record of arrival only.
    */
   handoverRecorded: boolean;
+  /**
+   * Why a ticket closed with no handover, when the service says. Optional:
+   * older services omit it and the log falls back to the generic wording.
+   */
+  closedReason?: 'intake_cancelled' | 'intake_abandoned' | 'expired' | null;
 }
 
 /** The vehicle log's narrowing, named so both the page and the export agree. */
@@ -211,8 +295,10 @@ export interface VisitsReport {
     disputed: number;
     stillOpen: number;
     avgStaySeconds: number;
-    /** How many of `visits` a person actually handed back. The rest were swept. */
+    /** How many of `visits` a person actually handed back. */
     withHandover: number;
+    /** Check-ins cancelled by staff or abandoned: no car was ever parked. */
+    unfinishedIntakes?: number;
   };
   visits: VisitRow[];
   paging: { limit: number; offset: number; returned: number };
@@ -1052,4 +1138,13 @@ export async function uploadIdeaImage(id: string, file: File): Promise<void> {
     },
   });
   if (!res.ok) throw new ValetError(res.status, 'upload_failed', 'Could not upload that image');
+}
+
+/**
+ * Visits that ended with a car to hand back -- the only ones a missing
+ * handover can be held against. A car still parked has not been handed over
+ * yet, and a cancelled or abandoned check-in never had a car to hand over.
+ */
+export function finishedVisits(t: { visits: number; stillOpen: number; unfinishedIntakes?: number }): number {
+  return Math.max(0, t.visits - t.stillOpen - (t.unfinishedIntakes ?? 0));
 }

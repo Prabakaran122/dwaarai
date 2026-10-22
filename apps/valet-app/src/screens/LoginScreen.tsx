@@ -18,7 +18,7 @@ import { LANGUAGES } from '../i18n/translations';
 export default function LoginScreen() {
   const t = useT();
   const { lang, setLang } = useLangStore();
-  const { login, loading, error, sessionExpired } = useAuthStore();
+  const { login, loading, error, sessionExpired, staffInactive } = useAuthStore();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -63,6 +63,13 @@ export default function LoginScreen() {
           />
         </View>
 
+        {/* Not "session ended": signing straight back in would only fail
+            again, and the attendant would conclude the app is broken. */}
+        {staffInactive && !error && (
+          <Text style={styles.error} testID="login-staff-inactive">
+            {t('valetStaffInactive')}
+          </Text>
+        )}
         {sessionExpired && !error && (
           <Text style={styles.notice} testID="login-session-expired">
             {t('valetSessionExpired')}

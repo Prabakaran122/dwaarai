@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  valetFetch, ValetError, VisitsReport, STATUS_LABEL, formatStay, downloadVisitsCsv,
-  listStaff, dayRangeToInstants, VisitStatus, VISIT_STATUS_LABEL } from '@/lib/valet';
+  valetFetch, VisitsReport, formatStay, downloadVisitsCsv, visitStatusCell, valetErrorMessage,
+  listStaff, dayRangeToInstants, VisitStatus, VISIT_STATUS_LABEL, finishedVisits } from '@/lib/valet';
 
 /**
  * "What came through the valet stand recently" — the report a manager actually
@@ -74,11 +74,9 @@ export default function ValetVisitsPage() {
       setData(res);
       setError(null);
     } catch (err) {
-      setError(
-        err instanceof ValetError && err.status === 403
-          ? 'This report needs an admin account.'
-          : err instanceof ValetError ? err.message : 'Could not load the report.'
-      );
+      // By code, not by status: every 403 used to read "needs an admin
+      // account", including a super admin who simply had no property chosen.
+      setError(valetErrorMessage(err, 'Could not load the report.'));
     } finally {
       setLoading(false);
     }
@@ -261,7 +259,11 @@ export default function ValetVisitsPage() {
         </div>
       )}
 
-      {status !== 'no_handover' && data && data.totals.visits > 0 && data.totals.withHandover < data.totals.visits && (
+      {/* Only visits that ended with a car to hand back. A car still parked
+          has not been handed over yet, and a check-in a valet cancelled never
+          had one -- counting either as "closed by the system" overstated the
+          problem and pointed staff at rows with nothing wrong in them. */}
+      {status !== 'no_handover' && data && finishedVisits(data.totals) > 0 && data.totals.withHandover < finishedVisits(data.totals) && (
         /* The single most useful sentence on this page.
            A ticket the retention sweep closed has no handover, no parking time
            anybody measured and no receipt the guest ever saw -- so a log that
@@ -270,7 +272,7 @@ export default function ValetVisitsPage() {
            not something a manager can act on. */
         <div className="mb-4 px-4 py-3 rounded-lg bg-amber-50 ring-1 ring-amber-200 text-sm text-amber-800 flex items-start justify-between gap-4">
           <p>
-            Only {data.totals.withHandover} of {data.totals.visits} cars have a recorded
+            Only {data.totals.withHandover} of {finishedVisits(data.totals)} finished visits have a recorded
             handover. The rest were closed by the system on its own, so their parking times
             and guest receipts are missing.
           </p>
@@ -358,6 +360,11 @@ export default function ValetVisitsPage() {
                             day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
                           })
                         ) : (
+                          v.closedReason === 'intake_cancelled' ? (
+                            <span className="text-gray-400">Cancelled by staff</span>
+                          ) : v.closedReason === 'intake_abandoned' ? (
+                            <span className="text-gray-400">Check-in not finished</span>
+                          ) :
                           /* The sweep closed this, hours or days later. Showing
                              that timestamp plainly under "Returned at" would
                              read as the moment a guest drove away, which is the
@@ -384,11 +391,12 @@ export default function ValetVisitsPage() {
                       {v.handedOutBy ?? <span className="text-gray-400">Not recorded</span>}
                     </td>
                     <td className="px-4 py-2.5">
-                      {v.handoverRecorded ? STATUS_LABEL[v.status] : (
-                        <span className="text-amber-700 text-xs font-semibold">
-                          No handover recorded
-                        </span>
-                      )}
+                      {(() => {
+                        const cell = visitStatusCell(v);
+                        return cell.warn ? (
+                          <span className="text-amber-700 text-xs font-semibold">{cell.label}</span>
+                        ) : cell.label;
+                      })()}
                       {v.disputed && (
                         <span className="ml-2 text-[10px] font-bold uppercase tracking-wider text-orange-700">
                           Disputed

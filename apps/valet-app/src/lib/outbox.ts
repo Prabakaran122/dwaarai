@@ -57,18 +57,24 @@ async function readAll(): Promise<OutboxEntry[]> {
   }
 }
 
-async function writeAll(entries: OutboxEntry[]): Promise<void> {
+async function writeAll(entries: OutboxEntry[]): Promise<boolean> {
   try {
     await AsyncStorage.setItem(KEY, JSON.stringify(entries));
+    return true;
   } catch {
     /* a full disk must not throw into the caller's capture flow */
+    return false;
   }
 }
 
-export async function enqueue(payload: Record<string, unknown>): Promise<void> {
+/**
+ * Keeps a payload for later. Resolves false when it could not be written --
+ * a full disk -- so the caller never reports as safe a photo that is not.
+ */
+export async function enqueue(payload: Record<string, unknown>): Promise<boolean> {
   const entries = await readAll();
   entries.push({ key: newKey(), payload, attempts: 0, queuedAt: Date.now() });
-  await writeAll(entries);
+  return writeAll(entries);
 }
 
 export async function pending(): Promise<OutboxEntry[]> {
@@ -89,7 +95,13 @@ export interface DrainResult {
  * attempts costs an entry an attempt it cannot spare.
  */
 export async function drain(
-  send: (entry: OutboxEntry) => Promise<unknown>
+  send: (entry: OutboxEntry) => Promise<unknown>,
+  /**
+   * Entries to leave untouched this pass -- kept, not attempted, and charged
+   * no attempt. Used for media belonging to a different venue than the
+   * session now signed in, which that session could only 404 on.
+   */
+  skip?: (entry: OutboxEntry) => boolean
 ): Promise<DrainResult> {
   const entries = await readAll();
   if (entries.length === 0) return { sent: 0, dropped: 0, remaining: 0 };
@@ -100,7 +112,7 @@ export async function drain(
   let halted = false;
 
   for (const entry of entries) {
-    if (halted) { keep.push(entry); continue; }
+    if (halted || skip?.(entry)) { keep.push(entry); continue; }
 
     try {
       await send(entry);
@@ -128,11 +140,24 @@ export async function drain(
     }
   }
 
-  await writeAll(keep);
-  return { sent, dropped, remaining: keep.length };
+  // Captures keep arriving while a drain is uploading -- it now runs from the
+  // app root, on any screen. Writing back only what this pass started with
+  // would silently delete a photo queued in the meantime, so anything that
+  // appeared since the snapshot is carried over.
+  const seen = new Set(entries.map((e) => e.key));
+  const arrived = (await readAll()).filter((e) => !seen.has(e.key));
+  const next = [...keep, ...arrived];
+  await writeAll(next);
+  return { sent, dropped, remaining: next.length };
 }
 
-/** Dropped on sign-out, like the queue cache: it holds this shift's media. */
+/**
+ * Empties the outbox.
+ *
+ * No longer called on sign-out or expiry: unsent condition photos are evidence
+ * for cars already on the lot, and they outlive the session that took them
+ * (see authStore.logout). Kept for tests and for a deliberate reset.
+ */
 export async function clearOutbox(): Promise<void> {
   try {
     await AsyncStorage.removeItem(KEY);

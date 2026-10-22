@@ -3,13 +3,36 @@
  *
  * There is no token, no login and no stored session here by design: the guest
  * scanned a physical card, and the session token in the URL is the only
- * credential. Nothing is written to localStorage, so reopening the link on a
- * different phone reconstructs the same state and closing the tab loses
- * nothing.
+ * credential. Reopening a /v/ link on a different phone reconstructs the same
+ * state and closing the tab loses nothing.
+ *
+ * The one thing kept in localStorage is a random device id (see
+ * valetDeviceId), which a printed card binds to. It identifies this browser,
+ * never the guest, and holds nothing about any car.
  */
 
-export const VALET_BASE =
-  process.env.NEXT_PUBLIC_VALET_API_URL || 'http://localhost:3060';
+/**
+ * Where valet-service lives. Throws in a production build with the variable
+ * unset.
+ *
+ * The localhost fallback is right for `next dev` and silently wrong anywhere
+ * else: a production build without it shipped a guest page calling
+ * http://localhost:3060 from the guest's own phone -- every request failing,
+ * and nothing in any server log to say why. NEXT_PUBLIC_ values are inlined
+ * at build time, so this fails `next build` rather than a guest.
+ */
+export function resolveValetBase(
+  url: string | undefined = process.env.NEXT_PUBLIC_VALET_API_URL,
+  nodeEnv: string | undefined = process.env.NODE_ENV,
+): string {
+  if (url) return url;
+  if (nodeEnv === 'production') {
+    throw new Error('NEXT_PUBLIC_VALET_API_URL is not set. A production build of valet-guest needs it.');
+  }
+  return 'http://localhost:3060';
+}
+
+export const VALET_BASE = resolveValetBase();
 
 export type ValetStatus =
   | 'requested' | 'accepted' | 'parking_in_progress'
@@ -104,6 +127,72 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return res.json();
 }
+
+const DEVICE_KEY = 'dwaarai.valet.deviceId';
+const DEVICE_ID = /^[A-Za-z0-9-]{16,128}$/;
+// Used when storage is unavailable (private mode, blocked site data). Lives as
+// long as the tab, so the page's own polling still presents one device.
+let memoryDeviceId: string | null = null;
+
+function newDeviceId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // randomUUID needs a secure context; an http:// LAN test box is not one.
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * This browser's id for card binding: made once, then reused.
+ *
+ * A printed card's code is sequential, so knowing it proves nothing; the
+ * server gives the ticket's link only to the first browser that scanned the
+ * card while the car was on it. Storage can throw outright rather than
+ * return null (Safari private mode, blocked site data), and a throw here must
+ * not stop the page -- it falls back to an id for this tab only.
+ */
+export function valetDeviceId(): string {
+  try {
+    const stored = window.localStorage.getItem(DEVICE_KEY);
+    if (stored && DEVICE_ID.test(stored)) return stored;
+    const id = memoryDeviceId ?? newDeviceId();
+    window.localStorage.setItem(DEVICE_KEY, id);
+    memoryDeviceId = id;
+    return id;
+  } catch {
+    memoryDeviceId = memoryDeviceId ?? newDeviceId();
+    return memoryDeviceId;
+  }
+}
+
+/**
+ * What a printed card resolves to.
+ *
+ * `locked` means a car is on the card but it is bound to another phone: no
+ * session token and no WhatsApp reference come back, and the guest gets in
+ * with their claim code instead. `status` is the ticket's, null with no car.
+ */
+export interface CardLookup {
+  sessionToken: string | null;
+  waRef?: string | null;
+  venueName: string | null;
+  status: ValetStatus | null;
+  locked: boolean;
+}
+
+export const getCard = (community: string, code: string) =>
+  call<CardLookup>(
+    `/guest/cards/${encodeURIComponent(community)}/${encodeURIComponent(code)}`,
+    { headers: { 'X-Valet-Device': valetDeviceId() } }
+  );
+
+/** A typed claim code, exchanged for the ticket it belongs to. */
+export const resolveClaimCode = (code: string) =>
+  call<{ sessionToken: string; venueName: string | null }>(
+    `/guest/claim/${encodeURIComponent(code)}`
+  );
 
 export const getTicket = (token: string) =>
   call<GuestTicket>(`/guest/tickets/${token}`);

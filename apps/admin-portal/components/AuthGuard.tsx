@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useModules } from '@/lib/modules';
-import { useAuth } from '@/lib/auth';
+import { useAuth, valetNeedsProperty, propertyPickerPath } from '@/lib/auth';
 import Sidebar, { VALET_PAGE_TITLE } from './Sidebar';
 import ProfileMenu from './ProfileMenu';
 import PropertySwitcher from './PropertySwitcher';
@@ -67,11 +67,13 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   // Read from localStorage rather than context because the switcher writes
   // there and reloads; a value held in React state would be a second source of
   // truth for the same thing.
-  const needsProperty =
-    user?.role === 'client_admin' &&
-    pathname.startsWith('/valet') &&
-    pathname !== '/valet/locations' &&
-    (typeof window === 'undefined' || !localStorage.getItem('cg_selected_community_id'));
+  // A super admin is in the same position with no property picked: every
+  // valet call would 403 no_community.
+  const needsProperty = valetNeedsProperty(
+    user?.role,
+    pathname,
+    typeof window === 'undefined' ? null : localStorage.getItem('cg_selected_community_id'),
+  );
 
   const isSuperAdmin = user?.role === 'super_admin';
   const isViewingCommunity = isSuperAdmin && selectedCommunityName;
@@ -127,16 +129,30 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           {needsProperty ? (
             <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center max-w-2xl">
               <p className="text-sm text-gray-600">
-                Choose a property to see this screen.
+                Pick a property to view its valet data.
               </p>
               <p className="text-xs text-gray-400 mt-1">
-                Use the property menu at the top, or open one from{' '}
-                <button
-                  onClick={() => router.push('/valet/locations')}
-                  className="font-semibold text-teal-700 hover:text-teal-900"
-                >
-                  Properties
-                </button>.
+                {user?.role === 'super_admin' ? (
+                  <>
+                    Open one from{' '}
+                    <button
+                      onClick={() => router.push(propertyPickerPath(user?.role))}
+                      className="font-semibold text-teal-700 hover:text-teal-900"
+                    >
+                      Communities
+                    </button>.
+                  </>
+                ) : (
+                  <>
+                    Use the property menu at the top, or open one from{' '}
+                    <button
+                      onClick={() => router.push(propertyPickerPath(user?.role))}
+                      className="font-semibold text-teal-700 hover:text-teal-900"
+                    >
+                      Properties
+                    </button>.
+                  </>
+                )}
               </p>
             </div>
           ) : children}

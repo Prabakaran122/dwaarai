@@ -19,10 +19,14 @@ const SECRET = process.env.JWT_SECRET;
 let pass = 0, fail = 0;
 const check = (l, ok, d = '') => { ok ? (console.log('  ok   ' + l), pass++) : (console.log('  FAIL ' + l + ' ' + d), fail++); };
 
+// One browser, as a guest's phone would be: the card lookup binds an open
+// ticket to the first device that asks and answers "locked" to any other.
+const GUEST_DEVICE = 'e2e-guest-device-0001';
+
 async function api(path, { method = 'GET', token, body } = {}) {
   const res = await fetch(BASE + path, {
     method,
-    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}), 'X-Valet-Device': GUEST_DEVICE },
     body: body ? JSON.stringify(body) : undefined,
   });
   let json = null; try { json = await res.json(); } catch {}

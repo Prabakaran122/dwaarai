@@ -46,16 +46,21 @@ function StatusPill({ status }: { status: ValetStatus }) {
 export default function ValetDashboard() {
   const [arrivalPlate, setArrivalPlate] = useState('');
   const [logging, setLogging] = useState(false);
+  // Its own state, not the queue's banner: the 5s poll clears that one on its
+  // next success, and the failure would vanish before anyone read it.
+  const [arrivalError, setArrivalError] = useState<string | null>(null);
 
   async function onLogArrival() {
     setLogging(true);
+    setArrivalError(null);
     try {
       await logArrival(arrivalPlate.trim() || undefined);
       setArrivalPlate('');
       await load();
-    } catch {
-      /* the queue is still correct on screen; a failed log is not worth
-         replacing it with an error banner */
+    } catch (err) {
+      // Said, not swallowed: a button that does nothing when pressed reads as
+      // "logged" to whoever pressed it, and the car then has no ticket.
+      setArrivalError(err instanceof ValetError ? `Could not log the arrival: ${err.message}` : 'Could not log the arrival');
     } finally {
       setLogging(false);
     }
@@ -143,6 +148,12 @@ export default function ValetDashboard() {
         </div>
       </header>
 
+      {arrivalError && (
+        <div role="alert" className="mb-4 px-4 py-3 rounded-lg bg-red-50 text-red-700 text-sm ring-1 ring-red-200">
+          {arrivalError}
+        </div>
+      )}
+
       {error && (
         <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 text-red-700 text-sm ring-1 ring-red-200">
           {error}
@@ -179,8 +190,10 @@ export default function ValetDashboard() {
                     )}
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    {t.vehicleMake} · {t.displayId} · in {minutesSince(t.createdAt)} min
-                    {t.currentGuardName && ` · ${t.currentGuardName}`}
+                    {/* A car logged at the desk has no make yet; joined from what
+                        exists rather than printing a leading " · ". */}
+                    {[t.vehicleMake, t.displayId, `in ${minutesSince(t.createdAt)} min`, t.currentGuardName]
+                      .filter(Boolean).join(' · ')}
                   </p>
                 </div>
 

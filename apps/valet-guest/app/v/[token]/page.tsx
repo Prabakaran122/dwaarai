@@ -329,6 +329,10 @@ export default function GuestPage() {
 
   const [ticket, setTicket] = useState<GuestTicket | null>(null);
   const [notFound, setNotFound] = useState(false);
+  // A load that failed for any reason but 404: no signal, a 500, a rate
+  // limit. Kept apart from notFound because telling a guest whose phone lost
+  // signal that their link "has expired" sends them to the desk for nothing.
+  const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
   const [badgeFor, setBadgeFor] = useState<'dropoff' | 'current' | null>(null);
@@ -351,18 +355,29 @@ export default function GuestPage() {
       // Resync the countdown from the server on every poll, so a phone that
       // slept or throttled its timers does not drift.
       setEta(t.etaSeconds);
+      setLoadError(false);
     } catch (err) {
       if (err instanceof GuestError && err.status === 404) setNotFound(true);
+      else setLoadError(true);
     } finally {
       setLoading(false);
     }
   }, [token]);
 
+  // Nothing more can happen to a closed or expired ticket, and a 404 will not
+  // un-404. Polling those was a request every four seconds, per open tab, for
+  // as long as the thank-you page sat in somebody's browser.
+  const finished = notFound || ticket?.status === 'final_closed' || ticket?.status === 'expired';
+
   useEffect(() => {
     load();
+  }, [load]);
+
+  useEffect(() => {
+    if (finished) return;
     const timer = setInterval(load, POLL_MS);
     return () => clearInterval(timer);
-  }, [load]);
+  }, [load, finished]);
 
   // Ticks locally between polls so the number moves every second rather than
   // jumping in four-second steps.
@@ -448,6 +463,27 @@ export default function GuestPage() {
 
   if (loading) {
     return <Shell><p className="text-white/50 text-sm">Loading…</p></Shell>;
+  }
+
+  // Never loaded, and not because the link is bad. The poll keeps trying on
+  // its own; the button is for the guest who would rather not wait.
+  if (!notFound && !ticket && loadError) {
+    return (
+      <Shell>
+        <div className="rounded-2xl bg-[#1B3A4B] p-6 ring-1 ring-white/10 text-center">
+          <p className="text-white font-semibold">We couldn&apos;t load your ticket.</p>
+          <p className="text-sm text-white/50 mt-2">
+            Check your connection. This page keeps trying by itself.
+          </p>
+          <button
+            onClick={() => { void load(); }}
+            className="mt-5 w-full py-3 rounded-xl ring-1 ring-white/20 text-white text-sm font-semibold"
+          >
+            Try again
+          </button>
+        </div>
+      </Shell>
+    );
   }
 
   // Identical for a token that never existed and one that has closed, so
@@ -663,7 +699,10 @@ export default function GuestPage() {
             <h2 className="mt-10 text-3xl font-bold tracking-tight text-slate-900">
               Thank You for Visiting
             </h2>
-            {ticket.hasCard && (
+            {/* Only once it is the final checkout. At the scan the valet has
+                not yet said whether the guest is leaving or only taking the
+                car out for a while, and a multi-day guest keeps the card. */}
+            {ticket.hasCard && ticket.status === 'final_closed' && (
               <p className="mt-2 text-sm text-slate-500">
                 Please return the card back to the venue
               </p>

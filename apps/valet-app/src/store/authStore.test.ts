@@ -10,12 +10,13 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 jest.mock('axios');
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
 import { useAuthStore } from './authStore';
 import { REFRESH_KEY, TOKEN_KEY } from '../api/session';
 
 const mockPost = axios.post as jest.Mock;
-const mockSet = AsyncStorage.setItem as jest.Mock;
+const mockSet = SecureStore.setItemAsync as jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -68,5 +69,45 @@ describe('what a shift change leaves behind', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(AsyncStorage.removeItem).toHaveBeenCalledWith(CACHE_KEY);
+  });
+
+  it('keeps unsent condition photos through sign-out and expiry', async () => {
+    // They are evidence for cars already on the lot. Deleting them with the
+    // session lost every photo still waiting for signal at shift change.
+    await useAuthStore.getState().logout();
+    useAuthStore.getState().expireSession();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(AsyncStorage.removeItem).not.toHaveBeenCalledWith('dwaar_valet_outbox');
+  });
+
+  it('deletes the tokens from secure storage on sign-out', async () => {
+    await SecureStore.setItemAsync(TOKEN_KEY, 'access-1');
+    await SecureStore.setItemAsync(REFRESH_KEY, 'refresh-1');
+
+    await useAuthStore.getState().logout();
+
+    expect(await SecureStore.getItemAsync(TOKEN_KEY)).toBeNull();
+    expect(await SecureStore.getItemAsync(REFRESH_KEY)).toBeNull();
+  });
+});
+
+describe('a deactivated staff member', () => {
+  it('is signed out with a reason, not told their session merely ended', () => {
+    useAuthStore.setState({ token: 'live', user: { id: 'g1', name: 'Ramesh', communityName: null } });
+
+    useAuthStore.getState().expireSession('inactive');
+
+    expect(useAuthStore.getState().token).toBeNull();
+    expect(useAuthStore.getState().staffInactive).toBe(true);
+    expect(useAuthStore.getState().sessionExpired).toBe(false);
+  });
+
+  it('is told so at sign-in too, rather than "login failed"', async () => {
+    mockPost.mockRejectedValue({ response: { status: 401, data: { error: 'staff_inactive' } } });
+
+    await useAuthStore.getState().login('valet1', 'pw');
+
+    expect(useAuthStore.getState().error).toBe('valetStaffInactive');
   });
 });

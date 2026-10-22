@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useReducer, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import {
-  valetFetch, valetPost, ValetError,
-  ValetTicketDetail, ConditionRecord, STATUS_LABEL,
+  valetFetch, valetPost,
+  ValetTicketDetail, ConditionRecord, ticketStatusLabel, valetErrorMessage,
 } from '@/lib/valet';
+import { SignedMediaLinks, fetchMediaLinks } from '@/lib/mediaLinks';
 
 /**
  * One ticket: its audit trail, and the intake-vs-return condition comparison.
@@ -14,8 +15,6 @@ import {
  * media is captured at all — so the two stages sit side by side at the same
  * size rather than in one scrolling list.
  */
-
-const VALET_BASE = process.env.NEXT_PUBLIC_VALET_API_URL || 'http://localhost:3060';
 
 const EVENT_LABEL: Record<string, string> = {
   created: 'Ticket created',
@@ -26,9 +25,20 @@ const EVENT_LABEL: Record<string, string> = {
   arrived: 'Arrived at pickup point',
   scan_success: 'QR verified',
   scan_failed: 'QR scan failed',
-  closed_pickup: 'Handed over, parked again',
+  // A non-final handover puts the car out with the guest (with_guest); it is
+  // not parked again until a valet records it back.
+  closed_pickup: 'Handed over, taken out by the guest',
+  returned_by_guest: 'Car back from the guest',
   final_closed: 'Final checkout',
   expired: 'Expired',
+  intake_started: 'Intake started',
+  intake_abandoned: 'Intake not finished, closed automatically',
+  intake_cancelled: 'Cancelled at intake',
+  logged_at_desk: 'Arrival logged at the desk',
+  accepted_for_parking: 'Valet took the car to park',
+  collection_overdue: 'Collection overdue',
+  request_unanswered: 'Request not answered in time',
+  whatsapp_bound: 'Guest connected on WhatsApp',
   discount_optin: 'Guest opted into a discount',
   disputed: 'Flagged as disputed',
 };
@@ -46,18 +56,75 @@ const VERIFICATION_LABEL: Record<string, string> = {
   vehicle_confirmed: 'guest identified the vehicle — no photo on file',
 };
 
-function MediaTile({ token, record }: { token: string; record: ConditionRecord }) {
-  const src = `${VALET_BASE}/guard/tickets/${token}/condition/${record.id}/media`;
+/**
+ * The ticket's signed-link manager, created per ticket and torn down with it.
+ * `version` changes whenever a link or a tile's state does, so tiles re-read.
+ */
+function useSignedMedia(token: string, mediaKey: string) {
+  const ref = useRef<SignedMediaLinks | null>(null);
+  const [version, bump] = useReducer((n: number) => n + 1, 0);
+
+  useEffect(() => {
+    // Keyed on the media ids, so a photo captured after the page opened gets a
+    // link too rather than reading as unavailable.
+    if (!mediaKey) return;
+    const links = new SignedMediaLinks(() => fetchMediaLinks(token));
+    ref.current = links;
+    const unsubscribe = links.subscribe(bump);
+    links.refresh();
+    bump();
+    return () => {
+      unsubscribe();
+      links.dispose();
+      if (ref.current === links) ref.current = null;
+    };
+  }, [token, mediaKey]);
+
+  return { links: ref.current, version };
+}
+
+function MediaTile({ record, links }: { record: ConditionRecord; links: SignedMediaLinks | null }) {
+  const entry = links ? links.get(record.id) : { state: 'loading' as const };
+  // Once the media has loaded it keeps the URL it loaded from: a renewed link
+  // would only make the browser fetch the same photo again.
+  const [pinned, setPinned] = useState<string | null>(null);
+  const src = pinned ?? (entry.state === 'ready' ? entry.url : null);
+  const label = record.angle || record.mediaType;
+
+  const onLoad = () => {
+    if (!src) return;
+    setPinned(src);
+    links?.markLoaded(record.id);
+  };
+  const onError = () => {
+    setPinned(null);
+    links?.reportError(record.id);
+  };
+
   return (
     <figure className="rounded-lg overflow-hidden ring-1 ring-gray-200 bg-gray-50">
-      {record.mediaType === 'video' ? (
-        <video src={src} controls className="w-full aspect-video object-cover" />
+      {entry.state === 'error' && !pinned ? (
+        <div role="alert" className="w-full aspect-video flex flex-col items-center justify-center gap-2 px-3 text-center bg-red-50">
+          <p className="text-xs text-red-700">{entry.message}</p>
+          <button
+            onClick={() => { setPinned(null); links?.retry(record.id); }}
+            className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-red-700 ring-1 ring-red-300 hover:bg-red-100"
+          >
+            Retry
+          </button>
+        </div>
+      ) : !src ? (
+        <div className="w-full aspect-video flex items-center justify-center text-[11px] text-gray-400 animate-pulse">
+          Loading {label}…
+        </div>
+      ) : record.mediaType === 'video' ? (
+        <video src={src} controls onLoadedData={onLoad} onError={onError} className="w-full aspect-video object-cover" />
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={record.angle || 'condition'} className="w-full aspect-video object-cover" />
+        <img src={src} alt={record.angle || 'condition'} onLoad={onLoad} onError={onError} className="w-full aspect-video object-cover" />
       )}
       <figcaption className="px-2 py-1.5 text-[11px] text-gray-500 capitalize">
-        {record.angle || record.mediaType} ·{' '}
+        {label} ·{' '}
         {new Date(record.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
       </figcaption>
     </figure>
@@ -86,7 +153,7 @@ export default function ValetTicketPage() {
       setCondition(c);
       setError(null);
     } catch (err) {
-      setError(err instanceof ValetError ? err.message : 'Could not load this ticket');
+      setError(valetErrorMessage(err, 'Could not load this ticket'));
     } finally {
       setLoading(false);
     }
@@ -94,13 +161,17 @@ export default function ValetTicketPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const hasMedia = !!condition && (condition.intake.length > 0 || condition.return.length > 0);
+  const mediaKey = condition ? [...condition.intake, ...condition.return].map((r) => r.id).join(',') : '';
+  const { links } = useSignedMedia(token, mediaKey);
+
   async function flagDisputed() {
     setBusy(true);
     try {
       await valetPost(`/guard/tickets/${token}/dispute`);
       await load();
     } catch (err) {
-      setError(err instanceof ValetError ? err.message : 'Could not flag this ticket');
+      setError(valetErrorMessage(err, 'Could not flag this ticket'));
     } finally {
       setBusy(false);
     }
@@ -116,7 +187,8 @@ export default function ValetTicketPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 font-mono">{ticket.plate}</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {ticket.vehicleMake} · {ticket.displayId} · {STATUS_LABEL[ticket.status]}
+            {ticket.vehicleMake} · {ticket.displayId} ·{' '}
+            {ticketStatusLabel(ticket.status, ticket.events.map((e) => e.event_type))}
           </p>
           <p className="text-xs text-gray-400 mt-1">
             Taken in by {ticket.createdGuardName}
@@ -147,7 +219,7 @@ export default function ValetTicketPage() {
 
       <section className="mb-8">
         <h2 className="text-sm font-bold text-gray-900 mb-3">Vehicle condition</h2>
-        {condition && (condition.intake.length > 0 || condition.return.length > 0) ? (
+        {condition && hasMedia ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {(['intake', 'return'] as const).map((stage) => (
               <div key={stage}>
@@ -161,7 +233,7 @@ export default function ValetTicketPage() {
                 ) : (
                   <div className="grid grid-cols-2 gap-2">
                     {condition[stage].map((r) => (
-                      <MediaTile key={r.id} token={token} record={r} />
+                      <MediaTile key={r.id} record={r} links={links} />
                     ))}
                   </div>
                 )}

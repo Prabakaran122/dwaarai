@@ -46,6 +46,14 @@ import { startVisitCron } from './cron/generate-visits.js';
 import { initWebSocket } from './websocket.js';
 
 const app = express();
+
+// Production runs behind exactly one nginx hop on 127.0.0.1. Without this
+// req.ip is that loopback address for every caller, so each per-IP rate limit
+// (the login limiters especially) became one bucket shared by the whole
+// platform. `1` trusts only the nearest proxy's X-Forwarded-For entry -- not
+// `true`, which would let a client pick its own IP by sending the header.
+app.set('trust proxy', 1);
+
 const PORT = process.env.PORT_API_GATEWAY || 3000;
 
 const CORS_ORIGINS = process.env.CORS_ORIGINS

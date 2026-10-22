@@ -355,6 +355,17 @@ describe('the thank-you screen', () => {
     expect(await screen.findByText(/return the card/i)).toBeInTheDocument();
   });
 
+  // At the scan the valet has not yet chosen "final checkout" or "staying
+  // longer", and a multi-day guest keeps the card.
+  it('does not ask for the card back before the checkout is final', async () => {
+    mockGetTicket.mockResolvedValue({ ...done, hasCard: true, status: 'arrived', handedOver: true });
+
+    render(<GuestPage />);
+    await screen.findByText(/thank you for visiting/i);
+
+    expect(screen.queryByText(/return the card/i)).not.toBeInTheDocument();
+  });
+
   it('says nothing about a card to a guest who scanned the screen', async () => {
     mockGetTicket.mockResolvedValue(done);
 
@@ -557,5 +568,81 @@ describe('a guest who scanned while the guard was still typing', () => {
     render(<GuestPage />);
 
     expect(await screen.findByText('KA03NJ0435')).toBeInTheDocument();
+  });
+});
+
+// Any failed fetch used to read as "invalid or has expired", which sends a
+// guest whose phone lost signal to the desk for a link that works fine.
+describe('a load that fails for a reason other than the link', () => {
+  it('says it could not load, distinct from expired, and retries on request', async () => {
+    mockGetTicket
+      .mockRejectedValueOnce(new GuestError(500, 'internal_error', 'boom'))
+      .mockResolvedValue(baseTicket);
+
+    render(<GuestPage />);
+
+    expect(await screen.findByText(/couldn.t load your ticket/i)).toBeInTheDocument();
+    expect(screen.queryByText(/invalid or has expired/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+
+    expect(await screen.findByText('KA03NJ0435')).toBeInTheDocument();
+  });
+
+  it('treats a dropped connection the same way', async () => {
+    mockGetTicket.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    render(<GuestPage />);
+
+    expect(await screen.findByText(/couldn.t load your ticket/i)).toBeInTheDocument();
+  });
+
+  it('keeps showing the car when a later poll fails', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockGetTicket
+      .mockResolvedValueOnce(baseTicket)
+      .mockRejectedValue(new GuestError(503, 'error', 'down'));
+
+    render(<GuestPage />);
+    await screen.findByText('KA03NJ0435');
+    await act(async () => { await vi.advanceTimersByTimeAsync(4500); });
+
+    expect(screen.getByText('KA03NJ0435')).toBeInTheDocument();
+    expect(screen.queryByText(/couldn.t load your ticket/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('polling stops when nothing more can change', () => {
+  it.each(['final_closed', 'expired'] as const)('stops once the ticket is %s', async (status) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockGetTicket.mockResolvedValue({ ...baseTicket, status });
+
+    render(<GuestPage />);
+    await waitFor(() => expect(mockGetTicket).toHaveBeenCalledTimes(1));
+    await act(async () => { await vi.advanceTimersByTimeAsync(20000); });
+
+    expect(mockGetTicket).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops on a 404', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockGetTicket.mockRejectedValue(new GuestError(404, 'not_found', 'nope'));
+
+    render(<GuestPage />);
+    await screen.findByText(/invalid or has expired/i);
+    await act(async () => { await vi.advanceTimersByTimeAsync(20000); });
+
+    expect(mockGetTicket).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps polling a live ticket', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockGetTicket.mockResolvedValue(baseTicket);
+
+    render(<GuestPage />);
+    await screen.findByText('KA03NJ0435');
+    await act(async () => { await vi.advanceTimersByTimeAsync(8500); });
+
+    expect(mockGetTicket.mock.calls.length).toBeGreaterThanOrEqual(3);
   });
 });

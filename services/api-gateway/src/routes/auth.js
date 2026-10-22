@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
-import { queryOne } from '../db/queries.js';
+import { queryOne, queryRows } from '../db/queries.js';
 import { success, error } from '../middleware/response.js';
 import { getRedisClient } from '../db/redis.js';
 import { isConfigured as msg91Configured, sendOTP as msg91Send, verifyOTP as msg91Verify } from '../lib/msg91.js';
@@ -22,15 +22,106 @@ function signRefreshToken(userId) {
 }
 
 // -- Rate limiters for login endpoints ----------------------------------------
+//
+// Two layers, because one bucket per IP is the wrong shape in both directions.
+// Behind nginx every request used to arrive from 127.0.0.1, so a single 5/min
+// bucket was shared by every guard, admin and resident on the platform: one
+// person mistyping a password five times locked everybody else out. Keying on
+// the identity being attacked (plus the caller's IP, now real thanks to
+// `trust proxy` in index.js) keeps one user's failures in their own bucket.
+//
+// The identity bucket alone would let one IP try 5 passwords against every
+// username in turn, so a looser per-IP bucket sits in front of it to stop
+// spraying. Both answer with the same 429 body the apps already handle.
 
-const loginLimiter = rateLimit({
+const RATE_LIMIT_MESSAGE = { success: false, error: { message: 'Too many login attempts, please try again later' } };
+
+function identityLimiter(label, pickIdentity) {
+  return rateLimit({
+    windowMs: 60 * 1000,
+    max: 5,
+    keyGenerator: (req) => `${label}:${pickIdentity(req.body || {})}:${req.ip}`,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: RATE_LIMIT_MESSAGE,
+  });
+}
+
+// Usernames are compared case-insensitively at lookup, so "Ravi" and "ravi"
+// must share a bucket or an attacker gets 5 tries per capitalisation.
+const byUsername = (body) => String(body.username ?? '').trim().toLowerCase();
+const byPhone = (body) => String(body.phone ?? '').trim();
+
+const loginIpLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 5,
-  keyGenerator: (req) => req.ip,
+  max: 30,
+  keyGenerator: (req) => `login-ip:${req.ip}`,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, error: { message: 'Too many login attempts, please try again later' } },
+  message: RATE_LIMIT_MESSAGE,
 });
+
+const guardLoginLimiter = identityLimiter('guard-login', byUsername);
+const adminLoginLimiter = identityLimiter('admin-login', byUsername);
+const residentOtpLimiter = identityLimiter('resident-otp', byPhone);
+const residentVerifyLimiter = identityLimiter('resident-verify', byPhone);
+const residentRegisterLimiter = identityLimiter('resident-register', byPhone);
+const residentRegisterVerifyLimiter = identityLimiter('resident-register-verify', byPhone);
+
+// -- Dev OTP helpers ------------------------------------------------------------
+//
+// The master OTP is a backdoor into every resident account, so it needs an
+// explicit opt-in rather than being implied by "MSG91 is not configured". The
+// production api-gateway unit written by deploy/setup-server.sh sets
+// NODE_ENV=development, so NODE_ENV alone cannot be trusted to keep it off:
+// ALLOW_DEV_MASTER_OTP=true must be set deliberately, and NODE_ENV=production
+// still vetoes it in case both end up on a real box.
+export function devMasterOtp() {
+  if (process.env.ALLOW_DEV_MASTER_OTP !== 'true') return null;
+  if (process.env.NODE_ENV === 'production') return null;
+  return process.env.DEV_MASTER_OTP || null;
+}
+
+if (devMasterOtp() && process.env.NODE_ENV !== 'test') {
+  console.warn(
+    '!!! WARNING: DEV MASTER OTP IS ENABLED (ALLOW_DEV_MASTER_OTP=true). ' +
+    'Anyone who knows it can sign in as any resident when MSG91 is not configured. ' +
+    'Never set this on a server reachable from the internet. !!!'
+  );
+}
+
+// Logs end up in journald and log shippers that far more people can read
+// than can read the database. A phone number is personal data under DPDP and,
+// paired with an OTP, a working login -- so OTPs are never logged and phones
+// only by their last four digits.
+export function maskPhone(phone) {
+  const s = String(phone ?? '');
+  return s.length <= 4 ? '****' : `${'*'.repeat(s.length - 4)}${s.slice(-4)}`;
+}
+
+// -- Staff revocation ----------------------------------------------------------
+//
+// A guard/valet row stops being able to sign in (or keep a session going by
+// refreshing) the moment it is deactivated, or once a temporary driver's
+// valet_until has passed. Checked in code as well as in SQL so the refresh path,
+// which has to look the row up regardless to tell "revoked" from "unknown",
+// applies exactly the same rule as login.
+function staffIsRevoked(row, now = new Date()) {
+  if (row.is_active === false) return true;
+  if (row.valet_until && new Date(row.valet_until) <= now) return true;
+  return false;
+}
+
+// The one gate a guard is stationed at. A community can have several active
+// gates; a LATERAL pick keeps the staff lookup one row per person instead of
+// one row per (person, gate), which matters now that login considers every
+// matching row rather than the first.
+const GUARD_GATE_JOIN = `LEFT JOIN LATERAL (
+         SELECT id, name FROM gates
+         WHERE community_id = r.community_id AND is_active = true
+         ORDER BY created_at, id
+         LIMIT 1
+       ) g ON true`;
 
 // -- Zod schemas --------------------------------------------------------------
 
@@ -70,9 +161,48 @@ function signToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
 }
 
+// One builder per kind of token, shared by login and /auth/refresh. Refresh
+// used to hand-roll its own payload and drifted: it dropped account_id, so a
+// Client Admin was 403 no_community an hour after signing in, and gave guards
+// unit_id instead of gate_id. Any claim added here reaches both paths.
+function guardClaims(row) {
+  return {
+    sub: row.id,
+    role: 'guard',
+    community_id: row.community_id,
+    gate_id: row.gate_id || null,
+    name: row.name,
+  };
+}
+
+function residentClaims(row) {
+  return {
+    sub: row.id,
+    role: 'resident',
+    community_id: row.community_id,
+    unit_id: row.unit_id,
+    name: row.name,
+    is_committee: row.is_committee || false,
+  };
+}
+
+function adminClaims(row) {
+  return {
+    sub: row.id,
+    role: row.role,
+    community_id: row.community_id || null,
+    // A Client Admin is scoped by account the way a Location Manager is
+    // scoped by community. valet-service reads this to decide which
+    // properties they may see; without it every group admin is told their
+    // account holds a single property.
+    account_id: row.account_id || null,
+    name: row.name,
+  };
+}
+
 // -- POST /auth/guard-login ---------------------------------------------------
 
-router.post('/auth/guard-login', loginLimiter, async (req, res) => {
+router.post('/auth/guard-login', loginIpLimiter, guardLoginLimiter, async (req, res) => {
   try {
     const parsed = guardLoginSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -81,43 +211,60 @@ router.post('/auth/guard-login', loginLimiter, async (req, res) => {
 
     const { username, password } = parsed.data;
 
-    // Look up guard by username (name) or mobile, must have password_hash
-    let guard = await queryOne(
+    // Every active guard whose name or mobile matches, across all communities.
+    // This used to be LIMIT 1, so two attendants called "Ravi" at different
+    // hotels collided: whichever row Postgres returned first was the only one
+    // whose password was ever tried, and the other Ravi could never sign in.
+    const candidates = await queryRows(
       `SELECT r.id, r.community_id, r.unit_id, r.name, r.mobile, r.type,
-              r.password_hash, r.preferred_language,
+              r.password_hash, r.preferred_language, r.is_active, r.valet_until,
               c.config AS community_config, c.name AS community_name,
               g.id AS gate_id, g.name AS gate_name
        FROM residents r
        JOIN communities c ON c.id = r.community_id
-       LEFT JOIN gates g ON g.community_id = r.community_id AND g.is_active = true
+       ${GUARD_GATE_JOIN}
        WHERE r.is_active = true
          AND r.type = 'guard'
-         AND (LOWER(r.name) = LOWER($1) OR r.mobile = $1)
-       LIMIT 1`,
+         AND (r.valet_until IS NULL OR r.valet_until > NOW())
+         AND (LOWER(r.name) = LOWER($1) OR r.mobile = $1)`,
       [username]
     );
 
-    if (!guard) {
+    // A mobile number is unique to a person; a name is not. If the username
+    // is somebody's mobile, only those rows are in play -- otherwise a guard
+    // whose *name* happened to be that string could shadow them.
+    let pool = (candidates || []).filter((r) => !staffIsRevoked(r));
+    const byMobile = pool.filter((r) => r.mobile === username);
+    if (byMobile.length) pool = byMobile;
+
+    if (!pool.length) {
       return error(res, 'Invalid credentials', 401);
     }
 
-    // Verify password — guards must have a password set
-    if (!guard.password_hash) {
+    // Guards must have a password set. Only report that when no match has
+    // one, so an unconfigured namesake cannot block a configured guard.
+    const withPassword = pool.filter((r) => r.password_hash);
+    if (!withPassword.length) {
       return error(res, 'Guard account not configured. Contact admin to set a password.', 403);
     }
 
-    const passwordValid = await bcrypt.compare(password, guard.password_hash);
-    if (!passwordValid) {
-      return error(res, 'Invalid credentials', 401);
+    const verified = [];
+    for (const row of withPassword) {
+      if (await bcrypt.compare(password, row.password_hash)) verified.push(row);
     }
 
-    const token = signToken({
-      sub: guard.id,
-      role: 'guard',
-      community_id: guard.community_id,
-      gate_id: guard.gate_id || null,
-      name: guard.name,
-    });
+    if (verified.length === 0) {
+      return error(res, 'Invalid credentials', 401);
+    }
+    if (verified.length > 1) {
+      // Two namesakes sharing a password: picking either would sign one of
+      // them into the other's property. Make them disambiguate instead.
+      return error(res, 'More than one staff account matches this name. Please log in with your mobile number.', 401);
+    }
+
+    const guard = verified[0];
+
+    const token = signToken(guardClaims(guard));
 
     const refreshToken = signRefreshToken(guard.id);
     // Language: guard's saved preference → society default (communities.config) → 'en'.
@@ -143,7 +290,7 @@ router.post('/auth/guard-login', loginLimiter, async (req, res) => {
 
 // -- POST /auth/resident-otp -------------------------------------------------
 
-router.post('/auth/resident-otp', loginLimiter, async (req, res) => {
+router.post('/auth/resident-otp', loginIpLimiter, residentOtpLimiter, async (req, res) => {
   try {
     const parsed = residentOtpSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -168,7 +315,9 @@ router.post('/auth/resident-otp', loginLimiter, async (req, res) => {
       const otp = String(Math.floor(100000 + Math.random() * 900000));
       const redis = getRedisClient();
       await redis.set(`otp:${phone}`, otp, 'EX', 300);
-      console.log(`[DEV] OTP for ${phone}: ${otp}`);
+      // Never the OTP itself: read it from Redis (otp:<phone>) or use the
+      // dev master OTP when ALLOW_DEV_MASTER_OTP is on.
+      console.log(`[DEV] OTP stored in Redis for ${maskPhone(phone)} (MSG91 not configured)`);
     }
 
     return success(res, { message: 'OTP sent' });
@@ -180,7 +329,7 @@ router.post('/auth/resident-otp', loginLimiter, async (req, res) => {
 
 // -- POST /auth/resident-verify ----------------------------------------------
 
-router.post('/auth/resident-verify', loginLimiter, async (req, res) => {
+router.post('/auth/resident-verify', loginIpLimiter, residentVerifyLimiter, async (req, res) => {
   try {
     const parsed = residentVerifySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -193,10 +342,9 @@ router.post('/auth/resident-verify', loginLimiter, async (req, res) => {
     if (msg91Configured()) {
       otpValid = await msg91Verify(phone, otp);
     } else {
-      // Dev-only master OTP bypass for testing. Active ONLY when real SMS is
-      // not configured AND DEV_MASTER_OTP is set. Unset the env var (or
-      // configure MSG91) to disable.
-      const master = process.env.DEV_MASTER_OTP;
+      // Dev-only master OTP bypass. Active ONLY when real SMS is not
+      // configured AND devMasterOtp() allows it (see the comment there).
+      const master = devMasterOtp();
       if (master && otp === master) {
         otpValid = true;
       } else {
@@ -225,14 +373,7 @@ router.post('/auth/resident-verify', loginLimiter, async (req, res) => {
       return error(res, 'Resident not found', 404);
     }
 
-    const token = signToken({
-      sub: resident.id,
-      role: 'resident',
-      community_id: resident.community_id,
-      unit_id: resident.unit_id,
-      name: resident.name,
-      is_committee: resident.is_committee || false,
-    });
+    const token = signToken(residentClaims(resident));
 
     const refreshToken = signRefreshToken(resident.id);
     return success(res, {
@@ -254,7 +395,7 @@ router.post('/auth/resident-verify', loginLimiter, async (req, res) => {
 
 // -- POST /auth/resident-register -------------------------------------------
 
-router.post('/auth/resident-register', loginLimiter, async (req, res) => {
+router.post('/auth/resident-register', loginIpLimiter, residentRegisterLimiter, async (req, res) => {
   try {
     const parsed = residentRegisterSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -319,7 +460,7 @@ router.post('/auth/resident-register', loginLimiter, async (req, res) => {
         'EX',
         300
       );
-      console.log(`[DEV] Registration OTP for ${phone}: ${otp}`);
+      console.log(`[DEV] Registration OTP stored in Redis for ${maskPhone(phone)} (MSG91 not configured)`);
     }
 
     return success(res, { message: 'OTP sent', communityName: community.name });
@@ -331,7 +472,7 @@ router.post('/auth/resident-register', loginLimiter, async (req, res) => {
 
 // -- POST /auth/resident-register-verify ------------------------------------
 
-router.post('/auth/resident-register-verify', loginLimiter, async (req, res) => {
+router.post('/auth/resident-register-verify', loginIpLimiter, residentRegisterVerifyLimiter, async (req, res) => {
   try {
     const parsed = residentRegisterVerifySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -354,8 +495,8 @@ router.post('/auth/resident-register-verify', loginLimiter, async (req, res) => 
     if (msg91Configured()) {
       otpValid = await msg91Verify(phone, otp);
     } else {
-      // Dev-only master OTP bypass (see POST /auth/resident-verify).
-      const master = process.env.DEV_MASTER_OTP;
+      // Dev-only master OTP bypass (see devMasterOtp()).
+      const master = devMasterOtp();
       otpValid = !!((master && otp === master) || (regData.otp && regData.otp === otp));
     }
 
@@ -443,41 +584,41 @@ router.post('/auth/refresh', async (req, res) => {
       return error(res, 'Token has been revoked', 401);
     }
 
-    // Look up user by ID to get current data
+    // Look up user by ID to get current data. Not filtered on is_active: a
+    // deactivated user must get a 401 (the apps sign out on it) rather than
+    // fall through to "not found", and every claim is re-read so a change
+    // made since login (a new gate, committee membership) takes effect.
     const resident = await queryOne(
       `SELECT r.id, r.community_id, r.unit_id, r.name, r.mobile, r.type,
-              u.unit_number
+              r.is_active, r.valet_until, r.is_committee,
+              g.id AS gate_id
        FROM residents r
-       LEFT JOIN units u ON r.unit_id = u.id
-       WHERE r.id = $1 AND r.is_active = true`,
+       ${GUARD_GATE_JOIN}
+       WHERE r.id = $1`,
       [decoded.sub]
     );
 
     if (resident) {
-      const token = signToken({
-        sub: resident.id,
-        role: resident.type === 'guard' ? 'guard' : 'resident',
-        community_id: resident.community_id,
-        unit_id: resident.unit_id,
-        name: resident.name,
-      });
+      if (staffIsRevoked(resident)) {
+        return error(res, 'Account is no longer active', 401);
+      }
+      const claims = resident.type === 'guard' ? guardClaims(resident) : residentClaims(resident);
+      const token = signToken(claims);
       const newRefreshToken = signRefreshToken(resident.id);
       return success(res, { token, refreshToken: newRefreshToken });
     }
 
-    // Try admins table
+    // Try admins table -- the same columns admin-login signs from.
     const admin = await queryOne(
-      'SELECT id, name, role, community_id FROM admins WHERE id = $1 AND is_active = true',
+      'SELECT id, name, role, community_id, account_id, is_active FROM admins WHERE id = $1',
       [decoded.sub]
     );
 
     if (admin) {
-      const token = signToken({
-        sub: admin.id,
-        role: admin.role,
-        community_id: admin.community_id || null,
-        name: admin.name,
-      });
+      if (admin.is_active === false) {
+        return error(res, 'Account is no longer active', 401);
+      }
+      const token = signToken(adminClaims(admin));
       const newRefreshToken = signRefreshToken(admin.id);
       return success(res, { token, refreshToken: newRefreshToken });
     }
@@ -491,7 +632,7 @@ router.post('/auth/refresh', async (req, res) => {
 
 // -- POST /auth/admin-login -------------------------------------------------
 
-router.post('/auth/admin-login', loginLimiter, async (req, res) => {
+router.post('/auth/admin-login', loginIpLimiter, adminLoginLimiter, async (req, res) => {
   try {
     const parsed = adminLoginSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -514,17 +655,7 @@ router.post('/auth/admin-login', loginLimiter, async (req, res) => {
       return error(res, 'Invalid credentials', 401);
     }
 
-    const token = signToken({
-      sub: admin.id,
-      role: admin.role,
-      community_id: admin.community_id || null,
-      // A Client Admin is scoped by account the way a Location Manager is
-      // scoped by community. valet-service reads this to decide which
-      // properties they may see; without it every group admin is told their
-      // account holds a single property.
-      account_id: admin.account_id || null,
-      name: admin.name,
-    });
+    const token = signToken(adminClaims(admin));
 
     const refreshToken = signRefreshToken(admin.id);
     return success(res, {

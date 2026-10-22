@@ -3,9 +3,38 @@ import { sweepIdempotencyKeys } from './idempotency.js';
 import { logEvent } from './events.js';
 import { storage } from './storage.js';
 
-// with_guest included: a guest who drove off for good must not hold the card
-// (and the ticket) open past the end of their stay.
-const OPEN_STATUSES = ['parked', 'retrieval_requested', 'en_route', 'arrived', 'parked_again', 'with_guest'];
+// Cars that are on the lot (or out with the guest) and can be expired once the
+// stay is over -- plus a grace window, below. with_guest is included: a guest
+// who drove off for good must not hold the card (and the ticket) open forever.
+//
+// 'en_route' and 'arrived' are deliberately absent. Those are a handover in
+// progress -- a valet is walking to the car, or it is standing at the door --
+// and expiring one mid-handover closed the ticket under the attendant's feet,
+// so the guest's QR stopped scanning while their car was in front of them.
+const EXPIRABLE_AFTER_STAY = ['parked', 'retrieval_requested', 'parked_again', 'with_guest'];
+
+// A job started and never finished: a card scanned at the kerb, or a desk
+// arrival somebody took. These have no stay_end_at to measure against yet.
+const INTAKE_STATUSES = ['requested', 'accepted', 'parking_in_progress'];
+
+/**
+ * Hours past stay_end_at before a car still on the lot is expired.
+ *
+ * stay_end_at is the guard's estimate at intake, not a checkout time. Guests
+ * leave late all the time, and expiring at the minute frees the card and the
+ * slot while the car is still parked in it -- the next car is then put in the
+ * same bay and the late guest's QR stops working at the desk.
+ */
+function expiryGraceHours() {
+  const hours = Number(process.env.VALET_EXPIRY_GRACE_HOURS ?? 12);
+  return Number.isFinite(hours) && hours >= 0 ? hours : 12;
+}
+
+/** Hours an unfinished intake may sit untouched before the sweep closes it. */
+function staleIntakeHours() {
+  const hours = Number(process.env.VALET_STALE_INTAKE_HOURS ?? 6);
+  return Number.isFinite(hours) && hours > 0 ? hours : 6;
+}
 
 function retentionInterval() {
   const hours = Number(process.env.PHOTO_RETENTION_HOURS || 24);
@@ -13,8 +42,9 @@ function retentionInterval() {
 }
 
 /**
- * Closes any ticket past its stay-end, whether or not the guest ever came
- * back for a final pickup.
+ * Closes any ticket whose car is still on the lot (or out with the guest) well
+ * past its stay-end, whether or not the guest ever came back for a final
+ * pickup.
  *
  * Note there is no string-format hazard here, unlike the SQLite original:
  * `stay_end_at` is TIMESTAMPTZ and NOW() is a real timestamp, so this is an
@@ -22,20 +52,59 @@ function retentionInterval() {
  * differently formatted strings.
  */
 export async function sweepExpiredTickets() {
+  const grace = expiryGraceHours();
   const overdue = await queryRows(
     `UPDATE valet_tickets
         SET status = 'expired', closed_at = NOW()
-      WHERE status = ANY($1) AND stay_end_at < NOW()
+      WHERE status = ANY($1)
+        AND stay_end_at < NOW() - ($2 || ' hours')::interval
       RETURNING id`,
-    [OPEN_STATUSES]
+    [EXPIRABLE_AFTER_STAY, String(grace)]
   );
 
-  for (const { id } of overdue) {
-    await logEvent(id, 'expired', { metadata: { reason: 'stay_end_at passed without final checkout' } });
+  for (const { id } of overdue ?? []) {
+    await logEvent(id, 'expired', {
+      metadata: { reason: 'stay_end_at passed without final checkout', graceHours: grace },
+    });
     await schedulePhotoDeletion(id);
     await scheduleConditionMediaDeletion(id);
   }
-  return overdue.length;
+  return (overdue ?? []).length;
+}
+
+/**
+ * Closes intakes nobody finished.
+ *
+ * Scanning a card creates the ticket in parking_in_progress before any details
+ * exist; if the app dies before /complete, nothing else ever moves it, and the
+ * card answers card_in_use to every guest after. Desk jobs ('requested' ->
+ * 'accepted') dead-end the same way. A valet can close one by hand
+ * (cancel-intake); this is the net for the ones nobody notices.
+ *
+ * Measured from the last thing that happened to the ticket, not its creation:
+ * a valet who photographed the car an hour ago is still working on it.
+ */
+export async function sweepStaleIntakes() {
+  const hours = staleIntakeHours();
+  const stale = await queryRows(
+    `UPDATE valet_tickets t
+        SET status = 'expired', closed_at = NOW(), slot_id = NULL
+      WHERE t.status = ANY($1)
+        AND GREATEST(
+              t.created_at,
+              COALESCE((SELECT MAX(e.created_at) FROM valet_ticket_events e
+                         WHERE e.ticket_id = t.id), t.created_at)
+            ) < NOW() - ($2 || ' hours')::interval
+      RETURNING t.id`,
+    [INTAKE_STATUSES, String(hours)]
+  );
+
+  for (const { id } of stale ?? []) {
+    await logEvent(id, 'intake_abandoned', { metadata: { idleHours: hours } });
+    await schedulePhotoDeletion(id);
+    await scheduleConditionMediaDeletion(id);
+  }
+  return (stale ?? []).length;
 }
 
 /** Stamps the retention window on a closed ticket's guest photo. */
@@ -256,8 +325,22 @@ export async function runSweep() {
   const phones = await forgetClosedGuestPhones();
   const overdue = await sweepOverdueCollections();
   const unanswered = await sweepUnacceptedRequests();
+  const intakes = await sweepStaleIntakes();
   const idempotency = await sweepIdempotencyKeys().catch(() => 0);
-  return { tickets, photos, condition, phones, overdue, unanswered, idempotency };
+  return { tickets, intakes, photos, condition, phones, overdue, unanswered, idempotency };
+}
+
+/**
+ * One log line naming every counter the sweep returns.
+ *
+ * The script used to print three of them, so a sweep that was closing
+ * abandoned intakes or forgetting phone numbers looked identical in the logs
+ * to one doing nothing. Built from the result object rather than a fixed list,
+ * so a counter added to runSweep later is logged without anyone remembering to.
+ */
+export function describeSweep(result) {
+  const parts = Object.entries(result ?? {}).map(([k, v]) => `${k}=${v}`);
+  return `valet sweep: ${parts.join(' ')}`;
 }
 
 /**
@@ -271,7 +354,9 @@ export async function runSweep() {
 export function startExpirySweep() {
   const minutes = Number(process.env.EXPIRY_SWEEP_MINUTES || 5);
   const run = () => {
-    runSweep().catch((err) => console.error('valet sweep failed:', err));
+    runSweep()
+      .then((result) => console.log(describeSweep(result)))
+      .catch((err) => console.error('valet sweep failed:', err));
   };
   run();
   return setInterval(run, minutes * 60 * 1000);

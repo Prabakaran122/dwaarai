@@ -34,7 +34,42 @@ export function verifyPhotoLink(sig) {
   }
 }
 
-const TYPES = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic' };
+/**
+ * The same idea for the admin portal's condition media.
+ *
+ * The portal's ticket page put the auth-required media route straight into
+ * <img src>, which sends no Authorization header, so every condition tile was
+ * a broken image. A separate purpose from the guest photo, so neither kind of
+ * link can be replayed as the other, and scoped to one media record (not a
+ * ticket) in one community: a link to a car's front view opens that view and
+ * nothing else.
+ */
+export const MEDIA_LINK_TTL_SECONDS = 120;
+const MEDIA_PURPOSE = 'admin_media';
+
+export function signMediaLink(mediaId, communityId) {
+  return jwt.sign({ purpose: MEDIA_PURPOSE, mid: mediaId, cid: communityId }, JWT_SECRET, {
+    expiresIn: MEDIA_LINK_TTL_SECONDS,
+  });
+}
+
+/** Returns { mediaId, communityId }, or null for anything not a live link. */
+export function verifyMediaLink(sig) {
+  try {
+    const p = jwt.verify(sig, JWT_SECRET);
+    if (p.purpose !== MEDIA_PURPOSE || !p.mid || !p.cid) return null;
+    return { mediaId: p.mid, communityId: p.cid };
+  } catch {
+    return null;
+  }
+}
+
+// Video too: condition media may be a clip (storage.extensionFor writes webm
+// or mp4), and a video served as octet-stream will not play in a <video>.
+const TYPES = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic',
+  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+};
 
 /** The response type for a stored photo, from its key's extension. */
 export function contentTypeFor(key) {

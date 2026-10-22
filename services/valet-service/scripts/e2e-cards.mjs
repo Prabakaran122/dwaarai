@@ -28,12 +28,17 @@ const check = (label, ok, detail = '') => {
   else { console.log(`  FAIL ${label} ${detail}`); fail++; }
 };
 
+// One browser, as a guest's phone would be: the card lookup binds an open
+// ticket to the first device that asks and answers "locked" to any other.
+const GUEST_DEVICE = 'e2e-guest-device-0001';
+
 async function api(path, { method = 'GET', token, body } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: {
       ...(body ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'X-Valet-Device': GUEST_DEVICE,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -145,13 +150,18 @@ try {
   const tokenB = lower.body?.sessionToken;
 
   console.log('\n--- the guest side of a card ---');
-  const resolved = await fetch(`${BASE}/guest/cards/${communityId}/A001`).then((r) => r.json());
+  const resolved = await fetch(`${BASE}/guest/cards/${communityId}/A001`, { headers: { 'X-Valet-Device': GUEST_DEVICE } }).then((r) => r.json());
   check('a bound card resolves to its ticket', resolved.sessionToken === tokenA);
   // The WhatsApp reference and the venue name, which the guest is standing in.
   // Nothing about the vehicle: that only comes from the ticket itself.
   check('and returns nothing else about the vehicle',
-    Object.keys(resolved).sort().join() === 'sessionToken,venueName,waRef' && resolved.venueName === 'Card Test Venue',
+    Object.keys(resolved).sort().join() === 'locked,sessionToken,status,venueName,waRef' && resolved.venueName === 'Card Test Venue',
     JSON.stringify(resolved));
+  // Card codes run A001, A002... so anyone holding one card could walk the rest.
+  // A second phone gets neither the ticket nor the WhatsApp reference.
+  const stranger = await fetch(`${BASE}/guest/cards/${communityId}/A001`, { headers: { 'X-Valet-Device': 'someone-elses-phone-0002' } }).then((r) => r.json());
+  check('a second phone is locked out of a card already open elsewhere',
+    stranger.locked === true && stranger.sessionToken === null && !stranger.waRef, JSON.stringify(stranger));
 
   // A registered-but-free card now answers too, deliberately (see the LEFT
   // JOIN comment in routes/guest.js): the guard hands the card over at the
@@ -164,7 +174,9 @@ try {
     free.status === 200 && free.body?.sessionToken === null && typeof free.body?.waRef === 'string',
     JSON.stringify(free.body));
   check('and leaks no vehicle or ticket data',
-    Object.keys(free.body || {}).sort().join() === 'sessionToken,venueName,waRef', JSON.stringify(free.body));
+    // status and locked are always present now; on a free card both are empty.
+    Object.keys(free.body || {}).sort().join() === 'locked,sessionToken,status,venueName,waRef'
+      && free.body.status === null && free.body.locked === false, JSON.stringify(free.body));
   const bogus = await api(`/guest/cards/${communityId}/NOPE`);
   check('an unknown code 404s', bogus.status === 404, JSON.stringify(bogus.body));
 
@@ -191,7 +203,7 @@ try {
   check('the freed card can be handed to the next guest', reuse.status === 201 && reuse.body?.cardCode === 'A001',
     JSON.stringify(reuse.body));
   check('and now resolves to the NEW ticket, not the old one',
-    (await fetch(`${BASE}/guest/cards/${communityId}/A001`).then((r) => r.json())).sessionToken === reuse.body?.sessionToken);
+    (await fetch(`${BASE}/guest/cards/${communityId}/A001`, { headers: { 'X-Valet-Device': GUEST_DEVICE } }).then((r) => r.json())).sessionToken === reuse.body?.sessionToken);
 
   console.log('\n--- binding a card after the fact ---');
   // A ticket can no longer start without a card: the card IS the ticket, and
@@ -214,7 +226,7 @@ try {
   check('and can have another bound afterwards', bound.status === 200 && bound.body?.cardCode === 'A003',
     JSON.stringify(bound.body));
   check('which then resolves for the guest',
-    (await fetch(`${BASE}/guest/cards/${communityId}/A003`).then((r) => r.json())).sessionToken === late.body.sessionToken);
+    (await fetch(`${BASE}/guest/cards/${communityId}/A003`, { headers: { 'X-Valet-Device': GUEST_DEVICE } }).then((r) => r.json())).sessionToken === late.body.sessionToken);
   check('and the card it replaced is free again',
     (await api(`/guest/cards/${communityId}/A004`)).body?.sessionToken === null);
 

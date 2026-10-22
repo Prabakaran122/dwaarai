@@ -69,13 +69,16 @@ describe('POST /auth/guard-login (NAZ-002 — gate + society name for the header
   });
 
   beforeEach(async () => {
-    const { queryOne } = await import('../db/queries.js');
+    const { queryOne, queryRows } = await import('../db/queries.js');
     queryOne.mockReset();
+    queryRows.mockReset();
   });
 
   it('returns gateName and communityName alongside the existing user fields', async () => {
-    const { queryOne } = await import('../db/queries.js');
-    queryOne.mockResolvedValueOnce({
+    // guard-login now considers every matching row (namesakes at other
+    // properties), so it reads a list rather than the first row.
+    const { queryRows } = await import('../db/queries.js');
+    queryRows.mockResolvedValueOnce([{
       id: 'guard-1',
       community_id: 'c1',
       unit_id: null,
@@ -88,7 +91,7 @@ describe('POST /auth/guard-login (NAZ-002 — gate + society name for the header
       gate_id: 'gate-1',
       gate_name: 'Main Gate',
       community_name: 'Palm Meadows',
-    });
+    }]);
 
     const res = await fetch(`${baseUrl}/api/v1/auth/guard-login`, {
       method: 'POST',

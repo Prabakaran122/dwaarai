@@ -231,6 +231,20 @@ describe('intake condition capture', () => {
     expect(api.uploadCondition).toHaveBeenCalledWith('tok-9', 'file://shot.jpg', 'intake', 'photo', 'front');
   });
 
+  it('does not tick off an angle the server refused, and lets it be retaken', async () => {
+    // A 422 is neither uploaded nor queued. It used to be marked captured all
+    // the same, so a set missing a photo looked complete until a dispute.
+    (api.uploadCondition as jest.Mock).mockRejectedValueOnce({ response: { status: 422 } });
+    const screen = await reachCondition();
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-angle-front')); });
+    expect(screen.getByTestId('valet-error')).toHaveTextContent(/did not save/);
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-angle-front')); });
+    expect((api.uploadCondition as jest.Mock).mock.calls.map((c) => c[4])).toEqual(['front', 'front']);
+    expect(screen.queryByTestId('valet-error')).toBeNull();
+  });
+
   it('blocks finishing until the whole set exists, and says so', async () => {
     const screen = await reachCondition();
 

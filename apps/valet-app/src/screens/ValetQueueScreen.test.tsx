@@ -389,3 +389,92 @@ describe('ending a shift actually ends it', () => {
     expect(logout).toHaveBeenCalled();
   });
 });
+
+// A scanned card creates its ticket at once. If the app died or /complete
+// failed, that ticket held the card with no way to reach it again.
+describe('unfinished intakes on the Arriving tab', () => {
+  beforeEach(() => {
+    useValetStore.setState({ notice: null });
+  });
+
+  it.each(['parking_in_progress', 'accepted'] as const)(
+    'offers Resume and Cancel on a %s car', (status) => {
+      const onResume = jest.fn();
+      const t = ticket({ id: 'p', status, sessionToken: 'tok-p', cardCode: 'A047' });
+      useValetStore.setState({ tickets: [t] });
+
+      const screen = render(<ValetQueueScreen onResume={onResume} />);
+      fireEvent.press(screen.getByTestId('valet-tab-parking'));
+      fireEvent.press(screen.getByTestId('valet-resume-p'));
+
+      expect(onResume).toHaveBeenCalledWith(t);
+      expect(screen.getByTestId('valet-cancel-intake-p')).toBeTruthy();
+    }
+  );
+
+  it('keeps "Take this car" on a desk job, beside Cancel', () => {
+    useValetStore.setState({ tickets: [ticket({ id: 'r', status: 'requested' })] });
+
+    const screen = render(<ValetQueueScreen />);
+    fireEvent.press(screen.getByTestId('valet-tab-parking'));
+
+    expect(screen.getByTestId('valet-accept-intake-r')).toBeTruthy();
+    expect(screen.getByTestId('valet-cancel-intake-r')).toBeTruthy();
+    expect(screen.queryByTestId('valet-resume-r')).toBeNull();
+  });
+
+  it('asks before cancelling, and does nothing on "keep it"', async () => {
+    useValetStore.setState({ tickets: [ticket({ id: 'p', status: 'parking_in_progress' })] });
+    const screen = render(<ValetQueueScreen />);
+    fireEvent.press(screen.getByTestId('valet-tab-parking'));
+
+    fireEvent.press(screen.getByTestId('valet-cancel-intake-p'));
+    expect(screen.getByTestId('valet-cancel-intake-sheet')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('valet-cancel-intake-keep'));
+
+    expect(screen.queryByTestId('valet-cancel-intake-sheet')).toBeNull();
+    expect(api.cancelIntake).not.toHaveBeenCalled();
+  });
+
+  it('cancels on confirm and says the card is free', async () => {
+    (api.cancelIntake as jest.Mock).mockResolvedValue({ data: { status: 'expired' } });
+    useValetStore.setState({ tickets: [ticket({ id: 'p', status: 'parking_in_progress', sessionToken: 'tok-p' })] });
+    const screen = render(<ValetQueueScreen />);
+    fireEvent.press(screen.getByTestId('valet-tab-parking'));
+
+    fireEvent.press(screen.getByTestId('valet-cancel-intake-p'));
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-cancel-intake-confirm')); });
+
+    expect(api.cancelIntake).toHaveBeenCalledWith('tok-p');
+    expect(screen.getByTestId('valet-notice')).toHaveTextContent(/card is free/);
+  });
+
+  it('refreshes and explains when the car can no longer be cancelled', async () => {
+    (api.cancelIntake as jest.Mock).mockRejectedValue({
+      response: { status: 409, data: { error: 'not_cancellable', status: 'parked' } },
+    });
+    useValetStore.setState({ tickets: [ticket({ id: 'p', status: 'parking_in_progress' })] });
+    const screen = render(<ValetQueueScreen />);
+    fireEvent.press(screen.getByTestId('valet-tab-parking'));
+    (api.listTickets as jest.Mock).mockClear();
+
+    fireEvent.press(screen.getByTestId('valet-cancel-intake-p'));
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-cancel-intake-confirm')); });
+
+    expect(api.listTickets).toHaveBeenCalled();
+    expect(screen.getByTestId('valet-notice')).toHaveTextContent(/can no longer be cancelled/);
+  });
+
+  it('tells the attendant when another valet took the car first', async () => {
+    (api.acceptIntake as jest.Mock).mockRejectedValue({
+      response: { status: 409, data: { error: 'status_changed', status: 'accepted' } },
+    });
+    useValetStore.setState({ tickets: [ticket({ id: 'r', status: 'requested' })] });
+    const screen = render(<ValetQueueScreen />);
+    fireEvent.press(screen.getByTestId('valet-tab-parking'));
+
+    await act(async () => { fireEvent.press(screen.getByTestId('valet-accept-intake-r')); });
+
+    expect(screen.getByTestId('valet-notice')).toHaveTextContent(/Another valet already took this/);
+  });
+});

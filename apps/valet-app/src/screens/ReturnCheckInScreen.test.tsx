@@ -17,7 +17,7 @@ const TOKEN = 'tok-w';
 beforeEach(() => {
   jest.clearAllMocks();
   (takePhoto as jest.Mock).mockResolvedValue({ ok: true, uri: 'file://side.jpg' });
-  (uploadOrQueue as jest.Mock).mockResolvedValue({});
+  (uploadOrQueue as jest.Mock).mockResolvedValue({ ok: true, queued: false });
   (api.checkInReturned as jest.Mock).mockResolvedValue({ data: { status: 'parked_again' } });
   (api.getTicket as jest.Mock).mockResolvedValue({
     data: { plate: 'KA05MN4321', vehicleMake: 'Honda City', hasPhoto: true, events: [] },
@@ -48,6 +48,33 @@ describe('checking a returned car back in', () => {
     expect((uploadOrQueue as jest.Mock).mock.calls.map((c) => [c[2], c[4]])).toEqual([
       ['intake', 'front'], ['intake', 'right'], ['intake', 'back'], ['intake', 'left'],
     ]);
+  });
+
+  it('does not tick off a side the server refused, and lets it be retaken', async () => {
+    // ok:false is neither uploaded nor safely queued. Marking it captured
+    // would let a set missing a photo look complete until a dispute.
+    (uploadOrQueue as jest.Mock).mockResolvedValueOnce({ ok: false, queued: false });
+    const screen = render(<ReturnCheckInScreen sessionToken={TOKEN} />);
+
+    await act(async () => { fireEvent.press(screen.getByTestId('checkin-angle-front')); });
+
+    expect(screen.getByTestId('checkin-error')).toHaveTextContent(/did not save/);
+    await act(async () => { fireEvent.press(screen.getByTestId('checkin-angle-front')); });
+    expect((uploadOrQueue as jest.Mock).mock.calls.map((c) => c[4])).toEqual(['front', 'front']);
+    expect(screen.queryByTestId('checkin-error')).toBeNull();
+  });
+
+  it('says another valet got there first rather than "failed"', async () => {
+    (api.checkInReturned as jest.Mock).mockRejectedValue({
+      response: { status: 409, data: { error: 'status_changed', status: 'parked_again' } },
+    });
+    const screen = render(<ReturnCheckInScreen sessionToken={TOKEN} />);
+    await captureAll(screen);
+
+    await act(async () => { fireEvent.press(screen.getByTestId('checkin-done')); });
+
+    expect(screen.getByTestId('checkin-error')).toHaveTextContent(/Another valet/);
+    expect(api.listTickets).toHaveBeenCalled();
   });
 
   it('will not take a side out of turn', async () => {

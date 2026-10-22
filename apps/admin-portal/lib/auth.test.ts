@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { selectionAfterLogin } from './auth';
+import { selectionAfterLogin, valetNeedsProperty, propertyPickerPath } from './auth';
 
 afterEach(() => localStorage.clear());
 
@@ -36,5 +36,37 @@ describe('selectionAfterLogin', () => {
     expect(selectionAfterLogin({ id: 'g', name: 'G', role: 'client_admin', communityId: null }))
       .toEqual({ id: null, name: null });
     expect(localStorage.getItem('cg_selected_community_id')).toBeNull();
+  });
+});
+
+// A super admin with no property picked used to see "Token carries no
+// community" on every valet screen: the raw 403 from valet-service.
+describe('valetNeedsProperty', () => {
+  it('asks a super admin to pick a property before any valet screen', () => {
+    expect(valetNeedsProperty('super_admin', '/valet', null)).toBe(true);
+    expect(valetNeedsProperty('super_admin', '/valet/visits', null)).toBe(true);
+    expect(valetNeedsProperty('super_admin', '/valet/locations', null)).toBe(true);
+  });
+
+  it('lets a super admin through once a property is picked', () => {
+    expect(valetNeedsProperty('super_admin', '/valet/visits', 'palm-meadows')).toBe(false);
+  });
+
+  it('keeps Properties open to a group admin, since that is where they pick', () => {
+    expect(valetNeedsProperty('client_admin', '/valet/locations', null)).toBe(false);
+    expect(valetNeedsProperty('client_admin', '/valet/visits', null)).toBe(true);
+  });
+
+  it('never blocks a community admin, whose token carries their property', () => {
+    expect(valetNeedsProperty('community_admin', '/valet/visits', null)).toBe(false);
+  });
+
+  it('leaves the non-valet screens alone', () => {
+    expect(valetNeedsProperty('super_admin', '/communities', null)).toBe(false);
+  });
+
+  it('sends each role to its own picker', () => {
+    expect(propertyPickerPath('super_admin')).toBe('/communities');
+    expect(propertyPickerPath('client_admin')).toBe('/valet/locations');
   });
 });

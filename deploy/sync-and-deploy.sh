@@ -172,6 +172,17 @@ done
 
 rsh "cd /opt/communitygate && sudo -u ec2-user env$FORWARD bash deploy/deploy-valet.sh 2>&1 | tail -40"
 
+# The certificate expired once with nothing saying so: renewal had been failing
+# for weeks on a dead name (dwaarai.in) on the same cert, and every request to
+# dwaarai.com -- website, admin, guest pages, the valet app -- then failed TLS
+# for two days. Every deploy now reads the live expiry and says so out loud.
+say "Checking the TLS certificate"
+END=$(echo | openssl s_client -connect dwaarai.com:443 -servername dwaarai.com 2>/dev/null \
+  | openssl x509 -noout -enddate | cut -d= -f2)
+DAYS=$(( ( $(date -j -f '%b %d %T %Y %Z' "$END" +%s 2>/dev/null || date -d "$END" +%s) - $(date +%s) ) / 86400 ))
+echo "  expires $END ($DAYS days)"
+[ "$DAYS" -ge 21 ] || printf '\033[1;31m  WARNING: certificate expires in %s days - check certbot renewal on the box\033[0m\n' "$DAYS"
+
 say "Verifying"
 curl -fsS --max-time 20 https://dwaarai.com/valet-api/health && echo
 for u in /valet /admin/valet/slots /admin/valet/branding; do

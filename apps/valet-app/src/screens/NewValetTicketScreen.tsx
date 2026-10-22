@@ -13,6 +13,8 @@ import { useT } from '../store/langStore';
 import { parseCardCode } from '../lib/cardCode';
 import { takePhoto, openAppSettings } from '../lib/camera';
 import { CONDITION_ANGLES as ANGLES } from '../lib/conditionAngles';
+import { isStatusChanged } from '../lib/errors';
+import { useValetStore } from '../store/valetStore';
 
 /**
  * Taking a car in: plate and make, optionally a printed card, then the guest
@@ -74,7 +76,9 @@ function TicketHandout({
   return (
     <View style={styles.qrCard} testID="valet-qr-card">
       <Text style={styles.qrTitle}>{t('valetShowQr')}</Text>
-      <Image source={{ uri: created.qrDataUrl }} style={styles.qr} />
+      {/* Absent on a resumed intake: the QR image is only ever returned by
+          /start, and an empty <Image> frame reads as a broken code. */}
+      {!!created.qrDataUrl && <Image source={{ uri: created.qrDataUrl }} style={styles.qr} />}
       {/* Scanning only works while the guest is standing here. The code is
           what they leave with — sayable across a desk, writable on a bill, and
           relayable by phone to whoever actually collects the car. */}
@@ -105,14 +109,51 @@ function TicketHandout({
   );
 }
 
-export default function NewValetTicketScreen({ onClose }: { onClose?: () => void }) {
+/**
+ * The ticket an unfinished intake already has, in the shape this screen keeps.
+ *
+ * A resumed intake never went through /start on this phone, so there is no
+ * guest URL or QR image to hand back -- only what the queue knows. The handout
+ * renders without a QR image for exactly this case; the card or claim code is
+ * still what the guest leaves with.
+ */
+function resumedTicket(t: api.ValetTicket): api.CreatedTicket {
+  return {
+    id: t.id,
+    displayId: t.displayId,
+    sessionToken: t.sessionToken,
+    guestUrl: '',
+    cardCode: t.cardCode ?? null,
+    claimCode: t.claimCode ?? null,
+    qrDataUrl: '',
+  };
+}
+
+export default function NewValetTicketScreen({
+  onClose, resume,
+}: {
+  onClose?: () => void;
+  /**
+   * An existing ticket whose intake never finished -- the app was killed after
+   * the card scan, /complete failed, or a desk job was taken and not yet
+   * filled in. The screen continues that ticket instead of starting another:
+   * a second one would be refused for the card this one still holds.
+   *
+   * Always resumes at details. Both statuses that offer Resume
+   * ('parking_in_progress', 'accepted') are by definition pre-/complete, and
+   * the photo and condition steps come after it.
+   */
+  resume?: api.ValetTicket;
+}) {
   const insets = useSafeAreaInsets();
   const t = useT();
 
   const [permission, requestPermission] = useCameraPermissions();
   const [step, setStep] = useState<Step>('details');
-  const [plate, setPlate] = useState('');
-  const [vehicleMake, setVehicleMake] = useState('');
+  // Whatever the desk or an earlier attempt already recorded is kept, so the
+  // attendant fills the gaps rather than retyping a plate.
+  const [plate, setPlate] = useState(resume?.plate ?? '');
+  const [vehicleMake, setVehicleMake] = useState(resume?.vehicleMake ?? '');
   const [days, setDays] = useState(1);
   const [phone, setPhone] = useState('');
   const [guestName, setGuestName] = useState('');
@@ -127,7 +168,7 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
   const [floor, setFloor] = useState<string | null>(null);
   const [zone, setZone] = useState<string | null>(null);
   const [slotId, setSlotId] = useState<string | null>(null);
-  const [cardCode, setCardCode] = useState<string | null>(null);
+  const [cardCode, setCardCode] = useState<string | null>(resume?.cardCode ?? null);
   const [typedCard, setTypedCard] = useState('');
   // Latched in a ref for the same reason as the handover scanner: a real
   // camera fires onBarcodeScanned many times a second, far faster than React
@@ -144,7 +185,9 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
   const plateCam = useRef<CameraView>(null);
 
   const [returning, setReturning] = useState<api.PlateLookup | null>(null);
-  const [created, setCreated] = useState<api.CreatedTicket | null>(null);
+  const [created, setCreated] = useState<api.CreatedTicket | null>(
+    resume ? resumedTicket(resume) : null
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Set only when the OS will no longer prompt, so the error can offer the one
@@ -372,6 +415,12 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
       else if (code === 'unknown_card') setError(t('valetCardUnknown'));
       else if (code === 'card_required') setError(t('valetCardRequired'));
       else if (code === 'invalid_phone') setError(t('valetPhoneInvalid'));
+      // The ticket moved on underneath this screen -- another valet finished
+      // or cancelled it. Retrying cannot work; the queue shows what it is now.
+      else if (isStatusChanged(err) || code === 'wrong_status') {
+        setError(t('valetStatusChanged'));
+        void useValetStore.getState().fetch();
+      }
       else setError(t('valetFailed'));
     } finally {
       setBusy(false);
@@ -403,11 +452,19 @@ export default function NewValetTicketScreen({ onClose }: { onClose?: () => void
       // Queues rather than failing when the server cannot be reached.
       // Condition media is evidence, and the bays where it is captured
       // are exactly where the signal is not.
-      await uploadOrQueue(created.sessionToken, uri, 'intake', 'photo', angle);
+      const res = await uploadOrQueue(created.sessionToken, uri, 'intake', 'photo', angle);
+      // Only an upload or a durable queue counts. A refused upload used to be
+      // ticked off here all the same, so the set looked complete while the
+      // server held three photos -- found only at a dispute. The angle stays
+      // the live one, so tapping it again is the retake.
+      if (!res.ok) {
+        setError(t('valetPhotoNotSaved'));
+        return;
+      }
       setCaptured((prev) => [...prev, angle]);
       setError(null);
     } catch {
-      setError(t('valetFailed'));
+      setError(t('valetPhotoNotSaved'));
     } finally {
       setBusy(false);
     }

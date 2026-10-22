@@ -16,7 +16,7 @@ vi.mock('../lib/storage.js', () => ({
 import { query, queryRows } from '../db.js';
 import { logEvent } from '../lib/events.js';
 import { storage } from '../lib/storage.js';
-import { sweepExpiredTickets, sweepExpiredPhotos, sweepExpiredConditionMedia, schedulePhotoDeletion, scheduleConditionMediaDeletion, runSweep, forgetClosedGuestPhones, sweepOverdueCollections, sweepUnacceptedRequests } from '../lib/expiry.js';
+import { sweepExpiredTickets, sweepExpiredPhotos, sweepExpiredConditionMedia, schedulePhotoDeletion, scheduleConditionMediaDeletion, runSweep, forgetClosedGuestPhones, sweepOverdueCollections, sweepUnacceptedRequests, sweepStaleIntakes, describeSweep } from '../lib/expiry.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -32,7 +32,7 @@ describe('sweepExpiredTickets', () => {
     expect(count).toBe(2);
     expect(logEvent).toHaveBeenCalledTimes(2);
     expect(logEvent).toHaveBeenCalledWith('t1', 'expired', {
-      metadata: { reason: 'stay_end_at passed without final checkout' },
+      metadata: { reason: 'stay_end_at passed without final checkout', graceHours: 12 },
     });
   });
 
@@ -50,14 +50,48 @@ describe('sweepExpiredTickets', () => {
     expect(sql).not.toContain('strftime');
   });
 
-  it('only touches tickets that are still open', async () => {
+  it('only touches tickets whose car is on the lot or out with the guest', async () => {
     queryRows.mockResolvedValueOnce([]);
 
     await sweepExpiredTickets();
 
     const [, params] = queryRows.mock.calls[0];
     // with_guest too: a guest who drove off for good must not hold the card forever.
-    expect(params[0]).toEqual(['parked', 'retrieval_requested', 'en_route', 'arrived', 'parked_again', 'with_guest']);
+    expect(params[0]).toEqual(['parked', 'retrieval_requested', 'parked_again', 'with_guest']);
+  });
+
+  it('never expires a handover in progress', async () => {
+    // en_route: a valet is walking to the car. arrived: it is at the door.
+    // Expiring either closed the ticket under the attendant's feet.
+    queryRows.mockResolvedValueOnce([]);
+
+    await sweepExpiredTickets();
+
+    const [sql, params] = queryRows.mock.calls[0];
+    expect(params[0]).not.toContain('en_route');
+    expect(params[0]).not.toContain('arrived');
+    expect(sql).toMatch(/status = ANY\(\$1\)/);
+  });
+
+  it('waits a grace window past stay_end_at, 12 hours by default', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    await sweepExpiredTickets();
+
+    const [sql, params] = queryRows.mock.calls[0];
+    expect(sql).toMatch(/stay_end_at < NOW\(\) - \(\$2 \|\| ' hours'\)::interval/);
+    expect(params[1]).toBe('12');
+  });
+
+  it('honours VALET_EXPIRY_GRACE_HOURS', async () => {
+    process.env.VALET_EXPIRY_GRACE_HOURS = '3';
+    try {
+      queryRows.mockResolvedValueOnce([]);
+      await sweepExpiredTickets();
+      expect(queryRows.mock.calls[0][1][1]).toBe('3');
+    } finally {
+      delete process.env.VALET_EXPIRY_GRACE_HOURS;
+    }
   });
 
   it('does nothing and reports zero when no ticket is overdue', async () => {
@@ -176,7 +210,71 @@ describe('runSweep', () => {
       // A request nobody accepted, and the dedupe keys old enough that no
       // client could still be retrying them.
       unanswered: 0, idempotency: 0,
+      // Intakes nobody finished.
+      intakes: 0,
     });
+  });
+
+  it('logs every counter it returns, not just three of them', () => {
+    const line = describeSweep({
+      tickets: 1, intakes: 2, photos: 3, condition: 4, phones: 5, overdue: 6, unanswered: 7, idempotency: 8,
+    });
+    for (const k of ['tickets=1', 'intakes=2', 'photos=3', 'condition=4', 'phones=5', 'overdue=6', 'unanswered=7', 'idempotency=8']) {
+      expect(line).toContain(k);
+    }
+  });
+});
+
+describe('an intake nobody finished', () => {
+  it('expires requested, accepted and parking_in_progress tickets left idle', async () => {
+    queryRows.mockResolvedValueOnce([{ id: 't1' }]);
+    query.mockResolvedValue({});
+
+    expect(await sweepStaleIntakes()).toBe(1);
+
+    const [sql, params] = queryRows.mock.calls[0];
+    expect(params[0]).toEqual(['requested', 'accepted', 'parking_in_progress']);
+    expect(sql).toMatch(/SET status = 'expired', closed_at = NOW\(\)/);
+    // Six hours by default.
+    expect(params[1]).toBe('6');
+  });
+
+  it('measures idleness from the last event, not only from creation', async () => {
+    // A valet who photographed the car an hour ago is still working on it.
+    queryRows.mockResolvedValueOnce([]);
+    await sweepStaleIntakes();
+    const sql = queryRows.mock.calls[0][0];
+    expect(sql).toMatch(/MAX\(e\.created_at\)/);
+    expect(sql).toMatch(/GREATEST/);
+  });
+
+  it('records intake_abandoned and schedules the media it collected for deletion', async () => {
+    queryRows.mockResolvedValueOnce([{ id: 't7' }]);
+    query.mockResolvedValue({});
+
+    await sweepStaleIntakes();
+
+    expect(logEvent).toHaveBeenCalledWith('t7', 'intake_abandoned', { metadata: { idleHours: 6 } });
+    expect(query.mock.calls.some((c) => /valet_photos/.test(c[0]))).toBe(true);
+    expect(query.mock.calls.some((c) => /valet_condition_records/.test(c[0]))).toBe(true);
+  });
+
+  it('honours VALET_STALE_INTAKE_HOURS', async () => {
+    process.env.VALET_STALE_INTAKE_HOURS = '2';
+    try {
+      queryRows.mockResolvedValueOnce([]);
+      await sweepStaleIntakes();
+      expect(queryRows.mock.calls[0][1][1]).toBe('2');
+    } finally {
+      delete process.env.VALET_STALE_INTAKE_HOURS;
+    }
+  });
+
+  it('is part of the scheduled sweep', async () => {
+    queryRows.mockResolvedValue([]);
+    query.mockResolvedValue({ rowCount: 0 });
+    const res = await runSweep();
+    expect(res).toHaveProperty('intakes', 0);
   });
 });
 

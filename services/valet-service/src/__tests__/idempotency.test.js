@@ -147,3 +147,94 @@ describe('when the bookkeeping itself fails', () => {
     expect(next).toHaveBeenCalled();
   });
 });
+
+describe('answers that must not be replayed', () => {
+  function withEvents(res) {
+    const handlers = {};
+    res.on = (ev, fn) => { handlers[ev] = fn; return res; };
+    res.emit = (ev) => handlers[ev]?.();
+    return res;
+  }
+
+  it('does not cache a 5xx: it releases the key so the outbox can retry', async () => {
+    queryOne.mockResolvedValueOnce({ key: 'k1' });
+    const { req, res } = ctx({ key: 'k1' });
+
+    await idempotent(req, res, () => {});
+    res.status(500).json({ error: 'internal_error' });
+    await new Promise((r) => setImmediate(r));
+
+    expect(query.mock.calls.some((c) => /UPDATE valet_idempotency_keys/i.test(c[0]))).toBe(false);
+    const del = query.mock.calls.find((c) => /DELETE FROM valet_idempotency_keys/i.test(c[0]));
+    expect(del).toBeTruthy();
+    expect(del[1]).toEqual([COMMUNITY, 'k1']);
+  });
+
+  it('still caches a 4xx, which is a final answer about the request', async () => {
+    queryOne.mockResolvedValueOnce({ key: 'k1' });
+    const { req, res } = ctx({ key: 'k1' });
+
+    await idempotent(req, res, () => {});
+    res.status(409).json({ error: 'card_in_use' });
+    await new Promise((r) => setImmediate(r));
+
+    const update = query.mock.calls.find((c) => /UPDATE valet_idempotency_keys/i.test(c[0]));
+    expect(update[1]).toContain(409);
+    expect(query.mock.calls.some((c) => /DELETE/i.test(c[0]))).toBe(false);
+  });
+
+  it('releases the key when the response finishes with no JSON answer at all', async () => {
+    queryOne.mockResolvedValueOnce({ key: 'k1' });
+    const { req, res } = ctx({ key: 'k1' });
+    withEvents(res);
+
+    await idempotent(req, res, () => {});
+    res.emit('finish');
+    await new Promise((r) => setImmediate(r));
+
+    expect(query.mock.calls.some((c) => /DELETE FROM valet_idempotency_keys/i.test(c[0]))).toBe(true);
+  });
+
+  it('does not release a key whose answer was recorded when the response then finishes', async () => {
+    queryOne.mockResolvedValueOnce({ key: 'k1' });
+    const { req, res } = ctx({ key: 'k1' });
+    withEvents(res);
+
+    await idempotent(req, res, () => {});
+    res.status(201).json({ id: 't1' });
+    res.emit('finish');
+    await new Promise((r) => setImmediate(r));
+
+    expect(query.mock.calls.some((c) => /DELETE/i.test(c[0]))).toBe(false);
+  });
+
+  it('keeps the key when the client disconnects mid-request, so the retry is not a second intake', async () => {
+    queryOne.mockResolvedValueOnce({ key: 'k1' });
+    const { req, res } = ctx({ key: 'k1' });
+    withEvents(res);
+
+    await idempotent(req, res, () => {});
+    res.emit('close');                       // phone dropped off the wifi
+    res.status(201).json({ id: 't1' });      // the handler still finishes
+    await new Promise((r) => setImmediate(r));
+
+    expect(query.mock.calls.some((c) => /DELETE/i.test(c[0]))).toBe(false);
+    expect(query.mock.calls.some((c) => /UPDATE valet_idempotency_keys/i.test(c[0]))).toBe(true);
+  });
+
+  it('takes over a claim whose owner died rather than saying "in progress" for 48h', async () => {
+    queryOne
+      .mockResolvedValueOnce(null)                                   // claim lost
+      .mockResolvedValueOnce({ route: '/guard/tickets', completed_at: null })
+      .mockResolvedValueOnce({ key: 'k1' });                         // stale, reclaimed
+    const { req, res } = ctx({ key: 'k1' });
+    const next = vi.fn();
+
+    await idempotent(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    const sql = queryOne.mock.calls[2][0];
+    expect(sql).toMatch(/completed_at IS NULL/);
+    expect(sql).toMatch(/created_at < NOW\(\)/);
+  });
+});

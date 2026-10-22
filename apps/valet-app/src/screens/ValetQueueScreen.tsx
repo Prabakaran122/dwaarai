@@ -5,7 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import OfflineBanner from '../components/OfflineBanner';
 import { subscribeToReconnect } from '../lib/onReconnect';
-import { flushConditionQueue } from '../lib/conditionQueue';
+import { pending as pendingOutbox } from '../lib/outbox';
 import { spacing, radius } from '../theme/spacing';
 import { type } from '../theme/typography';
 import { useAuthStore } from "../store/authStore";
@@ -45,12 +45,17 @@ function minutesSince(iso: string) {
   return Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
 }
 
+/** How long an action's notice stays up. Long enough to read at a porch. */
+const NOTICE_MS = 5000;
+
 export default function ValetQueueScreen({
-  onOpenTicket, onNewTicket, onCheckIn,
+  onOpenTicket, onNewTicket, onCheckIn, onResume,
 }: {
   onOpenTicket?: (token: string) => void;
   onNewTicket?: () => void;
   onCheckIn?: (token: string) => void;
+  /** Continues an intake that was started but never finished. */
+  onResume?: (ticket: ValetTicket) => void;
 }) {
   const insets = useSafeAreaInsets();
   const t = useT();
@@ -66,6 +71,21 @@ export default function ValetQueueScreen({
   // Confirmed, not immediate. Signing out mid-shift costs a re-login and
   // another face verification, possibly with a car already in hand.
   const [endingShift, setEndingShift] = useState(false);
+  // Photos still waiting for signal when the shift ends. They are kept, not
+  // lost, but the attendant should know before handing the phone over that
+  // the next sign-in -- of this venue -- is what will send them.
+  const [unsent, setUnsent] = useState(0);
+  // Which arriving car the cancel confirmation is open for, if any.
+  const [cancelFor, setCancelFor] = useState<ValetTicket | null>(null);
+  const cancelIntake = useValetStore((s) => s.cancelIntake);
+  const notice = useValetStore((s) => s.notice);
+  const clearNotice = useValetStore((s) => s.clearNotice);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(clearNotice, NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const [tab, setTab] = useState<'parking' | 'delivery' | 'withGuest'>('delivery');
   const parking = forParking(all);
   const delivery = forDelivery(all);
@@ -82,11 +102,10 @@ export default function ValetQueueScreen({
     const timer = setInterval(fetch, POLL_MS);
 
     // The instant the server answers again: pull the queue rather than waiting
-    // up to a full tick, and push whatever condition media was captured while
-    // there was nowhere to send it.
+    // up to a full tick. Queued condition media is flushed by the app root
+    // (lib/outboxSync), on every screen, not only while this one is mounted.
     const stop = subscribeToReconnect(() => {
       fetch();
-      void flushConditionQueue();
     });
 
     return () => { clearInterval(timer); stop(); };
@@ -94,17 +113,51 @@ export default function ValetQueueScreen({
 
   const waiting = waitingCount();
 
+  // Every car still arriving can be cancelled. A scanned card creates its
+  // ticket at once, so an app killed mid-intake -- or a /complete that failed
+  // -- used to leave the card locked to a car nobody could reach again.
+  const cancelButton = (item: ValetTicket) => (
+    <Pressable
+      testID={`valet-cancel-intake-${item.id}`}
+      style={styles.secondaryBtn}
+      onPress={() => setCancelFor(item)}
+    >
+      <Text style={styles.secondaryBtnText}>{t('valetCancelIntake')}</Text>
+    </Pressable>
+  );
+
   const renderActions = (item: ValetTicket) => {
     // A job the desk logged, still waiting for somebody to walk to it.
     if (item.status === 'requested') {
       return (
-        <Pressable
-          testID={`valet-accept-intake-${item.id}`}
-          style={styles.primaryBtn}
-          onPress={() => acceptIntake(item.sessionToken)}
-        >
-          <Text style={styles.primaryBtnText}>{t('valetTakeJob')}</Text>
-        </Pressable>
+        <View style={styles.actionRow}>
+          <Pressable
+            testID={`valet-accept-intake-${item.id}`}
+            style={[styles.primaryBtn, styles.actionGrow]}
+            onPress={() => acceptIntake(item.sessionToken)}
+          >
+            <Text style={styles.primaryBtnText}>{t('valetTakeJob')}</Text>
+          </Pressable>
+          {cancelButton(item)}
+        </View>
+      );
+    }
+
+    // Taken, or started by a card scan, and never finished. Resume opens the
+    // intake on this same ticket rather than a new one: a second ticket would
+    // be refused for the card this one still holds.
+    if (item.status === 'accepted' || item.status === 'parking_in_progress') {
+      return (
+        <View style={styles.actionRow}>
+          <Pressable
+            testID={`valet-resume-${item.id}`}
+            style={[styles.primaryBtn, styles.actionGrow]}
+            onPress={() => onResume?.(item)}
+          >
+            <Text style={styles.primaryBtnText}>{t('valetResumeIntake')}</Text>
+          </Pressable>
+          {cancelButton(item)}
+        </View>
       );
     }
 
@@ -203,7 +256,10 @@ export default function ValetQueueScreen({
           <Pressable
             testID="valet-end-shift"
             style={styles.endShiftBtn}
-            onPress={() => setEndingShift(true)}
+            onPress={() => {
+              setEndingShift(true);
+              void pendingOutbox().then((q) => setUnsent(q.length)).catch(() => setUnsent(0));
+            }}
             hitSlop={10}
           >
             <MaterialCommunityIcons name="logout-variant" size={22} color={colors.textSecondary} />
@@ -219,6 +275,11 @@ export default function ValetQueueScreen({
         <View style={styles.endShiftCard} testID="valet-end-shift-sheet">
           <Text style={styles.endShiftTitle}>{t('valetEndShiftTitle')}</Text>
           <Text style={styles.endShiftBody}>{t('valetEndShiftBody')}</Text>
+          {unsent > 0 && (
+            <Text style={styles.endShiftWarn} testID="valet-end-shift-unsent">
+              {t('valetUnsentPhotos').replace('{n}', String(unsent))}
+            </Text>
+          )}
           <Pressable
             testID="valet-end-shift-confirm"
             style={styles.endShiftGo}
@@ -242,6 +303,41 @@ export default function ValetQueueScreen({
             <Text style={styles.endShiftCancelText}>{t('valetCancel')}</Text>
           </Pressable>
         </View>
+      )}
+
+      {/* Same in-place sheet as ending a shift: a modal over a car-park
+          queue is easy to dismiss by accident, and this cannot be undone. */}
+      {cancelFor && (
+        <View style={styles.endShiftCard} testID="valet-cancel-intake-sheet">
+          <Text style={styles.endShiftTitle}>
+            {t('valetCancelIntakeTitle').replace('{plate}', cancelFor.plate || cancelFor.cardCode || cancelFor.displayId)}
+          </Text>
+          <Text style={styles.endShiftBody}>{t('valetCancelIntakeBody')}</Text>
+          <Pressable
+            testID="valet-cancel-intake-confirm"
+            style={styles.endShiftGo}
+            onPress={() => {
+              const token = cancelFor.sessionToken;
+              setCancelFor(null);
+              void cancelIntake(token);
+            }}
+          >
+            <Text style={styles.endShiftGoText}>{t('valetCancelIntakeConfirm')}</Text>
+          </Pressable>
+          <Pressable
+            testID="valet-cancel-intake-keep"
+            style={styles.endShiftCancel}
+            onPress={() => setCancelFor(null)}
+          >
+            <Text style={styles.endShiftCancelText}>{t('valetCancelIntakeKeep')}</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {notice && (
+        <Pressable style={styles.notice} testID="valet-notice" onPress={clearNotice}>
+          <Text style={styles.noticeText}>{t(notice)}</Text>
+        </Pressable>
       )}
 
       <View style={styles.searchWrap}>
@@ -325,10 +421,14 @@ export default function ValetQueueScreen({
                   {/* The guest is holding one of these, so lead with whichever
                       it is. A guest who phones saying they have lost their
                       code needs the guard to find it here. */}
-                  {item.vehicleMake} · {item.cardCode
-                    ? `Card ${item.cardCode}`
-                    : item.claimCode || item.displayId} · {minutesSince(item.createdAt)}m
-                  {item.currentGuardName ? ` · ${item.currentGuardName}` : ''}
+                  {/* Joined from what exists: a check-in the card scan has just
+                      started has no make yet, and used to read " · Card A004". */}
+                  {[
+                    item.vehicleMake,
+                    item.cardCode ? `Card ${item.cardCode}` : item.claimCode || item.displayId,
+                    `${minutesSince(item.createdAt)}m`,
+                    item.currentGuardName,
+                  ].filter(Boolean).join(' · ')}
                 </Text>
                 {item.disputed && (
                   <Text style={styles.disputed} testID={`disputed-${item.id}`}>
@@ -375,6 +475,13 @@ const styles = StyleSheet.create({
   },
   endShiftTitle: { color: colors.textPrimary, fontWeight: '700', fontSize: 16 },
   endShiftBody: { color: colors.textSecondary, fontSize: 13, marginTop: 6 },
+  endShiftWarn: { color: colors.warning, fontSize: 13, fontWeight: '600', marginTop: spacing.sm },
+  notice: {
+    marginHorizontal: spacing.lg, marginTop: spacing.md, padding: spacing.md,
+    borderRadius: radius.md, backgroundColor: colors.card,
+    borderWidth: 1, borderColor: colors.actionPrimary,
+  },
+  noticeText: { color: colors.textPrimary, fontSize: 14, fontWeight: '600' },
   endShiftGo: {
     marginTop: spacing.lg, paddingVertical: spacing.lg, borderRadius: radius.md,
     backgroundColor: colors.danger, alignItems: 'center',
@@ -425,6 +532,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     alignItems: 'center',
   },
+  actionRow: { flexDirection: 'row', gap: spacing.sm },
+  actionGrow: { flex: 1 },
+  secondaryBtn: {
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingVertical: spacing.md, paddingHorizontal: spacing.lg, alignItems: 'center',
+  },
+  secondaryBtnText: { color: colors.textSecondary, fontWeight: '700', fontSize: 15 },
   primaryBtnText: { color: colors.bgPrimary, fontWeight: '700', fontSize: 15 },
   etaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
   etaBtn: {

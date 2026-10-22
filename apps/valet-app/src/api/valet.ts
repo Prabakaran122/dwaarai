@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { resolveAuthRetry } from './session';
+import { communityOfToken } from '../lib/errors';
 
 /**
  * Client for valet-service.
@@ -21,6 +22,22 @@ export function setValetAuthToken(token: string) {
 export function clearValetAuthToken() {
   delete valet.defaults.headers.common['Authorization'];
 }
+
+/**
+ * The venue the signed-in session belongs to, read from its JWT.
+ *
+ * Only used to keep queued condition photos with their own venue: a phone
+ * signed into another property would get a 404 for every one of them and,
+ * after three tries, throw them away. Never used for access control -- the
+ * server checks the signature; this merely reads a claim. Null when there is
+ * no session or the token cannot be read.
+ */
+export function currentCommunityId(): string | null {
+  const header = valet?.defaults?.headers?.common?.['Authorization'];
+  if (typeof header !== 'string' || !header.startsWith('Bearer ')) return null;
+  return communityOfToken(header.slice(7));
+}
+
 
 /**
  * An expired access token retries itself once, silently.
@@ -282,6 +299,18 @@ export type Verification = 'photo' | 'vehicle_confirmed';
 
 export const confirmPickup = (token: string, final: boolean, verification: Verification) =>
   valet.post(`/guard/tickets/${token}/confirm-pickup`, { final, verification });
+
+/**
+ * Abandons an intake that never finished, and frees its card.
+ *
+ * A scanned card creates a 'parking_in_progress' ticket at once; if the app
+ * then dies or /complete fails, that ticket holds the card and nothing else
+ * can release it. Allowed only while the car is still arriving
+ * (requested / accepted / parking_in_progress) -- anything later answers 409
+ * `not_cancellable` with the status it has moved on to.
+ */
+export const cancelIntake = (token: string) =>
+  valet.post<{ status: 'expired' }>(`/guard/tickets/${token}/cancel-intake`);
 
 export const expireTicket = (token: string) =>
   valet.post(`/guard/tickets/${token}/expire`);

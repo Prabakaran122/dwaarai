@@ -19,6 +19,20 @@ import { query, queryOne } from '../db.js';
 /** Long enough for a real UUID, short enough that nobody can store an essay. */
 const MAX_KEY = 64;
 
+/**
+ * How long an unfinished claim is trusted to still be running.
+ *
+ * A claim is released when its request ends without a storable answer (see
+ * captureResponse), but a process that dies mid-request releases nothing. Its
+ * key used to read "in progress" until the 48h sweep, so the outbox retried an
+ * intake for two days and was told to wait every time. No request here runs
+ * for minutes; a claim this old belongs to a process that is gone.
+ */
+function staleClaimSeconds() {
+  const s = Number(process.env.IDEMPOTENCY_STALE_SECONDS ?? 120);
+  return Number.isFinite(s) && s > 0 ? s : 120;
+}
+
 export async function idempotent(req, res, next) {
   const key = String(req.headers['idempotency-key'] ?? '').trim();
   if (!key || key.length > MAX_KEY) return next();
@@ -79,6 +93,28 @@ export async function idempotent(req, res, next) {
   }
 
   if (!existing.completed_at) {
+    // Take over a claim whose owner has evidently died. Conditional on the
+    // claim still being unfinished and stale, so of two retries arriving
+    // together only one can win it -- the same guarantee the INSERT gives.
+    let reclaimed = null;
+    try {
+      reclaimed = await queryOne(
+        `UPDATE valet_idempotency_keys
+            SET created_at = NOW()
+          WHERE community_id = $1 AND key = $2
+            AND completed_at IS NULL
+            AND created_at < NOW() - ($3 || ' seconds')::interval
+          RETURNING key`,
+        [communityId, key, String(staleClaimSeconds())]
+      );
+    } catch {
+      reclaimed = null;
+    }
+    if (reclaimed) {
+      captureResponse(res, key, communityId);
+      return next();
+    }
+
     // The original is still in flight. 409 rather than blocking: the caller is
     // an outbox that will come back, and holding the connection open would tie
     // up a worker behind a request we cannot see the end of.
@@ -92,16 +128,49 @@ export async function idempotent(req, res, next) {
 }
 
 /**
- * Records the answer once the route has produced one.
+ * Records the answer once the route has produced one -- if it is one worth
+ * replaying.
  *
  * Wraps res.json rather than using an 'finish' listener because the body is
  * the thing worth keeping, and by 'finish' it has already been serialised away.
+ *
+ * Only a 2xx or 4xx is kept. A 5xx says the server failed, not that the
+ * request was wrong: replaying it would turn one database blip into a
+ * permanent "that action failed" for an outbox that retries exactly so the
+ * blip can pass. So a 5xx -- or a response that finishes without any JSON
+ * answer -- releases the key instead, and the next retry does the work
+ * afresh. A process that dies mid-request is covered by the staleness
+ * takeover in idempotent().
  */
 function captureResponse(res, key, communityId) {
   const realJson = res.json.bind(res);
+  // Set synchronously inside res.json, so the 'finish' listener below -- which
+  // fires after every response, answered with JSON or not -- knows whether
+  // there is anything left for it to do.
+  let settled = false;
+
+  const release = () => {
+    void Promise.resolve()
+      .then(() => query(
+        `DELETE FROM valet_idempotency_keys
+          WHERE community_id = $1 AND key = $2 AND completed_at IS NULL`,
+        [communityId, key]
+      ))
+      .catch(() => {
+        // Left to the staleness takeover in idempotent() above.
+      });
+  };
 
   res.json = (body) => {
     const out = realJson(body);
+    if (settled) return out;
+    settled = true;
+
+    if (res.statusCode >= 500) {
+      release();
+      return out;
+    }
+
     // After the reply is on its way. A slow side-table write must not add
     // latency to the attendant's tap.
     // Wrapped in Promise.resolve: this runs INSIDE res.json, so anything that
@@ -121,6 +190,20 @@ function captureResponse(res, key, communityId) {
       });
     return out;
   };
+
+  // 'finish', not 'close'. A guest's phone dropping off the porch wifi closes
+  // the connection while the intake is still being written; releasing then
+  // would let the retry take the car in a second time -- the exact duplicate
+  // this file exists to prevent. The handler's own res.json still records the
+  // answer after a disconnect. 'finish' without one means the route answered
+  // some other way, and there is nothing replayable to keep.
+  if (typeof res.on === 'function') {
+    res.on('finish', () => {
+      if (settled) return;
+      settled = true;
+      release();
+    });
+  }
 }
 
 /**

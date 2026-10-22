@@ -93,7 +93,7 @@ There is no shared Node package for cross-service code — each service duplicat
 - **admin-portal** — Next.js 14 App Router (`app/<section>/page.tsx` per feature: gates, communities, units, vehicles, guards, incidents, sos, reports, etc.), talks to api-gateway via `lib/api.ts` and live updates via `lib/socket.ts`. The `app/valet/*` pages are the exception: they talk to valet-service via `lib/valet.ts`, a second client on a different base URL that reuses the same api-gateway JWT from localStorage.
 - **guard-app** — Expo/React Native, Android tablet at the gate. Zustand stores per domain in `src/store/` (queue, approvals, SOS, handover, staff, deliveries), i18n via `src/i18n/translations.ts` (guards may not read English).
 - **valet-app** — Expo/React Native, the DwaarAI Valet product. A **separate app from guard-app on purpose**: a hotel valet is not a society gate guard, and folding valet in would have meant them signing into "Nazar — Guard Station" and seeing a tab bar of Gate / Visitors / Parcels / Incidents they will never use. It has no tab bar at all — the whole app is the three-screen valet flow (queue → new ticket → handover) behind its own DwaarAI Valet sign-in. Auth is *not* separate: it posts to the same `/auth/guard-login` and `residents.type='guard'` records, because valet-service verifies those tokens and a property's staff exist once.
-- **valet-guest** — Next.js 14, `basePath: /valet`, the one public surface: a guest opens `/valet/v/<session token>` by scanning a physical valet card. No login, no account, and deliberately nothing in localStorage — the token in the URL is the only credential, so reopening the link reconstructs the state exactly.
+- **valet-guest** — Next.js 14, `basePath: /valet`, the one public surface: a guest opens `/valet/v/<session token>` by scanning a physical valet card. No login and no account — the token in the URL is the only credential, so reopening the link reconstructs the state exactly. The one thing in localStorage is a random device id (`dwaarai.valet.deviceId`) that the card page sends as `X-Valet-Device`; see card binding below.
 - **resident-app** — Expo/React Native, iOS + Android. Same store-per-domain + screen-per-feature pattern as guard-app, but with much heavier Jest test coverage (most screens/components have a co-located `.test.tsx`).
 
 ### Infra (`infra/cdk`)
@@ -223,7 +223,7 @@ the app requires all four.
 
 **A non-final handover sets `with_guest` (070), not `parked_again`.** The car is
 out with a multi-day guest: open (URL, card and claim code keep working),
-holding no slot, not requestable, listed under the valet app's "With guests"
+holding no slot, not requestable, listed under the valet app's "Taken out"
 tab. It used to go straight to `parked_again`, so the lot, the slot count,
 "parked right now" and the guest's own page ("Parked for 29 min") all said it
 was parked while the guest drove it. A valet ends it with **Car is back**:
@@ -231,6 +231,62 @@ four fresh intake-stage photos, then `POST /guard/tickets/:token/returned`,
 which refuses without them (409 `condition_required`) and moves the status and
 writes `returned_by_guest` (071) in one transaction. `with_guest` expires with
 the stay like any other open ticket.
+
+**A card opens its car on one phone only (072).** Card codes are sequential
+(A001…), and the card QR carries the venue id, so anyone holding one card could
+walk the rest and get every open car's guest link. The printed QR cannot change,
+so `GET /guest/cards/:community/:code` binds an open ticket to the first device
+that asks (`X-Valet-Device`, stored as sha256 in `valet_tickets.card_device_hash`
+via a conditional `UPDATE … WHERE card_device_hash IS NULL`). Any other device —
+or no header — gets `{ sessionToken: null, locked: true }` and no `waRef`; the
+card page then asks for the claim code (which opens the ticket without
+requesting the car). Card lookups are rate-limited per IP in the service
+(`VALET_GUEST_CARD_RATE_PER_MIN`, default 30; the rest of `/guest` 240), which
+needs `trust proxy` — set in both valet-service and api-gateway, one hop.
+The card's `wa_ref` is replaced at every intake (`rotateCardRef`), because the
+card page hands it out while the card is idle, and a number held on a card
+(`pending_wa_phone`) is only claimed if it arrived in the last 15 minutes.
+
+**No intake can lock a card for good (073).** Scanning a card creates a
+`parking_in_progress` ticket at once. `POST /guard/tickets/:token/cancel-intake`
+expires one from `requested`/`accepted`/`parking_in_progress`
+(`intake_cancelled`), the app's Arriving tab offers Resume and Cancel, and the
+sweep expires intakes idle longer than `VALET_STALE_INTAKE_HOURS` (6;
+`intake_abandoned`). 073 also lets `created_by_guard_id` be NULL (a car logged
+at the desk by an admin, who is not a `residents` row — that insert used to 500
+on every call) and lets an intake with no plate be `expired`.
+
+**Status transitions are conditional updates.** Accept, accept-intake, arrived,
+complete, returned, confirm-pickup and expire all `UPDATE … WHERE status = <expected>
+RETURNING`, and answer 409 `status_changed` when another valet got there first.
+One open ticket per slot is a partial unique index (074, matching
+`HOLDING_A_SLOT`); `/complete` locks the slot row and answers 409 `slot_taken`.
+
+**The sweep never strands a car mid-handover.** `en_route` and `arrived` never
+expire; parked/requested/`with_guest` expire only at `stay_end_at` +
+`VALET_EXPIRY_GRACE_HOURS` (12). A guest who leaves late can still get their car.
+
+**Admin condition photos use signed links**, like the handover photo: `POST
+/admin/tickets/:token/media-links` → `{ links: { [id]: "/admin/media-links/<sig>" } }`,
+120s, purpose `admin_media`, scoped to the admin's community. A plain `<img>` on
+an auth route never sends the token, so every tile used to be broken.
+
+**Staff access is checked per request.** valet-service rejects a guard token
+whose `residents.is_active` is false or whose `valet_until` has passed (401
+`staff_inactive`, cached 30s); api-gateway refuses both at login and refresh.
+
+**api-gateway auth:** login limits are per identity + IP (5/min) plus 30/min
+per IP — the old limiter keyed on `req.ip` behind nginx, so the whole platform
+shared one bucket of 5. The dev master OTP needs `ALLOW_DEV_MASTER_OTP=true`
+*and* `NODE_ENV !== 'production'`; `setup-server.sh` writes
+`NODE_ENV=development` into the production api-gateway unit, so the explicit
+flag is the real guard. OTPs are never logged.
+
+**TLS.** The dwaarai.com certificate once also covered `dwaarai.in`; when that
+domain stopped resolving, every renewal failed and the cert expired, taking the
+whole site, the guest pages and the valet app down for two days. It now covers
+dwaarai.com and www only, and `sync-and-deploy.sh` prints the days left on
+every deploy (warning under 21).
 
 `services/valet-service/scripts/e2e-cards.mjs` and `e2e-verification.mjs` cover
 all of this against a real service and database.

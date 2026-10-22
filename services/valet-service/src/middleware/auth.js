@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { queryOne } from '../db.js';
+import pool, { queryOne } from '../db.js';
 
 export const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'test' ? 'test-only-secret' : '');
 if (!JWT_SECRET) {
@@ -23,6 +23,61 @@ if (!JWT_SECRET) {
  * token carries.
  */
 const ADMIN_ROLES = ['super_admin', 'client_admin', 'community_admin'];
+
+/**
+ * Whether a staff member's token still speaks for somebody allowed to work.
+ *
+ * A JWT is good until it expires, which for a guard is up to an hour after
+ * sign-in. Deactivating a valet (DELETE /admin/staff/:id) or a temporary
+ * driver's valet_until passing therefore changed nothing for that hour -- the
+ * person let go at the start of a shift could still accept a retrieval and
+ * hand somebody's car over. api-gateway refuses them at login and refresh;
+ * this refuses the token they already hold.
+ *
+ * Cached for a short while per person, because this runs on every request the
+ * valet app makes and the app polls. Thirty seconds is the longest a revoked
+ * token keeps working, against an hour before.
+ */
+const STAFF_CACHE_TTL_MS = 30 * 1000;
+const staffCache = new Map();
+
+/** Test seam: forget every cached answer. */
+export function clearStaffCache() {
+  staffCache.clear();
+}
+
+/**
+ * true = may work, false = revoked, null = could not tell.
+ *
+ * Reads through the pool rather than queryOne so a failure here is told apart
+ * from an answer: if the database cannot be reached, the route's own queries
+ * fail the request anyway, and refusing every attendant at once over a
+ * bookkeeping lookup would turn a blip into a porch with nobody able to work.
+ */
+async function staffMayWork(residentId) {
+  const hit = staffCache.get(residentId);
+  if (hit && hit.expires > Date.now()) return hit.ok;
+
+  let result;
+  try {
+    result = await pool.query(
+      `SELECT is_active, valet_until FROM residents WHERE id = $1 AND type = 'guard'`,
+      [residentId]
+    );
+  } catch {
+    return null;
+  }
+  if (!result || !Array.isArray(result.rows)) return null;
+
+  const row = result.rows[0];
+  // No row at all is a revocation too: a token naming a person who does not
+  // exist (or is no longer staff) speaks for nobody.
+  const ok = !!row
+    && row.is_active !== false
+    && !(row.valet_until && new Date(row.valet_until) <= new Date());
+  staffCache.set(residentId, { ok, expires: Date.now() + STAFF_CACHE_TTL_MS });
+  return ok;
+}
 
 export function authenticateJWT(roles = []) {
   return async (req, res, next) => {
@@ -74,6 +129,19 @@ export function authenticateJWT(roles = []) {
 
       if (!req.user.community_id) {
         return res.status(403).json({ error: 'no_community', message: 'Token carries no community' });
+      }
+
+      // Staff only. An admin token's sub is an admins row, not a resident, and
+      // admins are revoked in api-gateway; the photo-link routes carry no
+      // token at all and never reach this.
+      if (decoded.role === 'guard' && decoded.sub) {
+        const ok = await staffMayWork(decoded.sub);
+        if (ok === false) {
+          return res.status(401).json({
+            error: 'staff_inactive',
+            message: 'This account has been deactivated or has expired',
+          });
+        }
       }
 
       next();

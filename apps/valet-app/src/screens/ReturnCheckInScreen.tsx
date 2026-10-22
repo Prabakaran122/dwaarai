@@ -10,6 +10,8 @@ import { uploadOrQueue } from '../lib/conditionQueue';
 import { useT } from '../store/langStore';
 import { takePhoto, openAppSettings } from '../lib/camera';
 import { CONDITION_ANGLES, nextAngle } from '../lib/conditionAngles';
+import { isStatusChanged } from '../lib/errors';
+import { useValetStore } from '../store/valetStore';
 
 /**
  * A multi-day guest has brought the car back.
@@ -62,11 +64,18 @@ export default function ReturnCheckInScreen({
     setBusy(true);
     try {
       // Queued rather than failed when offline, like every other capture.
-      await uploadOrQueue(sessionToken, res.uri, 'intake', 'photo', angle);
+      const up = await uploadOrQueue(sessionToken, res.uri, 'intake', 'photo', angle);
+      // Neither uploaded nor safely queued: not captured. The angle stays the
+      // live one, so tapping it again is the retake -- ticking it off here
+      // used to let a set that was missing a photo look complete.
+      if (!up.ok) {
+        setError(t('valetPhotoNotSaved'));
+        return;
+      }
       setCaptured((prev) => [...prev, angle]);
       setError(null);
     } catch {
-      setError(t('valetFailed'));
+      setError(t('valetPhotoNotSaved'));
     } finally {
       setBusy(false);
     }
@@ -80,7 +89,14 @@ export default function ReturnCheckInScreen({
       onDone?.();
     } catch (err) {
       const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setError(code === 'condition_required' ? t('valetConditionAllFour') : t('valetFailed'));
+      if (isStatusChanged(err)) {
+        // Another valet checked it in first. Nothing to retry; the queue
+        // behind this screen is refreshed so closing it shows the truth.
+        setError(t('valetStatusChanged'));
+        void useValetStore.getState().fetch();
+      } else {
+        setError(code === 'condition_required' ? t('valetConditionAllFour') : t('valetFailed'));
+      }
     } finally {
       setBusy(false);
     }

@@ -62,7 +62,9 @@ function findTicket(sessionToken, communityId) {
             s.floor AS slot_floor, s.zone AS slot_zone, s.number AS slot_number
        FROM valet_tickets t
        JOIN communities c ON c.id = t.community_id
-       JOIN residents cg ON cg.id = t.created_by_guard_id
+       -- LEFT: a job the desk logged has no attendant until one accepts it
+       -- (073), and an inner join made it vanish from every list and lookup.
+       LEFT JOIN residents cg ON cg.id = t.created_by_guard_id
        LEFT JOIN residents ug ON ug.id = t.current_guard_id
        LEFT JOIN valet_slots s ON s.id = t.slot_id
       WHERE t.session_token = $1 AND t.community_id = $2`,
@@ -95,6 +97,64 @@ function ticketView(t) {
 
 function notFound(res) {
   return res.status(404).json({ error: 'not_found' });
+}
+
+/**
+ * The answer for a transition that lost a race.
+ *
+ * Every status change below is an UPDATE conditional on the status it was
+ * checked against, so of two valets tapping Accept together exactly one moves
+ * the ticket. The other gets this, naming where the ticket is now, rather than
+ * a 200 that put two people on the same car (and wrote two audit events).
+ */
+async function statusChanged(res, ticketId) {
+  const now = await queryOne('SELECT status FROM valet_tickets WHERE id = $1', [ticketId]);
+  return res.status(409).json({ error: 'status_changed', status: now?.status ?? null });
+}
+
+/** Rows touched by a query result, for the conditional transitions above. */
+function moved(result) {
+  return (result?.rowCount ?? result?.rows?.length ?? 0) > 0;
+}
+
+/**
+ * Takes a slot for a ticket inside the caller's transaction.
+ *
+ * Locks the slot row first, in its own statement, and only then looks for a
+ * ticket standing in it. Under READ COMMITTED the second statement takes a
+ * fresh snapshot after the lock is granted, so an attendant who waited on the
+ * lock sees the car the first one just put there. Checking in one joined
+ * statement does not: both read "free" before either commits.
+ * idx_valet_slot_one_open_ticket (074) is the backstop behind this.
+ *
+ * Returns 'ok', 'taken', or 'unknown' (not this property's, or retired).
+ */
+async function claimSlot(client, { slotId, communityId, ticketId = null }) {
+  const slot = await client.query(
+    `SELECT id FROM valet_slots
+      WHERE id = $1 AND community_id = $2 AND is_active = true
+      FOR UPDATE`,
+    [slotId, communityId]
+  );
+  if (!slot.rows?.length) return 'unknown';
+
+  const holder = await client.query(
+    `SELECT id FROM valet_tickets
+      WHERE slot_id = $1 AND status = ANY($2)
+        AND ($3::uuid IS NULL OR id <> $3::uuid)
+      LIMIT 1`,
+    [slotId, HOLDING_A_SLOT, ticketId]
+  );
+  return holder.rows?.length ? 'taken' : 'ok';
+}
+
+/** True when a write lost the race to the one-car-per-slot index (074). */
+function isSlotRaceLoss(err) {
+  return err?.code === '23505' && err?.constraint === 'idx_valet_slot_one_open_ticket';
+}
+
+function slotTaken(res) {
+  return res.status(409).json({ error: 'slot_taken', message: 'Another car is already in that slot' });
 }
 
 // --- staff badge -----------------------------------------------------------
@@ -389,10 +449,15 @@ router.post('/tickets/:token/accept-intake', guard, async (req, res) => {
     return res.status(409).json({ error: 'wrong_status', status: ticket.status });
   }
 
-  await query(
-    `UPDATE valet_tickets SET status = 'accepted', created_by_guard_id = $2 WHERE id = $1`,
+  // Conditional on still waiting: the check above is a read, and two
+  // attendants can both pass it before either writes.
+  const taken = await query(
+    `UPDATE valet_tickets SET status = 'accepted', created_by_guard_id = $2
+      WHERE id = $1 AND status = 'requested'
+      RETURNING id`,
     [ticket.id, req.user.sub]
   );
+  if (!moved(taken)) return statusChanged(res, ticket.id);
   await logEvent(ticket.id, 'accepted_for_parking', { guardId: req.user.sub });
 
   const updated = await findTicket(req.params.token, req.user.community_id);
@@ -452,6 +517,7 @@ router.post('/tickets/start', guard, once, async (req, res) => {
        card ? card.id : null, card ? card.code : null]
     );
     const ticketId = inserted.rows[0].id;
+    if (card) await rotateCardRef(client, card.id);
 
     // A guest who scanned the card first left their number on it. The job
     // exists now, so it can hold the number directly -- and once the app
@@ -542,27 +608,62 @@ router.post('/tickets/:token/complete', guard, once, async (req, res) => {
   const phoneNumber = typedPhone ? normalizePhone(typedPhone) : null;
 
   const plate = parsed.data.plate.toUpperCase();
-  await query(
-    `UPDATE valet_tickets
-        SET plate = $2, plate_normalized = $3, vehicle_make = $4, stay_end_at = $5,
-            slot_id = $6, guest_name = $7, car_type = $8, is_premium = $9,
-            phone_number = COALESCE(phone_number, $10::text),
-            -- Cast for the same reason as the insert above. This one happens
-            -- to resolve, because COALESCE against the column gives Postgres
-            -- a type to infer from first, but relying on statement order for
-            -- that is how the insert came to fail.
-            phone_consent_at = CASE WHEN $10::text IS NULL THEN phone_consent_at
-                                    ELSE COALESCE(phone_consent_at, NOW()) END,
-            status = 'parked'
-      WHERE id = $1`,
-    [ticket.id, plate, normalizePlate(plate), parsed.data.vehicleMake, stayEnd.toISOString(),
-     parsed.data.slotId || null, parsed.data.guestName || null,
-     parsed.data.carType || null, parsed.data.isPremium === true, phoneNumber]
-  );
-  await logEvent(ticket.id, 'created', {
-    guardId: req.user.sub,
-    metadata: { plate, vehicleMake: parsed.data.vehicleMake },
-  });
+  const slotId = parsed.data.slotId || null;
+
+  // One transaction for the slot check, the status move and its event. The
+  // slot used to be stored as sent -- from any property, or already holding a
+  // car -- so two attendants finishing at once could both be given the same
+  // bay, and a guest's valet would later walk to a stranger's car.
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    if (slotId) {
+      const slot = await claimSlot(client, {
+        slotId, communityId: req.user.community_id, ticketId: ticket.id,
+      });
+      if (slot !== 'ok') {
+        await client.query('ROLLBACK');
+        if (slot === 'taken') return slotTaken(res);
+        return res.status(400).json({ error: 'unknown_slot', message: 'That slot is not available at this property' });
+      }
+    }
+
+    const done = await client.query(
+      `UPDATE valet_tickets
+          SET plate = $2, plate_normalized = $3, vehicle_make = $4, stay_end_at = $5,
+              slot_id = $6, guest_name = $7, car_type = $8, is_premium = $9,
+              phone_number = COALESCE(phone_number, $10::text),
+              -- Cast for the same reason as the insert above. This one happens
+              -- to resolve, because COALESCE against the column gives Postgres
+              -- a type to infer from first, but relying on statement order for
+              -- that is how the insert came to fail.
+              phone_consent_at = CASE WHEN $10::text IS NULL THEN phone_consent_at
+                                      ELSE COALESCE(phone_consent_at, NOW()) END,
+              status = 'parked'
+        WHERE id = $1 AND status IN ('parking_in_progress', 'accepted')
+        RETURNING id`,
+      [ticket.id, plate, normalizePlate(plate), parsed.data.vehicleMake, stayEnd.toISOString(),
+       slotId, parsed.data.guestName || null,
+       parsed.data.carType || null, parsed.data.isPremium === true, phoneNumber]
+    );
+    if (!moved(done)) {
+      await client.query('ROLLBACK');
+      return statusChanged(res, ticket.id);
+    }
+    await logEvent(ticket.id, 'created', {
+      guardId: req.user.sub,
+      metadata: { plate, vehicleMake: parsed.data.vehicleMake },
+      client,
+    });
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (isSlotRaceLoss(err)) return slotTaken(res);
+    throw err;
+  } finally {
+    client.release();
+  }
 
   const updated = await findTicket(req.params.token, req.user.community_id);
   emitTicketUpdate(updated);
@@ -605,8 +706,15 @@ const createTicketSchema = z.object({
  * exists to turn that into a readable error instead of a constraint violation.
  */
 async function resolveCard(client, communityId, code) {
+  // A held number only counts if it was left moments ago, by a guest standing
+  // at the porch while intake was typed. An old hold is someone who messaged
+  // an idle card's reference -- which the card page hands out between stays --
+  // and would otherwise be bound to whichever guest the card goes to next.
   const card = await client.query(
-    `SELECT id, code, pending_wa_phone FROM valet_cards
+    `SELECT id, code,
+            CASE WHEN pending_wa_at > NOW() - INTERVAL '15 minutes'
+                 THEN pending_wa_phone END AS pending_wa_phone
+       FROM valet_cards
       WHERE community_id = $1 AND UPPER(code) = UPPER($2) AND is_active = true`,
     [communityId, code]
   );
@@ -621,6 +729,29 @@ async function resolveCard(client, communityId, code) {
     return { error: 'card_in_use', displayId: inUse.rows[0].display_id };
   }
   return { card: card.rows[0] };
+}
+
+/**
+ * Gives a card a fresh WhatsApp reference as a new stay starts on it.
+ *
+ * The reference is only ever shown on the card's own page, never printed, and
+ * that page hands it out while the card sits idle between guests. Without
+ * this, a reference collected from an idle card would keep working on every
+ * later guest's car. Retried on the (vanishingly rare) unique collision, inside
+ * a savepoint so the surrounding intake transaction survives it.
+ */
+async function rotateCardRef(client, cardId) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await client.query('SAVEPOINT rotate_card_ref');
+    try {
+      await client.query('UPDATE valet_cards SET wa_ref = $2 WHERE id = $1', [cardId, newClaimCode()]);
+      await client.query('RELEASE SAVEPOINT rotate_card_ref');
+      return;
+    } catch (err) {
+      await client.query('ROLLBACK TO SAVEPOINT rotate_card_ref');
+      if (err.code !== '23505') throw err;
+    }
+  }
 }
 
 const CARD_ERROR_MESSAGE = {
@@ -746,13 +877,8 @@ router.post('/tickets', guard, once, async (req, res) => {
     // since the attendant picked it simply is not recorded.
     let slotId = null;
     if (parsed.data.slotId) {
-      const slot = await client.query(
-        `SELECT s.id FROM valet_slots s
-          LEFT JOIN valet_tickets t ON t.slot_id = s.id AND t.status = ANY($3)
-         WHERE s.id = $1 AND s.community_id = $2 AND s.is_active = true AND t.id IS NULL`,
-        [parsed.data.slotId, communityId, HOLDING_A_SLOT]
-      );
-      slotId = slot.rows[0]?.id || null;
+      const slot = await claimSlot(client, { slotId: parsed.data.slotId, communityId });
+      slotId = slot === 'ok' ? parsed.data.slotId : null;
     }
 
     const inserted = await client.query(
@@ -774,6 +900,7 @@ router.post('/tickets', guard, once, async (req, res) => {
        parsed.data.guestName || null, parsed.data.carType || null, parsed.data.isPremium === true]
     );
     const ticketId = inserted.rows[0].id;
+    if (card) await rotateCardRef(client, card.id);
 
     // A guest who scanned the card while intake was still being typed left
     // their number on it. This is where the promise made to them then --
@@ -858,6 +985,7 @@ router.post('/tickets', guard, once, async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     if (isCardRaceLoss(err)) return cardConflict(res, 'card_in_use');
+    if (isSlotRaceLoss(err)) return slotTaken(res);
     throw err;
   } finally {
     client.release();
@@ -931,7 +1059,9 @@ router.get('/tickets/search', guard, async (req, res) => {
     // could not.
     `SELECT t.*, cg.name AS created_guard_name, ug.name AS current_guard_name
        FROM valet_tickets t
-       JOIN residents cg ON cg.id = t.created_by_guard_id
+       -- LEFT: a job the desk logged has no attendant until one accepts it
+       -- (073), and an inner join made it vanish from every list and lookup.
+       LEFT JOIN residents cg ON cg.id = t.created_by_guard_id
        LEFT JOIN residents ug ON ug.id = t.current_guard_id
       WHERE t.community_id = $1
         AND t.plate_normalized LIKE '%' || $2 || '%'
@@ -1191,7 +1321,9 @@ router.get('/tickets', guard, async (req, res) => {
     `SELECT t.*, cg.name AS created_guard_name, ug.name AS current_guard_name,
             s.floor AS slot_floor, s.zone AS slot_zone, s.number AS slot_number
        FROM valet_tickets t
-       JOIN residents cg ON cg.id = t.created_by_guard_id
+       -- LEFT: a job the desk logged has no attendant until one accepts it
+       -- (073), and an inner join made it vanish from every list and lookup.
+       LEFT JOIN residents cg ON cg.id = t.created_by_guard_id
        LEFT JOIN residents ug ON ug.id = t.current_guard_id
        LEFT JOIN valet_slots s ON s.id = t.slot_id
       WHERE t.community_id = $1
@@ -1241,12 +1373,16 @@ router.post('/tickets/:token/accept', guard, async (req, res) => {
     etaMinutes = n;
   }
 
-  await query(
+  // Conditional on the request still being open, so of two valets tapping
+  // Accept together exactly one is sent for the car.
+  const accepted = await query(
     `UPDATE valet_tickets
         SET status = 'en_route', current_guard_id = $1, eta_minutes = $2, en_route_started_at = NOW()
-      WHERE id = $3`,
+      WHERE id = $3 AND status = 'retrieval_requested'
+      RETURNING id`,
     [req.user.sub, etaMinutes, ticket.id]
   );
+  if (!moved(accepted)) return statusChanged(res, ticket.id);
   await logEvent(ticket.id, 'accepted', {
     guardId: req.user.sub,
     metadata: etaMinutes ? { etaMinutes } : null,
@@ -1267,7 +1403,11 @@ router.post('/tickets/:token/arrived', guard, async (req, res) => {
     return res.status(409).json({ error: 'wrong_status', status: ticket.status });
   }
 
-  await query(`UPDATE valet_tickets SET status = 'arrived' WHERE id = $1`, [ticket.id]);
+  const arrived = await query(
+    `UPDATE valet_tickets SET status = 'arrived' WHERE id = $1 AND status = 'en_route' RETURNING id`,
+    [ticket.id]
+  );
+  if (!moved(arrived)) return statusChanged(res, ticket.id);
   await logEvent(ticket.id, 'arrived', { guardId: req.user.sub });
 
   const updated = await findTicket(req.params.token, req.user.community_id);
@@ -1358,27 +1498,34 @@ router.post('/tickets/:token/returned', guard, async (req, res) => {
     });
   }
 
-  // Its old slot, if nobody has been put in it meanwhile. With the guest, the
-  // ticket held no slot, so another car may well be standing there now.
-  let slotId = ticket.slot_id ?? null;
-  if (slotId) {
-    const taken = await queryOne(
-      `SELECT id FROM valet_tickets WHERE slot_id = $1 AND id <> $2 AND status = ANY($3) LIMIT 1`,
-      [slotId, ticket.id, HOLDING_A_SLOT]
-    );
-    if (taken) slotId = null;
-  }
-
   // The status and its audit event move together or not at all. Separately,
   // a failed event insert left a car checked in with no record of how,
   // behind a 500 the valet would then retry.
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query(
-      `UPDATE valet_tickets SET status = 'parked_again', slot_id = $2, current_guard_id = NULL WHERE id = $1`,
+
+    // Its old slot, if nobody has been put in it meanwhile. With the guest,
+    // the ticket held no slot, so another car may well be standing there now.
+    // Checked under the slot lock, like every other way into a slot.
+    let slotId = ticket.slot_id ?? null;
+    if (slotId) {
+      const slot = await claimSlot(client, {
+        slotId, communityId: req.user.community_id, ticketId: ticket.id,
+      });
+      if (slot !== 'ok') slotId = null;
+    }
+
+    const back = await client.query(
+      `UPDATE valet_tickets SET status = 'parked_again', slot_id = $2, current_guard_id = NULL
+        WHERE id = $1 AND status = 'with_guest'
+        RETURNING id`,
       [ticket.id, slotId]
     );
+    if (!moved(back)) {
+      await client.query('ROLLBACK');
+      return statusChanged(res, ticket.id);
+    }
     await logEvent(ticket.id, 'returned_by_guest', {
       guardId: req.user.sub, metadata: { keptSlot: !!slotId }, client,
     });
@@ -1460,11 +1607,17 @@ router.post('/tickets/:token/confirm-pickup', guard, async (req, res) => {
   // Confirming a pickup does not close the ticket unless the guard marks it a
   // final checkout: otherwise the same URL and QR keep working for the next
   // pickup inside the stay window.
+  // Both branches are conditional on the car still being at the door: two
+  // valets confirming the same handover must not both close it, and a ticket
+  // that moved since the checks above must not be closed on their strength.
   if (req.body.final === true) {
-    await query(
-      `UPDATE valet_tickets SET status = 'final_closed', closed_at = NOW(), current_guard_id = NULL WHERE id = $1`,
+    const closed = await query(
+      `UPDATE valet_tickets SET status = 'final_closed', closed_at = NOW(), current_guard_id = NULL
+        WHERE id = $1 AND status = 'arrived'
+        RETURNING id`,
       [ticket.id]
     );
+    if (!moved(closed)) return statusChanged(res, ticket.id);
     await logEvent(ticket.id, 'final_closed', { guardId: req.user.sub, metadata: { verification } });
     await schedulePhotoDeletion(ticket.id);
     await scheduleConditionMediaDeletion(ticket.id);
@@ -1473,10 +1626,13 @@ router.post('/tickets/:token/confirm-pickup', guard, async (req, res) => {
     // it 'parked_again' here told the queue, the slot count and the guest's
     // own page that it was on the lot while the guest was driving it. It is
     // parked again only when a valet checks it back in (/returned below).
-    await query(
-      `UPDATE valet_tickets SET status = 'with_guest', current_guard_id = NULL WHERE id = $1`,
+    const out = await query(
+      `UPDATE valet_tickets SET status = 'with_guest', current_guard_id = NULL
+        WHERE id = $1 AND status = 'arrived'
+        RETURNING id`,
       [ticket.id]
     );
+    if (!moved(out)) return statusChanged(res, ticket.id);
     await logEvent(ticket.id, 'closed_pickup', { guardId: req.user.sub, metadata: { verification } });
   }
 
@@ -1498,7 +1654,13 @@ router.post('/tickets/:token/expire', guard, async (req, res) => {
     return res.status(409).json({ error: 'already_closed', status: ticket.status });
   }
 
-  await query(`UPDATE valet_tickets SET status = 'expired', closed_at = NOW() WHERE id = $1`, [ticket.id]);
+  const expired = await query(
+    `UPDATE valet_tickets SET status = 'expired', closed_at = NOW()
+      WHERE id = $1 AND status NOT IN ('final_closed', 'expired')
+      RETURNING id`,
+    [ticket.id]
+  );
+  if (!moved(expired)) return statusChanged(res, ticket.id);
   await logEvent(ticket.id, 'expired', { guardId: req.user.sub, metadata: { reason: 'manual_override' } });
   await schedulePhotoDeletion(ticket.id);
   await scheduleConditionMediaDeletion(ticket.id);
@@ -1506,6 +1668,72 @@ router.post('/tickets/:token/expire', guard, async (req, res) => {
   const updated = await findTicket(req.params.token, req.user.community_id);
   emitTicketUpdate(updated);
   res.json(ticketView(updated));
+});
+
+/** The statuses a job sits in before the car is parked. */
+const INTAKE_STATUSES = ['requested', 'accepted', 'parking_in_progress'];
+
+/**
+ * Abandons an intake that is not going to be finished.
+ *
+ * Scanning a card creates the ticket at once, in parking_in_progress, and only
+ * /complete moves it on. An app that died in between -- a flat battery, a
+ * crash, a valet called away -- left it there for good, and the card answered
+ * card_in_use to every guest after. Desk jobs ('requested', 'accepted')
+ * dead-end the same way. The queue lists these with their token; this is the
+ * Cancel next to Resume.
+ *
+ * Narrower than /expire on purpose: it cannot close a car that is parked, so a
+ * mis-tap on the queue cannot strand a guest's ticket.
+ */
+router.post('/tickets/:token/cancel-intake', guard, async (req, res) => {
+  const ticket = await findTicket(req.params.token, req.user.community_id);
+  if (!ticket) return notFound(res);
+  if (!INTAKE_STATUSES.includes(ticket.status)) {
+    return res.status(409).json({ error: 'not_cancellable', status: ticket.status });
+  }
+
+  // An admin may cancel too, and an admin is not a residents row, so only a
+  // valet's id can go in the event's guard_id foreign key. Who did it is in
+  // the metadata either way.
+  const isStaff = req.user.role === 'guard';
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Conditional on still being an intake: an attendant finishing it on
+    // another handset at the same moment wins, and this answers 409 rather
+    // than closing a car that has just been parked.
+    const cancelled = await client.query(
+      `UPDATE valet_tickets
+          SET status = 'expired', closed_at = NOW(), slot_id = NULL
+        WHERE id = $1 AND status = ANY($2)
+        RETURNING id`,
+      [ticket.id, INTAKE_STATUSES]
+    );
+    if (!moved(cancelled)) {
+      await client.query('ROLLBACK');
+      const now = await queryOne('SELECT status FROM valet_tickets WHERE id = $1', [ticket.id]);
+      return res.status(409).json({ error: 'not_cancellable', status: now?.status ?? null });
+    }
+    await logEvent(ticket.id, 'intake_cancelled', {
+      guardId: isStaff ? req.user.sub : null,
+      metadata: { by: req.user.sub, role: req.user.role, from: ticket.status },
+      client,
+    });
+    await schedulePhotoDeletion(ticket.id, client);
+    await scheduleConditionMediaDeletion(ticket.id, client);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  const updated = await findTicket(req.params.token, req.user.community_id);
+  if (updated) emitTicketUpdate(updated);
+  res.json({ status: 'expired' });
 });
 
 export default router;

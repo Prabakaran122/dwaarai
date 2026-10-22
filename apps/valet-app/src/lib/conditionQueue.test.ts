@@ -94,3 +94,34 @@ describe('flushing when the server comes back', () => {
     expect(await pending()).toHaveLength(1);
   });
 });
+
+describe('a capture that could not be kept either', () => {
+  it('is reported as not captured, so the attendant retakes it', async () => {
+    (api.uploadCondition as jest.Mock).mockRejectedValue(netFail);
+    (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error('ENOSPC'));
+
+    const res = await uploadOrQueue('tok-1', 'file://a.jpg', 'intake', 'photo', 'front');
+
+    expect(res.ok).toBe(false);
+  });
+});
+
+describe('photos queued at another venue', () => {
+  it('wait for a session of their own venue instead of being 404ed away', async () => {
+    (api.currentCommunityId as jest.Mock).mockReturnValue('venue-a');
+    (api.uploadCondition as jest.Mock).mockRejectedValueOnce(netFail);
+    await uploadOrQueue('tok-1', 'file://a.jpg', 'intake', 'photo', 'front');
+
+    // The stand phone is now signed into a different property.
+    (api.currentCommunityId as jest.Mock).mockReturnValue('venue-b');
+    (api.uploadCondition as jest.Mock).mockResolvedValue({});
+    await flushConditionQueue();
+
+    expect(api.uploadCondition).toHaveBeenCalledTimes(1); // only the first, failed attempt
+    expect(await pending()).toHaveLength(1);
+
+    (api.currentCommunityId as jest.Mock).mockReturnValue('venue-a');
+    const result = await flushConditionQueue();
+    expect(result.sent).toBe(1);
+  });
+});

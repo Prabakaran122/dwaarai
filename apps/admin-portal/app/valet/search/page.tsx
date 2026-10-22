@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
-  ValetError, SearchResult, STATUS_LABEL, searchPlates, PlateHistory, valetFetch,
+  ValetError, SearchResult, STATUS_LABEL, valetErrorMessage, searchPlates, PlateHistory, valetFetch,
 } from '@/lib/valet';
 
 /**
@@ -61,9 +61,9 @@ export default function ValetSearchPage() {
       ));
     } catch (err) {
       setHistoryError(
-        err instanceof ValetError && err.status === 403
+        err instanceof ValetError && err.code === 'forbidden'
           ? 'Visit history needs an admin account. The ticket above still opens.'
-          : err instanceof ValetError ? err.message : 'Could not load that history'
+          : valetErrorMessage(err, 'Could not load that history')
       );
     }
   }

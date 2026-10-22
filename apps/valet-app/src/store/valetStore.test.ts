@@ -400,3 +400,60 @@ describe('a stand with no signal', () => {
     expect(useValetStore.getState().tickets).toHaveLength(2);
   });
 });
+
+// Two attendants reading the same queue will tap the same car. The loser is
+// told so and shown the fresh queue, not "that failed, try again".
+describe('another valet getting there first', () => {
+  const statusChanged = { response: { status: 409, data: { error: 'status_changed', status: 'en_route' } } };
+
+  it.each([
+    ['accept', () => useValetStore.getState().accept('tok-1', 5), api.acceptTicket],
+    ['arrived', () => useValetStore.getState().arrived('tok-1'), api.markArrived],
+    ['acceptIntake', () => useValetStore.getState().acceptIntake('tok-1'), api.acceptIntake],
+  ])('%s says so and refreshes the queue', async (_name, run, call) => {
+    (call as jest.Mock).mockRejectedValue(statusChanged);
+    (api.listTickets as jest.Mock).mockResolvedValue({ data: { tickets: [ticket({ status: 'en_route' })] } });
+
+    await run();
+
+    expect(useValetStore.getState().notice).toBe('valetStatusChanged');
+    expect(api.listTickets).toHaveBeenCalled();
+    expect(useValetStore.getState().tickets[0].status).toBe('en_route');
+  });
+
+  it('still reports an ordinary failure as one', async () => {
+    (api.markArrived as jest.Mock).mockRejectedValue({ response: { status: 500, data: {} } });
+
+    await useValetStore.getState().arrived('tok-1');
+
+    expect(useValetStore.getState().notice).toBe('valetFailed');
+  });
+});
+
+describe('cancelling an intake that never finished', () => {
+  beforeEach(() => {
+    (api.listTickets as jest.Mock).mockResolvedValue({ data: { tickets: [] } });
+    useValetStore.setState({ notice: null });
+  });
+
+  it('cancels it and refreshes the queue', async () => {
+    (api.cancelIntake as jest.Mock).mockResolvedValue({ data: { status: 'expired' } });
+
+    await useValetStore.getState().cancelIntake('tok-1');
+
+    expect(api.cancelIntake).toHaveBeenCalledWith('tok-1');
+    expect(useValetStore.getState().notice).toBe('valetIntakeCancelled');
+    expect(api.listTickets).toHaveBeenCalled();
+  });
+
+  it('refreshes rather than failing when the car has already moved on', async () => {
+    (api.cancelIntake as jest.Mock).mockRejectedValue({
+      response: { status: 409, data: { error: 'not_cancellable', status: 'parked' } },
+    });
+
+    await useValetStore.getState().cancelIntake('tok-1');
+
+    expect(useValetStore.getState().notice).toBe('valetNotCancellable');
+    expect(api.listTickets).toHaveBeenCalled();
+  });
+});

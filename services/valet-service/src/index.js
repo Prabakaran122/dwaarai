@@ -1,5 +1,6 @@
 import http from 'http';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { v4 as uuidv4 } from 'uuid';
 import guardRoutes from './routes/guard.js';
 import guestRoutes from './routes/guest.js';
@@ -10,6 +11,12 @@ import { startExpirySweep } from './lib/expiry.js';
 
 const app = express();
 
+// One hop: nginx. Without this req.ip is nginx's 127.0.0.1 for every guest,
+// so the per-IP limits below would be one shared bucket for the whole
+// internet. Exactly 1, not `true` -- trusting every hop would let a client
+// pick its own address by sending X-Forwarded-For.
+app.set('trust proxy', 1);
+
 app.use(express.json({
   limit: '2mb',
   // Kept for the WhatsApp webhook: its signature is computed over the exact
@@ -19,18 +26,37 @@ app.use(express.json({
 }));
 
 // The guest page is a separate origin from the service, and it is opened by a
-// stranger scanning a card, so it needs CORS. Restrict it in any real
-// deployment via CORS_ORIGIN.
+// stranger scanning a card, so it needs CORS. CORS_ORIGIN lists the origins
+// allowed; deploy-valet.sh always sets it.
+//
+// Unset is permissive only off production. It used to reflect any origin
+// whatever the environment, so a box that lost the variable would have let
+// any website drive the admin API from a signed-in operator's browser. In
+// production it now allows no cross-origin caller and says so at startup.
+export function corsPolicy(env = process.env) {
+  const allowed = env.CORS_ORIGIN?.split(',').map((s) => s.trim()).filter(Boolean) ?? [];
+  const open = allowed.length ? allowed.includes('*') : env.NODE_ENV !== 'production';
+  return { allowed, open, misconfigured: !allowed.length && env.NODE_ENV === 'production' };
+}
+
+const CORS = corsPolicy();
+if (CORS.misconfigured) {
+  console.error('valet-service: CORS_ORIGIN is not set; refusing every cross-origin request. '
+    + 'Set it to the guest and admin origins (deploy-valet.sh does).');
+}
+
 app.use((req, res, next) => {
-  const allowed = process.env.CORS_ORIGIN?.split(',').map((s) => s.trim());
   const origin = req.headers.origin;
-  if (!allowed || allowed.includes('*')) {
+  if (CORS.open) {
     res.setHeader('Access-Control-Allow-Origin', origin || '*');
-  } else if (origin && allowed.includes(origin)) {
+  } else if (origin && CORS.allowed.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
   res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Community-Id');
+  // X-Valet-Device is the card page's device id (see guest.js). A custom
+  // header the preflight does not list is refused by the browser before the
+  // request is sent, and the card would look permanently locked.
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Community-Id, X-Valet-Device');
   // PATCH is load-bearing and was missing. Six routes answer it -- pausing a
   // valet point, saving property details, running a promotion, editing a staff
   // member -- and a browser refuses the preflight for a verb that is not
@@ -53,7 +79,31 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'valet-service' });
 });
 
+// The guest API is public, so it is rate limited per client IP. Card lookups
+// get the tight bucket: card codes are sequential, and walking A001..Z999 is
+// the obvious probe. Everything else under /guest gets a looser one sized for
+// the ticket page's own polling.
+//
+// Sized for a shared address, not one phone. Hotel Wi-Fi and mobile CGNAT put
+// many guests behind one IP; a waiting card page polls 12 times a minute and a
+// ticket page about 20, so the defaults leave room for a few guests at once
+// while still turning a sweep of the code space into hours.
+//
+// Loopback is exempt: that is this box's own guest app rendering a WhatsApp
+// image server-side (VALET_INTERNAL_API_URL), and with trust proxy at 1
+// nothing that came through nginx can present as loopback.
+const guestLimiter = (perMinute) => rateLimit({
+  windowMs: 60 * 1000,
+  limit: perMinute,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1',
+  message: { error: 'rate_limited', message: 'Too many requests. Please wait a minute and try again.' },
+});
+
 app.use('/guard', guardRoutes);
+app.use('/guest/cards', guestLimiter(Number(process.env.VALET_GUEST_CARD_RATE_PER_MIN || 30)));
+app.use('/guest', guestLimiter(Number(process.env.VALET_GUEST_RATE_PER_MIN || 240)));
 app.use('/guest', guestRoutes);
 app.use('/admin', adminRoutes);
 app.use('/webhooks', webhookRoutes);
