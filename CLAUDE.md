@@ -154,6 +154,17 @@ on screen", a path the server refuses.
   until one is.
 - Retiring a card deactivates rather than deletes: every ticket it has been on
   references it, and that history is the audit trail.
+  Since 075 it records why (`retired_reason` lost/damaged, `retired_at`).
+  The cards page puts every card in one of five states, computed server-side
+  by `cardState()`: available, waiting for scan (on an open ticket, no guest
+  phone has opened it -- `card_bound_at` IS NULL), with a guest, overdue (ticket
+  older than `VALET_CARD_OVERDUE_HOURS`, 24) and out of use. Actions live in a
+  side panel per card, never a per-card "Retire" link: history
+  (`GET /admin/cards/:id/history`, last 10), resend the WhatsApp ticket
+  (`/resend`), mark as returned (`/return` -- frees the card from its open
+  ticket, which carries on by claim code; 076 adds the `card_returned` and
+  `ticket_resent` events), lost/damaged, put back in use, print again
+  (`POST /admin/cards/qr`).
 
 **A card's QR must carry the venue** — `/valet/c/<community uuid>/<code>`.
 Card codes are unique per *venue*, deliberately, because every box of printed

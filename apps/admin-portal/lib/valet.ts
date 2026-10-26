@@ -321,9 +321,34 @@ export interface ValetCard {
   code: string;
   isActive: boolean;
   createdAt: string;
+  /** Where the card is; computed by the service (see cardState there). */
+  state?: CardState;
+  /** Why an out-of-use card is out (null for older retirements). */
+  retiredReason?: 'lost' | 'damaged' | null;
+  retiredAt?: string | null;
   /** Null when the card is back in the stack, ready to hand out. */
-  inUseBy: { displayId: string; plate: string; status: ValetStatus; sessionToken?: string } | null;
+  inUseBy: {
+    displayId: string; plate: string; status: ValetStatus;
+    sessionToken?: string; vehicleMake?: string | null; since?: string;
+    scannedAt?: string | null; hasWhatsApp?: boolean; handedOutBy?: string | null;
+  } | null;
 }
+
+export type CardState = 'available' | 'waiting_scan' | 'with_guest' | 'overdue' | 'out_of_use';
+
+export interface CardUse {
+  displayId: string; plate: string | null; vehicleMake: string | null; status: ValetStatus;
+  sessionToken: string; createdAt: string; closedAt: string | null; handedOutBy: string | null;
+}
+
+export const cardHistory = (id: string) =>
+  valetFetch<{ uses: CardUse[] }>(`/admin/cards/${id}/history`);
+
+export const resendCardTicket = (id: string) =>
+  valetPost<{ status: string }>(`/admin/cards/${id}/resend`);
+
+export const markCardReturned = (id: string) =>
+  valetPost<{ ok: true; displayId: string }>(`/admin/cards/${id}/return`);
 
 export interface SearchResult {
   displayId: string;
@@ -351,8 +376,11 @@ export const cardQrSheet = (codes: string[]) =>
 export const registerCards = (body: { codes: string[] } | { prefix: string; from: number; to: number; width?: number }) =>
   valetPost<{ added: string[]; skipped: string[]; total: number }>('/admin/cards', body);
 
-export const setCardActive = (id: string, active: boolean) =>
-  valetPost<{ id: string; isActive: boolean }>(`/admin/cards/${id}/${active ? 'activate' : 'deactivate'}`);
+export const setCardActive = (id: string, active: boolean, reason?: 'lost' | 'damaged') =>
+  valetPost<{ id: string; isActive: boolean }>(
+    `/admin/cards/${id}/${active ? 'activate' : 'deactivate'}`,
+    active ? undefined : { reason }
+  );
 
 export const searchPlates = (plate: string) =>
   valetFetch<{ query: string; tickets: SearchResult[] }>(

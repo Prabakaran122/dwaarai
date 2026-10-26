@@ -15,6 +15,7 @@ import {
 } from '../lib/ads.js';
 import { createAdOrder, isPlaceholderMode } from '../lib/payments.js';
 import { toDataUrl } from '../lib/qr.js';
+import { notifyGuest } from '../lib/whatsapp-guest.js';
 
 const router = asyncRouter();
 
@@ -394,12 +395,16 @@ router.get('/summary', authenticateJWT(['admin', 'guard']), async (req, res) => 
  */
 router.get('/cards', authenticateJWT(['admin']), async (req, res) => {
   const rows = await queryRows(
-    `SELECT c.id, c.code, c.is_active, c.created_at,
-            t.display_id, t.plate, t.status, t.session_token
+    `SELECT c.id, c.code, c.is_active, c.created_at, c.retired_reason, c.retired_at,
+            t.display_id, t.plate, t.vehicle_make, t.status, t.session_token,
+            t.created_at AS ticket_created_at, t.card_bound_at,
+            (t.phone_number IS NOT NULL) AS has_whatsapp,
+            cg.name AS handed_out_by
        FROM valet_cards c
        LEFT JOIN valet_tickets t
          ON t.card_id = c.id
         AND t.status NOT IN ('final_closed', 'expired')
+       LEFT JOIN residents cg ON cg.id = t.created_by_guard_id
       WHERE c.community_id = $1
       ORDER BY c.code`,
     [req.user.community_id]
@@ -416,13 +421,40 @@ router.get('/cards', authenticateJWT(['admin']), async (req, res) => {
       code: r.code,
       isActive: r.is_active,
       createdAt: r.created_at,
+      // Null for an active card, and for one retired before 075 recorded why.
+      retiredReason: r.retired_reason ?? null,
+      retiredAt: r.retired_at ?? null,
+      state: cardState(r),
       // Null means the card is in the stack, ready to hand out.
       inUseBy: r.display_id
-        ? { displayId: r.display_id, plate: r.plate, status: r.status, sessionToken: r.session_token }
+        ? {
+            displayId: r.display_id, plate: r.plate, vehicleMake: r.vehicle_make ?? null,
+            status: r.status, sessionToken: r.session_token, since: r.ticket_created_at,
+            scannedAt: r.card_bound_at ?? null, hasWhatsApp: !!r.has_whatsapp,
+            handedOutBy: r.handed_out_by ?? null,
+          }
         : null,
     })),
   });
 });
+
+/**
+ * Where a card is, in the words the cards page uses.
+ *
+ * waiting_scan  on an open ticket, but no guest phone has opened it yet
+ *               (card_bound_at, 072) -- handed out and not yet scanned
+ * with_guest    on an open ticket and scanned
+ * overdue       on a ticket opened more than VALET_CARD_OVERDUE_HOURS ago (24):
+ *               either a long stay or a card nobody collected at handover,
+ *               and either way somebody should look
+ */
+export function cardState(r, now = Date.now()) {
+  if (!r.is_active) return 'out_of_use';
+  if (!r.display_id) return 'available';
+  const hours = Number(process.env.VALET_CARD_OVERDUE_HOURS) || 24;
+  if (r.ticket_created_at && now - new Date(r.ticket_created_at).getTime() > hours * 3600e3) return 'overdue';
+  return r.card_bound_at ? 'with_guest' : 'waiting_scan';
+}
 
 function cardUrlBase(communityId) {
   const base = process.env.VALET_GUEST_BASE_URL || 'https://dwaarai.com/valet';
@@ -462,6 +494,94 @@ router.post('/cards/qr', authenticateJWT(['admin']), async (req, res) => {
   const found = new Set(rows.map((r) => r.code.toUpperCase()));
 
   res.json({ cards, notRegistered: asked.filter((c) => !found.has(c)) });
+});
+
+async function venueCard(req) {
+  return queryOne(
+    'SELECT id, code FROM valet_cards WHERE id = $1 AND community_id = $2',
+    [req.params.id, req.user.community_id]
+  );
+}
+
+function openTicketOn(cardId) {
+  return queryOne(
+    `SELECT t.*, c.name AS community_name
+       FROM valet_tickets t
+       JOIN communities c ON c.id = t.community_id
+      WHERE t.card_id = $1 AND t.status NOT IN ('final_closed', 'expired')
+      LIMIT 1`,
+    [cardId]
+  );
+}
+
+/** The card's last ten visits, newest first: the side panel's history. */
+router.get('/cards/:id/history', authenticateJWT(['admin']), async (req, res) => {
+  const card = await venueCard(req);
+  if (!card) return res.status(404).json({ error: 'card_not_found' });
+
+  const rows = await queryRows(
+    `SELECT t.display_id, t.plate, t.vehicle_make, t.status, t.session_token,
+            t.created_at, t.closed_at, cg.name AS handed_out_by
+       FROM valet_tickets t
+       LEFT JOIN residents cg ON cg.id = t.created_by_guard_id
+      WHERE t.card_id = $1
+      ORDER BY t.created_at DESC
+      LIMIT 10`,
+    [card.id]
+  );
+  res.json({
+    uses: rows.map((r) => ({
+      displayId: r.display_id, plate: r.plate, vehicleMake: r.vehicle_make,
+      status: r.status, sessionToken: r.session_token,
+      createdAt: r.created_at, closedAt: r.closed_at, handedOutBy: r.handed_out_by,
+    })),
+  });
+});
+
+/**
+ * "Resend ticket to guest": the WhatsApp welcome again, for a guest who
+ * deleted it or never saw it. Only possible once the guest has messaged us --
+ * there is no number to send to before that, and the page says so.
+ */
+router.post('/cards/:id/resend', authenticateJWT(['admin']), async (req, res) => {
+  const card = await venueCard(req);
+  if (!card) return res.status(404).json({ error: 'card_not_found' });
+  const ticket = await openTicketOn(card.id);
+  if (!ticket) return res.status(409).json({ error: 'card_not_in_use', message: 'This card is not with a guest.' });
+  if (!ticket.phone_number) {
+    return res.status(409).json({
+      error: 'no_whatsapp',
+      message: 'The guest has not started a WhatsApp chat yet, so there is no number to send to.',
+    });
+  }
+
+  const sent = await notifyGuest(ticket, 'bound');
+  await logEvent(ticket.id, 'ticket_resent', { metadata: { by: req.user.sub, status: sent?.status } });
+  if (sent?.status === 'failed') {
+    return res.status(502).json({ error: 'send_failed', message: 'WhatsApp did not accept the message. Try again shortly.' });
+  }
+  res.json({ status: sent?.status ?? 'sent' });
+});
+
+/**
+ * "Mark as returned": the card is back at the stand but its car is still with
+ * us. Frees the card only -- the ticket carries on, reachable by its claim
+ * code and WhatsApp -- so the card can go to the next guest.
+ */
+router.post('/cards/:id/return', authenticateJWT(['admin']), async (req, res) => {
+  const card = await venueCard(req);
+  if (!card) return res.status(404).json({ error: 'card_not_found' });
+
+  const freed = await queryOne(
+    `UPDATE valet_tickets SET card_id = NULL, card_device_hash = NULL, card_bound_at = NULL
+      WHERE card_id = $1 AND status NOT IN ('final_closed', 'expired')
+      RETURNING id, display_id`,
+    [card.id]
+  );
+  if (!freed) return res.status(409).json({ error: 'card_not_in_use', message: 'This card is already free.' });
+
+  await logEvent(freed.id, 'card_returned', { metadata: { by: req.user.sub, card: card.code } });
+  res.json({ ok: true, displayId: freed.display_id });
 });
 
 /**
@@ -573,8 +693,20 @@ router.post('/cards/:id/deactivate', authenticateJWT(['admin']), async (req, res
     });
   }
 
-  await queryRows('UPDATE valet_cards SET is_active = false WHERE id = $1', [card.id]);
-  res.json({ id: card.id, isActive: false });
+  // Lost or damaged (075). Optional so an older portal still works; it then
+  // records no reason, which the page shows as plain "Out of use".
+  const reason = req.body?.reason ?? null;
+  if (reason !== null && !['lost', 'damaged'].includes(reason)) {
+    return res.status(400).json({ error: 'invalid_reason' });
+  }
+
+  await queryRows(
+    `UPDATE valet_cards
+        SET is_active = false, retired_reason = $2, retired_at = NOW()
+      WHERE id = $1`,
+    [card.id, reason]
+  );
+  res.json({ id: card.id, isActive: false, retiredReason: reason });
 });
 
 /** Puts a retired card back into circulation — it turned up again. */
@@ -585,7 +717,12 @@ router.post('/cards/:id/activate', authenticateJWT(['admin']), async (req, res) 
   );
   if (!card) return res.status(404).json({ error: 'card_not_found' });
 
-  await queryRows('UPDATE valet_cards SET is_active = true WHERE id = $1', [card.id]);
+  await queryRows(
+    `UPDATE valet_cards
+        SET is_active = true, retired_reason = NULL, retired_at = NULL
+      WHERE id = $1`,
+    [card.id]
+  );
   res.json({ id: card.id, isActive: true });
 });
 

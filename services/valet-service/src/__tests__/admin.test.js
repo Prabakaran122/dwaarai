@@ -479,8 +479,9 @@ describe('GET /admin/cards', () => {
 
     const res = await request(app, 'GET', '/admin/cards', { token: adminToken() });
 
-    expect(res.body.cards[0].inUseBy).toEqual({
+    expect(res.body.cards[0].inUseBy).toMatchObject({
       displayId: 'DWR-0009', plate: 'KA 03 NJ 0435', status: 'parked', sessionToken: 'tok9',
+      scannedAt: null, hasWhatsApp: false,
     });
   });
 
@@ -669,6 +670,39 @@ describe('POST /admin/cards/:id/deactivate', () => {
 
     expect(queryRows.mock.calls[0][0]).toContain('UPDATE valet_cards');
     expect(queryRows.mock.calls[0][0]).not.toContain('DELETE');
+  });
+
+  it('records whether the card was lost or damaged, and when', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'c1' }).mockResolvedValueOnce(null);
+    queryRows.mockResolvedValueOnce([]);
+
+    const res = await request(app, 'POST', '/admin/cards/c1/deactivate', {
+      token: adminToken(), body: { reason: 'damaged' },
+    });
+
+    expect(res.body.retiredReason).toBe('damaged');
+    expect(queryRows.mock.calls[0][0]).toContain('retired_at = NOW()');
+    expect(queryRows.mock.calls[0][1]).toEqual(['c1', 'damaged']);
+  });
+
+  it('refuses a reason it does not know', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'c1' }).mockResolvedValueOnce(null);
+
+    const res = await request(app, 'POST', '/admin/cards/c1/deactivate', {
+      token: adminToken(), body: { reason: 'stolen' },
+    });
+
+    expect(res.status).toBe(400);
+    expect(queryRows).not.toHaveBeenCalled();
+  });
+
+  it('putting a card back in use clears why it was out', async () => {
+    queryOne.mockResolvedValueOnce({ id: 'c1' });
+    queryRows.mockResolvedValueOnce([]);
+
+    await request(app, 'POST', '/admin/cards/c1/activate', { token: adminToken() });
+
+    expect(queryRows.mock.calls[0][0]).toContain('retired_reason = NULL');
   });
 
   it('cannot retire another venue\'s card', async () => {

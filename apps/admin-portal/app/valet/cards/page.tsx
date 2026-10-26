@@ -3,132 +3,330 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  ValetError, ValetCard, STATUS_LABEL,
+  ValetError, ValetCard, CardState, CardUse, STATUS_LABEL,
   listCards, registerCards, setCardActive, previewRange,
+  cardHistory, resendCardTicket, markCardReturned, valetErrorMessage,
 } from '@/lib/valet';
 
 /**
  * The venue's printed card stock.
  *
- * This page is what makes physical cards usable at all: the guard app can only
- * scan a code that already exists, deliberately, so that a mis-scan cannot
- * invent a card matching nothing that was ever printed. Until stock is
- * registered here, every scan at the stand fails.
+ * The guard app can only scan a code that already exists, deliberately, so a
+ * mis-scan cannot invent a card matching nothing that was ever printed. Until
+ * stock is registered here, every scan at the stand fails.
  *
- * Cards are registered as a range because that is how they are printed — in
- * runs of fifty or a hundred. Typing them one at a time guarantees gaps, and a
- * gap only surfaces when a guard scans a card mid-handover and the system has
- * never heard of it.
- *
- * The page explains itself. It used to open on three bare boxes (Prefix, From,
- * To) and a grid, with nothing saying what a card is for, where its QR comes
- * from, or what "Retire" does -- and there was no way to print a card at all,
- * because its QR has to carry the venue's id and nothing showed it. "How cards
- * work" is open until the venue has stock, and Print makes the sheet.
+ * Every card is in exactly one state, worked out by the service (cardState in
+ * valet-service's admin routes): available, waiting for a scan (handed out, no
+ * guest phone has opened it), with a guest, overdue (on a ticket over a day
+ * old), or out of use (lost or damaged, 075). The page is built around those
+ * five: counts, filters, a colour each, and a side panel per card holding the
+ * actions -- there is no per-card "Retire" link any more.
  */
 
-type Filter = 'all' | 'stack' | 'out' | 'retired';
+const STATE_LABEL: Record<CardState, string> = {
+  available: 'Available',
+  waiting_scan: 'Waiting for scan',
+  with_guest: 'With a guest',
+  overdue: 'Overdue',
+  out_of_use: 'Out of use',
+};
 
-const STEPS = [
-  { title: 'Print', body: 'Print a sheet of QR cards from this page, or order a box printed with the same codes.' },
-  { title: 'Register', body: 'Enter the range printed on the cards (say A001 to A050) so the valet app recognises them.' },
-  { title: 'Hand out', body: 'At the stand, the valet scans a card and gives it to the guest. Scanning it shows them their car.' },
-  { title: 'It comes back', body: 'When the car is handed back the card frees itself and goes back in the stack. Nothing to do here.' },
-];
+const TILE: Record<CardState, string> = {
+  available: 'bg-white border border-gray-200',
+  waiting_scan: 'bg-white border-2 border-dashed border-amber-500',
+  with_guest: 'bg-sky-50 border border-sky-300',
+  overdue: 'bg-amber-50 border border-amber-400',
+  out_of_use: 'bg-gray-100 border border-gray-200',
+};
 
-function HowItWorks({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+const LABEL_TONE: Record<CardState, string> = {
+  available: 'text-teal-700',
+  waiting_scan: 'text-amber-700 font-semibold',
+  with_guest: 'text-sky-900 font-semibold',
+  overdue: 'text-amber-800 font-semibold',
+  out_of_use: 'text-gray-600',
+};
+
+const SWATCH: Record<CardState, string> = {
+  available: 'bg-white border border-gray-300',
+  waiting_scan: 'bg-white border border-dashed border-amber-500',
+  with_guest: 'bg-sky-50 border border-sky-300',
+  overdue: 'bg-amber-50 border border-amber-400',
+  out_of_use: 'bg-gray-100 border border-gray-200',
+};
+
+const ORDER: CardState[] = ['available', 'waiting_scan', 'with_guest', 'overdue', 'out_of_use'];
+
+function stateOf(c: ValetCard): CardState {
+  if (c.state) return c.state;
+  // An older service without `state`: the three states it can tell apart.
+  if (!c.isActive) return 'out_of_use';
+  return c.inUseBy ? 'with_guest' : 'available';
+}
+
+function time(iso?: string | null) {
+  return iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+}
+
+function day(iso?: string | null) {
+  return iso ? new Date(iso).toLocaleDateString([], { day: 'numeric', month: 'short' }) : '';
+}
+
+function when(iso?: string | null) {
+  if (!iso) return '';
+  return new Date(iso).toDateString() === new Date().toDateString() ? time(iso) : `${day(iso)}, ${time(iso)}`;
+}
+
+function hoursSince(iso?: string | null) {
+  return iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 3600e3) : 0;
+}
+
+function reasonLabel(c: ValetCard) {
+  return c.retiredReason === 'lost' ? 'Lost' : c.retiredReason === 'damaged' ? 'Damaged' : null;
+}
+
+/** "A017" -> the print page's range for that one card. */
+function printOne(code: string) {
+  const m = code.match(/^([A-Za-z]*)(\d+)$/);
+  if (!m) return null;
+  return `/valet/cards/print?prefix=${encodeURIComponent(m[1])}&from=${Number(m[2])}&to=${Number(m[2])}`;
+}
+
+function Tile({ card, onOpen }: { card: ValetCard; onOpen: (c: ValetCard) => void }) {
+  const s = stateOf(card);
+  const t = card.inUseBy;
   return (
-    <section className="mb-6 rounded-xl border border-teal-100 bg-teal-50/50">
-      <button
-        onClick={onToggle}
-        aria-expanded={open}
-        className="w-full flex items-center justify-between px-5 py-3 text-left"
-      >
-        <span className="text-sm font-bold text-teal-900">How valet cards work</span>
-        <span className="text-xs font-semibold text-teal-700">{open ? 'Hide' : 'Show'}</span>
-      </button>
-      {open && (
-        <ol className="grid gap-3 px-5 pb-5 sm:grid-cols-2 lg:grid-cols-4">
-          {STEPS.map((s, i) => (
-            <li key={s.title} className="rounded-lg bg-white p-4 ring-1 ring-teal-100">
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-teal-600 text-xs font-bold text-white">
-                {i + 1}
-              </span>
-              <p className="mt-2 text-sm font-semibold text-gray-900">{s.title}</p>
-              <p className="mt-1 text-xs text-gray-600 leading-relaxed">{s.body}</p>
-            </li>
-          ))}
-        </ol>
+    <button
+      onClick={() => onOpen(card)}
+      data-testid={`card-${card.code}`}
+      className={`text-left rounded-xl px-3.5 py-3 min-h-[68px] hover:shadow-md transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 ${TILE[s]}`}
+    >
+      <span className={`block font-mono text-[15px] font-bold ${s === 'out_of_use' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+        {card.code}
+      </span>
+      <span className={`block text-xs ${LABEL_TONE[s]}`}>{STATE_LABEL[s]}</span>
+      {s === 'out_of_use' && (
+        <span className="block text-xs text-gray-600 leading-snug">
+          {reasonLabel(card) && <>{reasonLabel(card)}<br /></>}
+          {card.retiredAt && <>Removed {day(card.retiredAt)}</>}
+        </span>
       )}
-    </section>
+      {s === 'waiting_scan' && t && (
+        <span className="block text-xs text-gray-600 leading-snug">
+          Handed out {when(t.since)}
+          {t.handedOutBy && <><br />By {t.handedOutBy}</>}
+        </span>
+      )}
+      {(s === 'with_guest' || s === 'overdue') && t && (
+        <span className="block text-xs text-gray-600 leading-snug">
+          {t.plate}
+          <br />
+          {s === 'overdue' ? `${hoursSince(t.since)} hours` : `Since ${when(t.since)}`}
+        </span>
+      )}
+    </button>
   );
 }
 
-function CardChip({ card, busy, onToggle }: {
+function Panel({ card, onClose, onChanged }: {
   card: ValetCard;
-  busy: boolean;
-  onToggle: (card: ValetCard) => void;
+  onClose: () => void;
+  onChanged: (message: string) => void;
 }) {
-  const inUse = card.inUseBy !== null;
+  const s = stateOf(card);
+  const t = card.inUseBy;
+  const [uses, setUses] = useState<CardUse[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [confirmReturn, setConfirmReturn] = useState(false);
+
+  useEffect(() => {
+    setUses(null);
+    setConfirmReturn(false);
+    setError(null);
+    setInfo(null);
+    cardHistory(card.id).then((r) => setUses(r.uses)).catch(() => setUses([]));
+  }, [card.id, card.isActive, card.inUseBy?.displayId]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  async function run(key: string, fn: () => Promise<string | void>) {
+    setBusy(key);
+    setError(null);
+    setInfo(null);
+    try {
+      const msg = await fn();
+      if (msg) onChanged(msg);
+    } catch (err) {
+      setError(err instanceof ValetError ? err.message : valetErrorMessage(err, 'That did not work'));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const inUse = s === 'waiting_scan' || s === 'with_guest' || s === 'overdue';
+  const print = printOne(card.code);
+  const btn = 'w-full h-11 px-4 rounded-lg text-sm font-semibold text-left ring-1 disabled:opacity-40';
 
   return (
-    <div
-      className={`h-full rounded-xl border p-3 flex flex-col ${
-        !card.isActive
-          ? 'border-gray-200 bg-gray-50'
-          : inUse
-            ? 'border-amber-300 bg-amber-50'
-            : 'border-gray-200 bg-white'
-      }`}
-    >
-      <div className="flex items-baseline justify-between gap-2">
-        <span
-          className={`font-mono text-sm font-bold ${
-            card.isActive ? 'text-gray-900' : 'text-gray-400 line-through'
-          }`}
-        >
-          {card.code}
-        </span>
-        <span className={`text-[10px] font-bold uppercase tracking-wider ${
-          !card.isActive ? 'text-gray-400' : inUse ? 'text-amber-700' : 'text-green-700'
-        }`}>
-          {!card.isActive ? 'Retired' : inUse ? 'With a guest' : 'Ready'}
-        </span>
-      </div>
+    <div className="fixed inset-0 z-40 flex justify-end print:hidden" role="dialog" aria-modal="true" aria-label={`Card ${card.code}`}>
+      <button aria-label="Close" onClick={onClose} className="absolute inset-0 bg-gray-900/20" />
+      <aside className="relative w-full max-w-md h-full overflow-y-auto bg-white shadow-2xl p-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className={`font-mono text-3xl font-bold ${s === 'out_of_use' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{card.code}</p>
+            <p className={`mt-1 text-sm ${LABEL_TONE[s]}`}>
+              {STATE_LABEL[s]}
+              {s === 'out_of_use' && reasonLabel(card) && ` · ${reasonLabel(card)}`}
+              {s === 'out_of_use' && card.retiredAt && ` · removed ${day(card.retiredAt)}`}
+            </p>
+          </div>
+          <button onClick={onClose} aria-label="Close panel" className="h-10 w-10 rounded-lg text-gray-500 hover:bg-gray-100 text-xl">×</button>
+        </div>
 
-      <p className="mt-1 text-xs text-gray-500 truncate flex-1">
-        {!card.isActive ? (
-          'Will not scan at the stand'
-        ) : inUse ? (
-          card.inUseBy!.sessionToken ? (
-            <Link href={`/valet/${card.inUseBy!.sessionToken}`} className="hover:underline">
-              <span className="font-mono text-gray-700">{card.inUseBy!.plate}</span>
-              {' · '}{STATUS_LABEL[card.inUseBy!.status]}
-            </Link>
-          ) : (
-            <>
-              <span className="font-mono text-gray-700">{card.inUseBy!.plate}</span>
-              {' · '}{STATUS_LABEL[card.inUseBy!.status]}
-            </>
-          )
-        ) : (
-          'In the stack'
+        {t && (
+          <section className="mt-6 rounded-xl bg-gray-50 p-4 space-y-1.5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Current car</p>
+            <p className="font-mono text-base font-bold text-gray-900">{t.plate}</p>
+            <p className="text-sm text-gray-600">
+              {[t.vehicleMake, STATUS_LABEL[t.status], t.displayId].filter(Boolean).join(' · ')}
+            </p>
+            <p className="text-sm text-gray-600">
+              Handed out {when(t.since)}{t.handedOutBy ? ` by ${t.handedOutBy}` : ''}
+            </p>
+            <p className="text-sm text-gray-600">
+              {t.scannedAt ? `Guest scanned the card at ${when(t.scannedAt)}` : 'The guest has not scanned the card yet'}
+            </p>
+            <p className="text-sm text-gray-600">
+              {t.hasWhatsApp ? 'WhatsApp ticket: active' : 'WhatsApp ticket: guest has not started a chat'}
+            </p>
+          </section>
         )}
-      </p>
 
-      {/* Said on the card itself, not in a tooltip: a disabled button with
-          its reason hidden on hover reads as broken on a tablet. */}
-      {card.isActive && inUse ? (
-        <p className="mt-2 text-[11px] text-gray-400">Frees itself at checkout</p>
-      ) : (
-        <button
-          onClick={() => onToggle(card)}
-          disabled={busy}
-          className="mt-2 self-start text-xs font-semibold text-gray-500 hover:text-gray-800 disabled:opacity-40"
-        >
-          {card.isActive ? 'Retire (lost or damaged)' : 'Restore'}
-        </button>
-      )}
+        {error && (
+          <p role="alert" className="mt-4 px-3 py-2 rounded-lg bg-red-50 text-sm text-red-700 ring-1 ring-red-200">{error}</p>
+        )}
+        {info && (
+          <p className="mt-4 px-3 py-2 rounded-lg bg-teal-50 text-sm text-teal-800 ring-1 ring-teal-200">{info}</p>
+        )}
+
+        <section className="mt-6 space-y-2">
+          {t?.sessionToken && (
+            <Link href={`/valet/${t.sessionToken}`} className={`${btn} flex items-center ring-gray-300 text-gray-900 hover:bg-gray-50`}>
+              View linked car
+            </Link>
+          )}
+          {inUse && (
+            <button
+              onClick={() => run('resend', async () => {
+                await resendCardTicket(card.id);
+                setInfo('Ticket sent again on WhatsApp.');
+              })}
+              disabled={busy !== null || !t?.hasWhatsApp}
+              title={t?.hasWhatsApp ? undefined : 'The guest has not started a WhatsApp chat yet'}
+              className={`${btn} ring-gray-300 text-gray-900 hover:bg-gray-50`}
+            >
+              {busy === 'resend' ? 'Sending…' : 'Resend ticket to guest'}
+            </button>
+          )}
+          {inUse && !confirmReturn && (
+            <button onClick={() => setConfirmReturn(true)} disabled={busy !== null} className={`${btn} ring-gray-300 text-gray-900 hover:bg-gray-50`}>
+              Mark as returned
+            </button>
+          )}
+          {inUse && confirmReturn && (
+            <div className="rounded-lg ring-1 ring-gray-300 p-3">
+              <p className="text-sm text-gray-700">
+                The card is back at the stand, but {t?.plate || 'the car'} is still with you. The guest keeps
+                their WhatsApp ticket and claim code; only the card is freed.
+              </p>
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => run('return', async () => {
+                    await markCardReturned(card.id);
+                    return `${card.code} is available again. ${t?.displayId ?? 'The ticket'} carries on without a card.`;
+                  })}
+                  disabled={busy !== null}
+                  className="h-10 px-4 rounded-lg text-sm font-semibold bg-gray-900 text-white disabled:opacity-40"
+                >
+                  {busy === 'return' ? 'Freeing…' : 'Yes, the card is back'}
+                </button>
+                <button onClick={() => setConfirmReturn(false)} className="h-10 px-3 rounded-lg text-sm font-semibold text-gray-600">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          {s !== 'out_of_use' && (
+            <div className="grid grid-cols-2 gap-2">
+              {(['lost', 'damaged'] as const).map((why) => (
+                <button
+                  key={why}
+                  onClick={() => run(why, async () => {
+                    await setCardActive(card.id, false, why);
+                    return `${card.code} marked as ${why}. It will not scan at the stand.`;
+                  })}
+                  disabled={busy !== null || inUse}
+                  className={`${btn} ring-red-300 text-red-700 hover:bg-red-50`}
+                >
+                  Mark as {why}
+                </button>
+              ))}
+            </div>
+          )}
+          {inUse && (
+            <p className="text-xs text-gray-500">
+              A card with a guest can’t be taken out of use until its car is handed over, or the card is marked as returned.
+            </p>
+          )}
+          {s === 'out_of_use' && (
+            <button
+              onClick={() => run('back', async () => {
+                await setCardActive(card.id, true);
+                return `${card.code} is back in use.`;
+              })}
+              disabled={busy !== null}
+              className={`${btn} ring-teal-300 text-teal-800 hover:bg-teal-50`}
+            >
+              Put back in use
+            </button>
+          )}
+          {print && s !== 'out_of_use' && (
+            <Link href={print} className={`${btn} flex items-center ring-gray-300 text-gray-900 hover:bg-gray-50`}>
+              Print this card again
+            </Link>
+          )}
+        </section>
+
+        <section className="mt-8">
+          <h3 className="text-sm font-bold text-gray-900">Last 10 uses</h3>
+          {uses === null ? (
+            <p className="mt-2 text-sm text-gray-400">Loading…</p>
+          ) : uses.length === 0 ? (
+            <p className="mt-2 text-sm text-gray-500">Not used yet.</p>
+          ) : (
+            <ul className="mt-2 divide-y divide-gray-100">
+              {uses.map((u) => (
+                <li key={u.sessionToken} className="py-2.5">
+                  <Link href={`/valet/${u.sessionToken}`} className="flex items-baseline justify-between gap-3 hover:underline">
+                    <span className="font-mono text-sm font-semibold text-gray-900">{u.plate || u.displayId}</span>
+                    <span className="text-xs text-gray-500">{STATUS_LABEL[u.status]}</span>
+                  </Link>
+                  <p className="text-xs text-gray-500">
+                    {when(u.createdAt)}{u.closedAt ? ` – ${when(u.closedAt)}` : ''}
+                    {u.handedOutBy ? ` · by ${u.handedOutBy}` : ''}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </aside>
     </div>
   );
 }
@@ -139,10 +337,10 @@ export default function ValetCardsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [lastAdded, setLastAdded] = useState<{ prefix: string; from: number; to: number } | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [helpOpen, setHelpOpen] = useState<boolean | null>(null);
-  const [filter, setFilter] = useState<Filter>('all');
+  const [busy, setBusy] = useState(false);
+  const [filter, setFilter] = useState<CardState | 'all'>('all');
   const [find, setFind] = useState('');
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const [prefix, setPrefix] = useState('A');
   const [from, setFrom] = useState('1');
@@ -179,37 +377,20 @@ export default function ValetCardsPage() {
     if (top > 0) { setFrom(String(top + 1)); setTo(String(top + 50)); }
   }, [loading, suggested, cards, prefix]);
 
-  // Open until the venue has stock, then out of the way -- unless somebody
-  // opened or closed it themselves, which is remembered on this browser.
-  useEffect(() => {
-    if (loading || helpOpen !== null) return;
-    let saved: string | null = null;
-    try { saved = localStorage.getItem('dwaarai.valet.cardsHelp'); } catch { /* private mode */ }
-    setHelpOpen(saved ? saved === 'open' : cards.length === 0);
-  }, [loading, cards.length, helpOpen]);
-
-  function toggleHelp() {
-    const next = !helpOpen;
-    setHelpOpen(next);
-    try { localStorage.setItem('dwaarai.valet.cardsHelp', next ? 'open' : 'closed'); } catch { /* ignore */ }
-  }
-
   const preview = previewRange(prefix, Number(from), Number(to));
+  const printHref = (p: string, f: number, t: number) =>
+    `/valet/cards/print?prefix=${encodeURIComponent(p)}&from=${f}&to=${t}`;
 
   async function register() {
-    setBusy('register');
+    setBusy(true);
     setNotice(null);
     try {
-      const res = await registerCards({
-        prefix: prefix.toUpperCase(),
-        from: Number(from),
-        to: Number(to),
-      });
+      const res = await registerCards({ prefix: prefix.toUpperCase(), from: Number(from), to: Number(to) });
       // Re-registering an overlapping box is normal, so say what actually
       // happened rather than reporting a flat success over silent no-ops.
       setNotice(
         res.added.length === 0
-          ? `All ${res.total} codes were already registered.`
+          ? `All ${res.total} numbers were already registered.`
           : `Added ${res.added.length} card${res.added.length === 1 ? '' : 's'}` +
             (res.skipped.length ? `, ${res.skipped.length} already existed.` : '.')
       );
@@ -219,70 +400,82 @@ export default function ValetCardsPage() {
     } catch (err) {
       setError(err instanceof ValetError ? err.message : 'Could not register those cards');
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
-  async function toggle(card: ValetCard) {
-    setBusy(card.id);
-    setNotice(null);
-    try {
-      await setCardActive(card.id, !card.isActive);
-      setNotice(card.isActive
-        ? `${card.code} retired. If it turns up, Restore puts it back in the stack.`
-        : `${card.code} is back in the stack.`);
-      setError(null);
-      await load();
-    } catch (err) {
-      setError(err instanceof ValetError ? err.message : 'That did not work');
-    } finally {
-      setBusy(null);
-    }
-  }
+  const counts = Object.fromEntries(ORDER.map((s) => [s, 0])) as Record<CardState, number>;
+  for (const c of cards) counts[stateOf(c)] += 1;
 
-  const active = cards.filter((c) => c.isActive);
-  const out = active.filter((c) => c.inUseBy).length;
-  const retired = cards.length - active.length;
-  const counts: Record<Filter, number> = {
-    all: cards.length, stack: active.length - out, out, retired,
-  };
-  const needle = find.trim().toUpperCase();
+  const overdue = cards
+    .filter((c) => stateOf(c) === 'overdue')
+    .sort((a, b) => (a.inUseBy?.since ?? '').localeCompare(b.inUseBy?.since ?? ''));
+  const oldest = overdue[0];
+
+  const needle = find.trim().toUpperCase().replace(/\s+/g, '');
   const shown = cards.filter((c) =>
-    (filter === 'all'
-      || (filter === 'stack' && c.isActive && !c.inUseBy)
-      || (filter === 'out' && c.isActive && !!c.inUseBy)
-      || (filter === 'retired' && !c.isActive))
+    (filter === 'all' || stateOf(c) === filter)
     && (!needle
       || c.code.toUpperCase().includes(needle)
-      || (c.inUseBy?.plate ?? '').toUpperCase().replace(/\s+/g, '').includes(needle.replace(/\s+/g, '')))
+      || (c.inUseBy?.plate ?? '').toUpperCase().replace(/\s+/g, '').includes(needle))
   );
+  const openCard = cards.find((c) => c.id === openId) ?? null;
 
-  const printHref = (p: string, f: number, t: number) =>
-    `/valet/cards/print?prefix=${encodeURIComponent(p)}&from=${f}&to=${t}`;
+  const tiles: { label: string; value: number; hint: string }[] = [
+    { label: 'Total cards', value: cards.length, hint: 'Registered at this property' },
+    { label: 'Available', value: counts.available, hint: 'Ready to hand out' },
+    { label: 'Waiting for scan', value: counts.waiting_scan, hint: 'Handed out, guest has not scanned' },
+    { label: 'With a guest', value: counts.with_guest, hint: 'Scanned, key in the cabinet' },
+    { label: 'Overdue', value: counts.overdue, hint: 'With a guest for over 24 hours' },
+    { label: 'Out of use', value: counts.out_of_use, hint: 'Lost or damaged' },
+  ];
 
   return (
-    <div className="p-8 max-w-6xl">
+    <div className="p-8 max-w-7xl">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Valet cards</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          The QR cards a valet hands a guest. Scanning one shows the guest their car and lets them ask for it.
+        <h1 className="text-3xl font-bold text-slate-800">Valet cards</h1>
+        <p className="text-sm text-gray-600 mt-2 max-w-3xl leading-relaxed">
+          Each card carries a QR code. The guest scans it at the door to start their WhatsApp ticket,
+          then your valet clips the card to their car key and stores it in the key cabinet. The card
+          is freed again at handover.
         </p>
       </header>
 
-      {!loading && cards.length > 0 && (
-        <div className="grid grid-cols-3 gap-3 mb-6 max-w-xl">
-          <Stat label="Ready to hand out" value={counts.stack} tone="text-green-700" />
-          <Stat label="With guests now" value={counts.out} tone="text-amber-700" />
-          <Stat label="Retired" value={retired} tone="text-gray-500" />
+      {!loading && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
+          {tiles.map((t) => (
+            <div key={t.label} className="rounded-xl border border-gray-200 bg-white p-4">
+              <p className="text-sm text-gray-600">{t.label}</p>
+              <p className="text-3xl font-bold text-slate-800 mt-1">{t.value}</p>
+              <p className="text-xs text-gray-500 mt-1 leading-snug">{t.hint}</p>
+            </div>
+          ))}
         </div>
       )}
 
-      {helpOpen !== null && <HowItWorks open={helpOpen} onToggle={toggleHelp} />}
+      {oldest?.inUseBy && (
+        <div className="mb-6 rounded-xl bg-amber-50 ring-1 ring-amber-300 px-5 py-4 flex items-center gap-4">
+          <svg className="w-6 h-6 shrink-0 text-amber-800" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" />
+          </svg>
+          <p className="text-sm text-amber-900">
+            <span className="font-semibold">
+              Card {oldest.code} has been with a guest for {hoursSince(oldest.inUseBy.since)} hours.
+            </span>{' '}
+            Check whether {oldest.inUseBy.plate} is still parked, or the card was not collected at handover.
+            {overdue.length > 1 && ` ${overdue.length - 1} more ${overdue.length === 2 ? 'card is' : 'cards are'} overdue.`}
+          </p>
+          <button
+            onClick={() => setOpenId(oldest.id)}
+            className="ml-auto shrink-0 h-10 px-4 rounded-lg bg-white text-sm font-semibold text-gray-900 ring-1 ring-amber-300 hover:bg-amber-100"
+          >
+            View car
+          </button>
+        </div>
+      )}
 
       {error && (
-        <div role="alert" className="mb-4 px-4 py-3 rounded-lg bg-red-50 text-red-700 text-sm ring-1 ring-red-200">
-          {error}
-        </div>
+        <div role="alert" className="mb-4 px-4 py-3 rounded-lg bg-red-50 text-red-700 text-sm ring-1 ring-red-200">{error}</div>
       )}
       {notice && (
         <div className="mb-4 px-4 py-3 rounded-lg bg-teal-50 text-teal-800 text-sm ring-1 ring-teal-200 flex items-center justify-between gap-4">
@@ -292,147 +485,145 @@ export default function ValetCardsPage() {
               href={printHref(lastAdded.prefix, lastAdded.from, lastAdded.to)}
               className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-teal-800 ring-1 ring-teal-300 hover:bg-teal-100"
             >
-              Print these cards
+              Download print file
             </Link>
           )}
         </div>
       )}
 
-      <section className="mb-8 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="text-sm font-bold text-gray-900">Add a set of cards</h2>
-        <p className="text-xs text-gray-500 mt-1">
-          Choose the codes, register them, then print. Already have printed cards? Enter the range
-          printed on them. Codes that already exist are skipped.
+      <section className="mb-6 rounded-2xl border border-gray-200 bg-white p-6">
+        <h2 className="text-lg font-bold text-slate-800">Add a new batch of cards</h2>
+        <p className="text-sm text-gray-600 mt-1">
+          Enter the numbers printed on the cards. Numbers already registered are skipped, so nothing is duplicated.
         </p>
-
-        <div className="mt-4 flex flex-wrap items-end gap-3">
+        <div className="mt-5 flex flex-wrap items-end gap-4">
           <label className="block">
-            <span className="block text-xs font-semibold text-gray-600 mb-1">Letters</span>
-            <input
-              data-testid="card-prefix"
-              value={prefix}
-              onChange={(e) => setPrefix(e.target.value)}
-              className="w-24 px-3 py-2 rounded-lg border border-gray-300 font-mono text-sm"
-            />
-            <span className="block text-[11px] text-gray-400 mt-1">The A in A001</span>
+            <span className="block text-sm text-gray-600 mb-1.5">Letter prefix</span>
+            <input data-testid="card-prefix" value={prefix} onChange={(e) => setPrefix(e.target.value)}
+              className="w-28 h-12 px-4 rounded-lg border border-gray-300 text-base" />
           </label>
           <label className="block">
-            <span className="block text-xs font-semibold text-gray-600 mb-1">First number</span>
-            <input
-              data-testid="card-from"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              inputMode="numeric"
-              className="w-24 px-3 py-2 rounded-lg border border-gray-300 font-mono text-sm"
-            />
-            <span className="block text-[11px] text-gray-400 mt-1">&nbsp;</span>
+            <span className="block text-sm text-gray-600 mb-1.5">First number</span>
+            <input data-testid="card-from" value={from} onChange={(e) => setFrom(e.target.value)} inputMode="numeric"
+              className="w-32 h-12 px-4 rounded-lg border border-gray-300 text-base" />
           </label>
           <label className="block">
-            <span className="block text-xs font-semibold text-gray-600 mb-1">Last number</span>
-            <input
-              data-testid="card-to"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              inputMode="numeric"
-              className="w-24 px-3 py-2 rounded-lg border border-gray-300 font-mono text-sm"
-            />
-            <span className="block text-[11px] text-gray-400 mt-1">&nbsp;</span>
+            <span className="block text-sm text-gray-600 mb-1.5">Last number</span>
+            <input data-testid="card-to" value={to} onChange={(e) => setTo(e.target.value)} inputMode="numeric"
+              className="w-32 h-12 px-4 rounded-lg border border-gray-300 text-base" />
           </label>
-          <div className="pb-5 flex gap-2">
+          <div className="min-w-[180px]">
+            <span className="block text-sm text-gray-600 mb-1.5">You&rsquo;re adding</span>
+            {preview.length > 0 ? (
+              <p data-testid="range-preview" className="h-12 flex items-center gap-4">
+                <span className="font-mono text-base font-bold text-slate-800 leading-tight">
+                  {preview[0]} to<br />{preview[preview.length - 1]}
+                </span>
+                <span className="text-base text-gray-600 leading-tight">{preview.length} new<br />cards</span>
+              </p>
+            ) : (
+              <p data-testid="range-invalid" className="h-12 flex items-center text-sm text-orange-700">
+                First number must be lower than the last
+              </p>
+            )}
+          </div>
+          <div className="ml-auto flex gap-3">
+            {preview.length > 0 && preview.length <= 120 ? (
+              <Link
+                href={printHref(prefix.toUpperCase(), Number(from), Number(to))}
+                className="h-12 px-5 inline-flex items-center rounded-lg text-base font-semibold text-slate-800 ring-1 ring-gray-300 bg-white hover:bg-gray-50"
+              >
+                Download print file
+              </Link>
+            ) : null}
             <button
               data-testid="register-cards"
               onClick={register}
-              disabled={busy === 'register' || preview.length === 0}
-              className="px-4 py-2 rounded-lg text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
+              disabled={busy || preview.length === 0}
+              className="h-12 px-6 rounded-lg text-base font-semibold bg-amber-500 text-slate-900 hover:bg-amber-400 disabled:opacity-50"
             >
-              {busy === 'register' ? 'Registering…' : `Register ${preview.length || ''} cards`}
+              {busy ? 'Adding…' : `Add ${preview.length || ''} cards`}
             </button>
-            {preview.length > 0 && preview.length <= 120 && (
-              <Link
-                href={printHref(prefix.toUpperCase(), Number(from), Number(to))}
-                className="px-4 py-2 rounded-lg text-sm font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50"
-              >
-                Print QR cards
-              </Link>
-            )}
           </div>
         </div>
-
-        {/* Showing the codes before committing, not after: a typo in the range
-            is obvious here and invisible in a success message. */}
-        {preview.length > 0 ? (
-          <p data-testid="range-preview" className="text-xs text-gray-500">
-            Creates <span className="font-mono">{preview[0]}</span> to{' '}
-            <span className="font-mono">{preview[preview.length - 1]}</span> ({preview.length} cards).
-            {preview.length > 120 && ' Print at most 120 at a time.'}
-            {' '}Only registered cards print.
-          </p>
-        ) : (
-          <p data-testid="range-invalid" className="text-xs text-orange-600">
-            Enter whole numbers, with the first number lower than the last.
-          </p>
-        )}
+        <p className="mt-4 text-sm text-gray-500">
+          Need cards printed? The print file includes each card&rsquo;s number and its unique QR code, sized
+          to clip onto a car key. Each QR opens this property&rsquo;s Dwaar AI Valet page only.
+          {preview.length > 120 && ' Print at most 120 cards at a time.'}
+        </p>
       </section>
 
-      {loading ? (
-        <p className="text-sm text-gray-500">Loading cards…</p>
-      ) : cards.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center">
-          <p className="text-sm font-semibold text-gray-700">No cards yet</p>
-          <p className="text-xs text-gray-500 mt-1 max-w-md mx-auto">
-            Register a set above (A001 to A050 suits most venues), then print it. Until a card is
-            registered here, scanning it in the valet app will not find it.
-          </p>
-        </div>
-      ) : (
-        <>
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            {([
-              ['all', 'All'], ['stack', 'Ready'], ['out', 'With guests'], ['retired', 'Retired'],
-            ] as [Filter, string][]).map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => setFilter(key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
-                  filter === key ? 'bg-teal-600 text-white' : 'text-gray-600 ring-1 ring-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                {label} ({counts[key]})
-              </button>
-            ))}
+      <section className="rounded-2xl border border-gray-200 bg-white p-6">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">All cards</h2>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(['all', ...ORDER] as (CardState | 'all')[]).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setFilter(k)}
+                  className={`h-11 px-4 rounded-lg text-sm font-semibold ${
+                    filter === k ? 'bg-slate-800 text-white' : 'bg-white text-slate-800 ring-1 ring-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  {k === 'all' ? 'All' : STATE_LABEL[k]} {k === 'all' ? cards.length : counts[k]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <label className="block w-full sm:w-80">
+            <span className="block text-sm text-gray-600 mb-1.5">Find a card</span>
             <input
               value={find}
               onChange={(e) => setFind(e.target.value)}
-              placeholder="Find a card or plate"
-              className="ml-auto w-56 px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
+              placeholder="Card number or number plate"
+              className="w-full h-12 px-4 rounded-lg border border-gray-300 text-base"
             />
+          </label>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-5 text-sm text-gray-600">
+          {ORDER.map((s) => (
+            <span key={s} className="inline-flex items-center gap-2">
+              <span className={`h-4 w-4 rounded ${SWATCH[s]}`} aria-hidden="true" />
+              {STATE_LABEL[s]}
+            </span>
+          ))}
+        </div>
+
+        {loading ? (
+          <p className="mt-6 text-sm text-gray-500">Loading cards…</p>
+        ) : cards.length === 0 ? (
+          <div className="mt-6 rounded-xl border border-dashed border-gray-300 p-12 text-center">
+            <p className="text-sm font-semibold text-gray-700">No cards yet</p>
+            <p className="text-sm text-gray-500 mt-1 max-w-md mx-auto">
+              Add a batch above (A001 to A050 suits most venues), then download the print file. Until a
+              card is added here, scanning it in the valet app will not find it.
+            </p>
           </div>
+        ) : shown.length === 0 ? (
+          <p className="mt-6 py-8 text-center text-sm text-gray-500">No cards match.</p>
+        ) : (
+          <div data-testid="card-grid" className="mt-5 grid gap-3 grid-cols-[repeat(auto-fill,minmax(124px,1fr))]">
+            {shown.map((c) => <Tile key={c.id} card={c} onOpen={(x) => setOpenId(x.id)} />)}
+          </div>
+        )}
+        <p className="mt-5 text-xs text-gray-500">
+          Select a card to see its car, who handed it out and its last 10 uses, or to mark it lost or damaged.
+        </p>
+      </section>
 
-          {shown.length === 0 ? (
-            <p className="text-sm text-gray-500 py-8 text-center">No cards match.</p>
-          ) : (
-            <ul
-              data-testid="card-grid"
-              className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6"
-            >
-              {shown.map((c) => (
-                <li key={c.id}>
-                  <CardChip card={c} busy={busy === c.id} onToggle={toggle} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
+      {openCard && (
+        <Panel
+          card={openCard}
+          onClose={() => setOpenId(null)}
+          onChanged={async (message) => {
+            setNotice(message);
+            setLastAdded(null);
+            await load();
+          }}
+        />
       )}
-    </div>
-  );
-}
-
-function Stat({ label, value, tone }: { label: string; value: number; tone: string }) {
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-3">
-      <p className={`text-xl font-bold ${tone}`}>{value}</p>
-      <p className="text-[11px] uppercase tracking-wider text-gray-500 mt-0.5">{label}</p>
     </div>
   );
 }
