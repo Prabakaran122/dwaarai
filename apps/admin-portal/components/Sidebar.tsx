@@ -70,12 +70,12 @@ const superAdminNav = [
  * destination hid inside a page.
  */
 const valetNav = [
-  { href: '/valet', label: 'Queue' },
-  { href: '/valet/search', label: 'Find a vehicle' },
-  // Naming and order follow the staff-screen redesign. "Vehicle log" sits
-  // third because it is what a manager opens when a guest is asking about a
-  // car, which happens far more often than checking inventory.
+  // First: it is what a manager opens when a guest is asking about a car,
+  // which happens far more often than anything else here, and its search box
+  // is the portal's one vehicle lookup ("Find a vehicle" was a separate entry
+  // beside a log whose own box searched only the loaded rows).
   { href: '/valet/visits', label: 'Vehicle log' },
+  { href: '/valet', label: 'Queue' },
   { href: '/valet/slots', label: 'Inventory' },
   { href: '/valet/cards', label: 'Valet cards' },
   // "Plate history" used to sit here. It and "Find a vehicle" were one
@@ -135,7 +135,7 @@ export default function Sidebar() {
   ];
 
   return (
-    <aside className="w-64 min-h-screen flex flex-col border-r border-gray-200 bg-white">
+    <aside className="w-64 min-h-screen flex flex-col border-r border-gray-200 bg-white print:hidden">
       <div className="p-6 border-b border-gray-200">
         {/* The real wordmark from dwaarai.com, replacing the "D" placeholder
             tile. next/image so basePath ('/admin') is applied. */}

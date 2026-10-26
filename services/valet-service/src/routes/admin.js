@@ -14,6 +14,7 @@ import {
   viewCostPaise, withGst, monthlyCeilingPaise, balanceFromLedger, splitSpend, quotaFor,
 } from '../lib/ads.js';
 import { createAdOrder, isPlaceholderMode } from '../lib/payments.js';
+import { toDataUrl } from '../lib/qr.js';
 
 const router = asyncRouter();
 
@@ -394,7 +395,7 @@ router.get('/summary', authenticateJWT(['admin', 'guard']), async (req, res) => 
 router.get('/cards', authenticateJWT(['admin']), async (req, res) => {
   const rows = await queryRows(
     `SELECT c.id, c.code, c.is_active, c.created_at,
-            t.display_id, t.plate, t.status
+            t.display_id, t.plate, t.status, t.session_token
        FROM valet_cards c
        LEFT JOIN valet_tickets t
          ON t.card_id = c.id
@@ -405,6 +406,11 @@ router.get('/cards', authenticateJWT(['admin']), async (req, res) => {
   );
 
   res.json({
+    // What every card's QR must encode, ending in the code. Given to the page
+    // rather than rebuilt there, because the venue id in it has to be this
+    // venue's and the portal does not always hold it (a venue admin's token
+    // carries it; localStorage only does for a super admin).
+    cardUrlBase: cardUrlBase(req.user.community_id),
     cards: rows.map((r) => ({
       id: r.id,
       code: r.code,
@@ -412,10 +418,50 @@ router.get('/cards', authenticateJWT(['admin']), async (req, res) => {
       createdAt: r.created_at,
       // Null means the card is in the stack, ready to hand out.
       inUseBy: r.display_id
-        ? { displayId: r.display_id, plate: r.plate, status: r.status }
+        ? { displayId: r.display_id, plate: r.plate, status: r.status, sessionToken: r.session_token }
         : null,
     })),
   });
+});
+
+function cardUrlBase(communityId) {
+  const base = process.env.VALET_GUEST_BASE_URL || 'https://dwaarai.com/valet';
+  return `${base}/c/${communityId}/`;
+}
+
+/**
+ * Print-ready QR codes for registered cards.
+ *
+ * Without this a venue had no way to make a card at all: the QR has to carry
+ * the venue's id (see the card section of CLAUDE.md), and nothing in the
+ * portal told anyone what it was. Only codes registered to this venue are
+ * rendered -- printing a card the stand cannot scan is the failure the
+ * register-first rule exists to prevent -- and the response says which asked-
+ * for codes were left out, so a short sheet is never a silent one.
+ */
+const MAX_PRINT = 120;
+
+router.post('/cards/qr', authenticateJWT(['admin']), async (req, res) => {
+  const asked = Array.isArray(req.body?.codes)
+    ? [...new Set(req.body.codes.map((c) => String(c).trim().toUpperCase()).filter(Boolean))]
+    : [];
+  if (asked.length === 0) return res.status(400).json({ error: 'codes_required' });
+  if (asked.length > MAX_PRINT) return res.status(400).json({ error: 'too_many', max: MAX_PRINT });
+
+  const rows = await queryRows(
+    `SELECT code FROM valet_cards
+      WHERE community_id = $1 AND is_active AND UPPER(code) = ANY($2::text[])
+      ORDER BY code`,
+    [req.user.community_id, asked]
+  );
+  const base = cardUrlBase(req.user.community_id);
+  const cards = await Promise.all(rows.map(async (r) => {
+    const url = `${base}${encodeURIComponent(r.code)}`;
+    return { code: r.code, url, qr: await toDataUrl(url) };
+  }));
+  const found = new Set(rows.map((r) => r.code.toUpperCase()));
+
+  res.json({ cards, notRegistered: asked.filter((c) => !found.has(c)) });
 });
 
 /**
@@ -568,10 +614,19 @@ router.get('/tickets/search', authenticateJWT(['admin']), async (req, res) => {
        -- (073). An inner join dropped those rows without a word.
        LEFT JOIN residents cg ON cg.id = t.created_by_guard_id
       WHERE t.community_id = $1
-        AND t.plate_normalized LIKE '%' || $2 || '%'
+        -- The Vehicle log's one search box (it absorbed Find a vehicle), so
+        -- it answers to what a desk is actually handed: any part of the
+        -- plate, the ticket number, the card or claim code a guest holds,
+        -- or the name they gave. Ticket numbers compare without the hyphen,
+        -- because "0005" and "DWR0005" are what people type.
+        AND (t.plate_normalized LIKE '%' || $2 || '%'
+             OR REPLACE(UPPER(t.display_id), '-', '') LIKE '%' || REPLACE($2, '-', '') || '%'
+             OR UPPER(t.card_code) = $2
+             OR UPPER(t.claim_code) = $2
+             OR t.guest_name ILIKE '%' || $3 || '%')
       ORDER BY (t.status NOT IN ('final_closed','expired')) DESC, t.created_at DESC
       LIMIT 50`,
-    [req.user.community_id, q]
+    [req.user.community_id, q, String(req.query.plate).trim().replace(/[%_\\]/g, '\\$&')]
   );
 
   res.json({

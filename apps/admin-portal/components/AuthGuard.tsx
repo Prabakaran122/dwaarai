@@ -82,7 +82,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen">
       <Sidebar />
       <div className="flex-1 flex flex-col min-h-screen">
-        <header className="sticky top-0 z-10 glass-panel border-0 border-b border-surface-border px-6 py-3 flex items-center justify-between" style={{ borderRadius: 0 }}>
+        <header className="sticky top-0 z-10 glass-panel border-0 border-b border-surface-border px-6 py-3 flex items-center justify-between print:hidden" style={{ borderRadius: 0 }}>
           <div className="flex items-center gap-3">
             {isViewingCommunity && (
               <>
@@ -119,7 +119,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             <ProfileMenu />
           </div>
         </header>
-        <main className="flex-1 p-6 mesh-bg overflow-auto">
+        <main className="flex-1 p-6 mesh-bg overflow-auto print:p-0 print:bg-white print:overflow-visible">
           {/* A group admin holds no single property, so a property-scoped
               valet screen has nothing to show until they pick one -- and the
               zeros it would otherwise render read as "the group had no cars

@@ -322,7 +322,7 @@ export interface ValetCard {
   isActive: boolean;
   createdAt: string;
   /** Null when the card is back in the stack, ready to hand out. */
-  inUseBy: { displayId: string; plate: string; status: ValetStatus } | null;
+  inUseBy: { displayId: string; plate: string; status: ValetStatus; sessionToken?: string } | null;
 }
 
 export interface SearchResult {
@@ -339,7 +339,14 @@ export interface SearchResult {
   createdGuardName: string;
 }
 
-export const listCards = () => valetFetch<{ cards: ValetCard[] }>('/admin/cards');
+export const listCards = () =>
+  valetFetch<{ cards: ValetCard[]; cardUrlBase?: string }>('/admin/cards');
+
+/** Print-ready QR images for registered cards (at most 120 a sheet). */
+export const cardQrSheet = (codes: string[]) =>
+  valetPost<{ cards: { code: string; url: string; qr: string }[]; notRegistered: string[] }>(
+    '/admin/cards/qr', { codes }
+  );
 
 export const registerCards = (body: { codes: string[] } | { prefix: string; from: number; to: number; width?: number }) =>
   valetPost<{ added: string[]; skipped: string[]; total: number }>('/admin/cards', body);

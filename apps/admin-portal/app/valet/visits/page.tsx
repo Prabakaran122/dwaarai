@@ -4,14 +4,18 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   valetFetch, VisitsReport, formatStay, downloadVisitsCsv, visitStatusCell, valetErrorMessage,
   listStaff, dayRangeToInstants, VisitStatus, VISIT_STATUS_LABEL, finishedVisits } from '@/lib/valet';
+import VehicleLookup, { isLookupQuery } from '@/components/VehicleLookup';
 
 /**
  * "What came through the valet stand recently" — the report a manager actually
  * asks for.
  *
- * Plate history answers the opposite question ("tell me about THIS car") and
- * needs a plate typed in before it shows anything, so it cannot answer this
- * one at all. This page needs no input beyond a date window.
+ * It also answers the opposite question ("tell me about THIS car"): typing in
+ * the search box swaps the table for a lookup across every date, with each
+ * car's full visit history. That used to be a separate "Find a vehicle" page
+ * beside this one, while this page's own box only filtered the rows already
+ * loaded -- two searches, and the weaker one said "no cars match" about a car
+ * that came in 31 days ago.
  */
 
 const WINDOWS = [7, 30, 90] as const;
@@ -95,18 +99,8 @@ export default function ValetVisitsPage() {
   useEffect(() => { setOffset(0); }, [days, staffId, fromDay, toDay, status]);
 
   const t = data?.totals;
-
-  /* Typed into the box, matched against what is already on the page.
-     Deliberately client-side: the server call is windowed and paged, and
-     round-tripping every keystroke would make a search feel slower than
-     reading the list. */
-  const q = search.trim().toUpperCase().replace(/\s+/g, '');
-  const visible = (data?.visits ?? []).filter((v) =>
-    !q
-    || v.plate.toUpperCase().replace(/\s+/g, '').includes(q)
-    || v.displayId.toUpperCase().includes(q)
-    || (v.vehicleMake ?? '').toUpperCase().includes(q)
-  );
+  const lookup = isLookupQuery(search);
+  const visible = data?.visits ?? [];
 
   return (
     <div className="p-8 max-w-6xl">
@@ -215,9 +209,10 @@ export default function ValetVisitsPage() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search plate, ticket or guest"
+          placeholder="Find a car — plate, ticket no., card, claim code or guest name"
           className="input-glow px-3 py-2 text-sm flex-1 min-w-[220px]"
         />
+        {!lookup && <>
         <select
           value={status ?? ''}
           onChange={(e) => setStatus((e.target.value || null) as VisitStatus | null)}
@@ -238,12 +233,17 @@ export default function ValetVisitsPage() {
           <option value="">Any staff member</option>
           {staff.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
         </select>
+        </>}
       </div>
+
+      {/* The lookup replaces everything below: it is about one car on any
+          date, and the period's banners and table are about something else. */}
+      {lookup && <VehicleLookup query={search} onClear={() => setSearch('')} />}
 
       {/* Once the filter is on, the warning is about the rows you are already
           looking at -- "only 0 of 14 have a handover" is true, tautological
           and faintly alarming. The way back is what the strip is for now. */}
-      {status === 'no_handover' && data && (
+      {!lookup && status === 'no_handover' && data && (
         <div className="mb-4 px-4 py-3 rounded-lg bg-amber-50 ring-1 ring-amber-200 text-sm text-amber-800 flex items-center justify-between gap-4">
           <p>
             Showing the {data.totals.visits} car{data.totals.visits === 1 ? '' : 's'} nobody
@@ -263,7 +263,7 @@ export default function ValetVisitsPage() {
           has not been handed over yet, and a check-in a valet cancelled never
           had one -- counting either as "closed by the system" overstated the
           problem and pointed staff at rows with nothing wrong in them. */}
-      {status !== 'no_handover' && data && finishedVisits(data.totals) > 0 && data.totals.withHandover < finishedVisits(data.totals) && (
+      {!lookup && status !== 'no_handover' && data && finishedVisits(data.totals) > 0 && data.totals.withHandover < finishedVisits(data.totals) && (
         /* The single most useful sentence on this page.
            A ticket the retention sweep closed has no handover, no parking time
            anybody measured and no receipt the guest ever saw -- so a log that
@@ -289,7 +289,7 @@ export default function ValetVisitsPage() {
         </div>
       )}
 
-      {loading && !data ? (
+      {lookup ? null : loading && !data ? (
         <p className="text-sm text-gray-500">Loading…</p>
       ) : data && data.visits.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center">
@@ -299,20 +299,6 @@ export default function ValetVisitsPage() {
               : range ? 'No vehicles taken in between those dates.'
                       : `No vehicles taken in over the last ${days} days.`}
           </p>
-        </div>
-      ) : data && visible.length === 0 ? (
-        /* Filtered to nothing, which is not the same as nothing happened.
-           Without this the table renders with no rows and no explanation,
-           and a search that found nothing looks like an outage. */
-        <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center">
-          <p className="text-sm text-gray-500">
-            No cars match &ldquo;{search.trim()}&rdquo;{' '}
-            {range ? 'between those dates.' : `in the last ${days} days.`}
-          </p>
-          <button onClick={() => setSearch('')}
-            className="mt-2 text-xs font-semibold text-teal-700 hover:text-teal-900">
-            Clear the search
-          </button>
         </div>
       ) : data ? (
         <>
@@ -412,12 +398,11 @@ export default function ValetVisitsPage() {
           <div className="flex items-center justify-between mt-3">
             <p className="text-xs text-gray-400">
               Showing {visible.length} of {data.totals.visits} cars
-              {q ? ' matching your search' : ''}
             </p>
             {/* Paging the server already supported and the page never used.
                 Hidden rather than disabled on the last page: a dead button is
                 a question, an absent one is an answer. */}
-            {!q && data.visits.length >= 200 && (
+            {data.visits.length >= 200 && (
               <button
                 onClick={() => setOffset((o) => o + 200)}
                 disabled={loading}

@@ -334,6 +334,16 @@ plate is already correct and already spelled the way the ticket spells it. The
 old route stays as a redirect -- it is in bookmarks, and a 404 on a page that
 worked yesterday reads as the portal being broken.
 
+**Find a vehicle was then folded into the Vehicle log.** The log had its own
+search box, which only filtered the up-to-200 rows of the selected period --
+so it answered "no cars match" for a car that came 31 days ago, beside a page
+that would have found it. Three or more characters in the log's box now swap
+the table for `components/VehicleLookup.tsx` (all dates, with "All visits"
+history). `GET /admin/tickets/search` matches the plate *and* the ticket
+number (hyphen-insensitive), card code, claim code and guest name, because
+that is what the box says it searches. `/valet/search` and
+`/valet/plate-history` redirect to `/valet/visits`.
+
 Not merged, and deliberately: **Inventory** (`valet_slots`, where a car is
 parked) and **Properties** (`valet_points`, where a guest stands). They sound
 alike and are not the same object; see the 063-066 section above.

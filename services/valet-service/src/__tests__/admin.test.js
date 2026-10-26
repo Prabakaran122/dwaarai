@@ -474,14 +474,22 @@ describe('GET /admin/cards', () => {
   it('names the vehicle a card is currently out with', async () => {
     queryRows.mockResolvedValueOnce([
       { id: 'c1', code: 'A001', is_active: true, created_at: 'now',
-        display_id: 'DWR-0009', plate: 'KA 03 NJ 0435', status: 'parked' },
+        display_id: 'DWR-0009', plate: 'KA 03 NJ 0435', status: 'parked', session_token: 'tok9' },
     ]);
 
     const res = await request(app, 'GET', '/admin/cards', { token: adminToken() });
 
     expect(res.body.cards[0].inUseBy).toEqual({
-      displayId: 'DWR-0009', plate: 'KA 03 NJ 0435', status: 'parked',
+      displayId: 'DWR-0009', plate: 'KA 03 NJ 0435', status: 'parked', sessionToken: 'tok9',
     });
+  });
+
+  it('says what a card QR must encode, with this venue in it', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    const res = await request(app, 'GET', '/admin/cards', { token: adminToken() });
+
+    expect(res.body.cardUrlBase).toMatch(new RegExp(`/valet/c/${COMMUNITY_ID}/$`));
   });
 
   it('scopes the stock to the caller\'s venue', async () => {
@@ -490,6 +498,39 @@ describe('GET /admin/cards', () => {
     await request(app, 'GET', '/admin/cards', { token: adminToken() });
 
     expect(queryRows.mock.calls[0][1]).toEqual([COMMUNITY_ID]);
+  });
+});
+
+describe('POST /admin/cards/qr', () => {
+  it('renders QR codes only for cards registered to this venue, and names the rest', async () => {
+    queryRows.mockResolvedValueOnce([{ code: 'A001' }]);
+
+    const res = await request(app, 'POST', '/admin/cards/qr', {
+      token: adminToken(), body: { codes: ['a001', 'Z999'] },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.cards).toHaveLength(1);
+    expect(res.body.cards[0].url).toMatch(new RegExp(`/valet/c/${COMMUNITY_ID}/A001$`));
+    expect(res.body.cards[0].qr).toMatch(/^data:image\/png;base64,/);
+    expect(res.body.notRegistered).toEqual(['Z999']);
+    expect(queryRows.mock.calls[0][1]).toEqual([COMMUNITY_ID, ['A001', 'Z999']]);
+  });
+
+  it('refuses an empty or oversized sheet', async () => {
+    const empty = await request(app, 'POST', '/admin/cards/qr', { token: adminToken(), body: { codes: [] } });
+    const huge = await request(app, 'POST', '/admin/cards/qr', {
+      token: adminToken(), body: { codes: Array.from({ length: 121 }, (_, i) => `A${i}`) },
+    });
+
+    expect(empty.status).toBe(400);
+    expect(huge.body.error).toBe('too_many');
+  });
+
+  it('requires an admin token', async () => {
+    const res = await request(app, 'POST', '/admin/cards/qr', { token: guardToken(), body: { codes: ['A001'] } });
+
+    expect(res.status).toBe(403);
   });
 });
 
@@ -656,6 +697,29 @@ describe('GET /admin/tickets/search', () => {
     await request(app, 'GET', '/admin/tickets/search?plate=ka%2003%20nj', { token: adminToken() });
 
     expect(queryRows.mock.calls[0][1][1]).toBe('KA03NJ');
+  });
+
+  it('also finds a car by ticket number, card, claim code or guest name', async () => {
+    // The Vehicle log's search box says "plate, ticket or guest", and it is
+    // the only lookup left in the portal.
+    queryRows.mockResolvedValueOnce([]);
+
+    await request(app, 'GET', '/admin/tickets/search?plate=dwr-0005', { token: adminToken() });
+
+    const [sql, params] = queryRows.mock.calls[0];
+    expect(sql).toContain("REPLACE(UPPER(t.display_id), '-', '')");
+    expect(sql).toContain('UPPER(t.card_code) = $2');
+    expect(sql).toContain('UPPER(t.claim_code) = $2');
+    expect(sql).toContain("t.guest_name ILIKE '%' || $3 || '%'");
+    expect(params[1]).toBe('DWR-0005');
+  });
+
+  it('escapes LIKE wildcards in a typed name rather than matching everyone', async () => {
+    queryRows.mockResolvedValueOnce([]);
+
+    await request(app, 'GET', '/admin/tickets/search?plate=100%25', { token: adminToken() });
+
+    expect(queryRows.mock.calls[0][1][2]).toBe('100\\%');
   });
 
   it('refuses a query too short to narrow anything, without hitting the database', async () => {
