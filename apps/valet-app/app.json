@@ -2,7 +2,7 @@
   "expo": {
     "name": "DwaarAI Valet",
     "slug": "sarthi-valet",
-    "version": "0.9.0",
+    "version": "0.9.1",
     "orientation": "portrait",
     "platforms": [
       "android",
@@ -10,7 +10,7 @@
     ],
     "android": {
       "package": "com.dwaarai.valet",
-      "versionCode": 19
+      "versionCode": 20
     },
     "plugins": [
       "expo-router",
