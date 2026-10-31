@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Image, ActivityIndicator, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView } from 'expo-camera';
+import { useCameraAccess } from '../lib/useCameraAccess';
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
 import { type } from '../theme/typography';
@@ -48,7 +49,7 @@ export default function ValetHandoverScreen({
   const insets = useSafeAreaInsets();
   const t = useT();
 
-  const [permission, requestPermission] = useCameraPermissions();
+  const { permission, blocked: scannerBlocked, ask: askCamera, request: requestPermission } = useCameraAccess();
   const [stage, setStage] = useState<Stage>('scan');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -233,8 +234,8 @@ export default function ValetHandoverScreen({
             ) : (
               <View style={styles.permissionBox}>
                 <Text style={styles.hint}>{t('valetCameraDenied')}</Text>
-                <Pressable testID="handover-grant" style={styles.cta} onPress={requestPermission}>
-                  <Text style={styles.ctaText}>{t('valetGrantCamera')}</Text>
+                <Pressable testID="handover-grant" style={styles.cta} onPress={askCamera}>
+                  <Text style={styles.ctaText}>{t(scannerBlocked ? 'valetOpenSettings' : 'valetGrantCamera')}</Text>
                 </Pressable>
               </View>
             )}

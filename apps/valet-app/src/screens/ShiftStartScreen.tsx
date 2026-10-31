@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView } from 'expo-camera';
+import { useCameraAccess } from '../lib/useCameraAccess';
 import { colors } from '../theme/colors';
 import { font } from '../theme/typography';
 import { useT } from '../store/langStore';
@@ -23,7 +24,7 @@ import { startShift, listValetPoints } from '../api/valet';
  */
 export default function ShiftStartScreen({ onDone }: { onDone: () => void }) {
   const t = useT();
-  const [permission, requestPermission] = useCameraPermissions();
+  const { permission, blocked: scannerBlocked, ask: askCamera, request: requestPermission } = useCameraAccess();
   const [busy, setBusy] = useState(false);
   const camera = useRef<CameraView>(null);
 
@@ -133,6 +134,13 @@ export default function ShiftStartScreen({ onDone }: { onDone: () => void }) {
              "there is no camera". */
           <View style={styles.placeholder} testID="shift-no-camera">
             <Text style={styles.placeholderText}>{t('valetShiftNoCamera')}</Text>
+            {permission && !permission.granted && (
+              <Pressable testID="shift-grant" style={styles.grant} onPress={askCamera}>
+                <Text style={styles.grantText}>
+                  {t(scannerBlocked ? 'valetOpenSettings' : 'valetGrantCamera')}
+                </Text>
+              </Pressable>
+            )}
           </View>
         )}
       </View>
@@ -176,6 +184,11 @@ const styles = StyleSheet.create({
   camera: { flex: 1 },
   placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   placeholderText: { ...font(400), fontSize: 14, color: colors.textMuted, textAlign: 'center' },
+  grant: {
+    marginTop: 16, backgroundColor: colors.actionPrimary,
+    paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12,
+  },
+  grantText: { ...font(700), fontSize: 15, color: colors.bgPrimary },
   spinner: { marginTop: 28 },
   cta: {
     marginTop: 28, backgroundColor: colors.actionPrimary,

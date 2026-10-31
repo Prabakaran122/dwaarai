@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, ScrollView, StyleSheet, Pressable, Image, ActivityIndicator, Switch } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView } from 'expo-camera';
+import { useCameraAccess } from '../lib/useCameraAccess';
 
 import { colors } from '../theme/colors';
 import { spacing, radius } from '../theme/spacing';
@@ -148,7 +149,7 @@ export default function NewValetTicketScreen({
   const insets = useSafeAreaInsets();
   const t = useT();
 
-  const [permission, requestPermission] = useCameraPermissions();
+  const { permission, blocked: scannerBlocked, ask: askCamera, request: requestPermission } = useCameraAccess();
   const [step, setStep] = useState<Step>('details');
   // Whatever the desk or an earlier attempt already recorded is kept, so the
   // attendant fills the gaps rather than retyping a plate.
@@ -734,8 +735,8 @@ export default function NewValetTicketScreen({
             ) : (
               <View style={styles.permissionBox}>
                 <Text style={styles.hint}>{t('valetCameraDenied')}</Text>
-                <Pressable testID="plate-grant" style={styles.cta} onPress={requestPermission}>
-                  <Text style={styles.ctaText}>{t('valetGrantCamera')}</Text>
+                <Pressable testID="plate-grant" style={styles.cta} onPress={askCamera}>
+                  <Text style={styles.ctaText}>{t(scannerBlocked ? 'valetOpenSettings' : 'valetGrantCamera')}</Text>
                 </Pressable>
               </View>
             )}
@@ -765,8 +766,8 @@ export default function NewValetTicketScreen({
             ) : (
               <View style={styles.permissionBox}>
                 <Text style={styles.hint}>{t('valetCameraDenied')}</Text>
-                <Pressable testID="card-grant" style={styles.cta} onPress={requestPermission}>
-                  <Text style={styles.ctaText}>{t('valetGrantCamera')}</Text>
+                <Pressable testID="card-grant" style={styles.cta} onPress={askCamera}>
+                  <Text style={styles.ctaText}>{t(scannerBlocked ? 'valetOpenSettings' : 'valetGrantCamera')}</Text>
                 </Pressable>
               </View>
             )}
