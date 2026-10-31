@@ -128,3 +128,36 @@ describe('POST /admin/cards/:id/return', () => {
     expect(res.status).toBe(409);
   });
 });
+
+describe('POST /admin/staff/:id/pin', () => {
+  it('stores a hash of the new PIN, scoped to the venue', async () => {
+    queryOne.mockResolvedValueOnce({ id: 's1' });
+
+    const res = await request(app, 'POST', '/admin/staff/s1/pin', { token: adminToken(), body: { pin: '4821' } });
+
+    expect(res.status).toBe(200);
+    const [sql, params] = queryOne.mock.calls[0];
+    expect(sql).toContain("type = 'guard'");
+    expect(params.slice(0, 2)).toEqual(['s1', COMMUNITY_ID]);
+    // Never the PIN itself.
+    expect(params[2]).not.toBe('4821');
+    expect(params[2]).toMatch(/^\$2[aby]\$/);
+  });
+
+  it('refuses a PIN under four characters', async () => {
+    const res = await request(app, 'POST', '/admin/staff/s1/pin', { token: adminToken(), body: { pin: '12' } });
+    expect(res.status).toBe(400);
+    expect(queryOne).not.toHaveBeenCalled();
+  });
+
+  it('404s someone who is not staff at this venue', async () => {
+    queryOne.mockResolvedValueOnce(null);
+    const res = await request(app, 'POST', '/admin/staff/s9/pin', { token: adminToken(), body: { pin: '4821' } });
+    expect(res.status).toBe(404);
+  });
+
+  it('requires an admin', async () => {
+    const res = await request(app, 'POST', '/admin/staff/s1/pin', { token: guardToken(), body: { pin: '4821' } });
+    expect(res.status).toBe(403);
+  });
+});

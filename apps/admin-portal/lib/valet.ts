@@ -814,6 +814,10 @@ export const faceStatus = () =>
 export const enrolStaffFace = (id: string, imageBase64: string) =>
   valetPost<{ enrolled: boolean }>(`/admin/staff/${id}/face`, { imageBase64 });
 
+/** A forgotten PIN cannot be read back (only a hash is kept), so it is replaced. */
+export const resetStaffPin = (id: string, pin: string) =>
+  valetPost<{ reset: boolean }>(`/admin/staff/${id}/pin`, { pin });
+
 export const retireStaff = (id: string) =>
   valetFetch<{ retired: boolean }>(`/admin/staff/${id}`, { method: 'DELETE' });
 

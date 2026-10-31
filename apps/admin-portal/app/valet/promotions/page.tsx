@@ -1,6 +1,9 @@
 'use client';
 
 import AdBudget from '@/components/AdBudget';
+import GuestPhonePreview from '@/components/GuestPhonePreview';
+import { useAuth } from '@/lib/auth';
+import { useModules } from '@/lib/modules';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ValetError, Promotion, PromotionStatus, PROMOTION_STATUS,
@@ -156,6 +159,10 @@ export default function ValetPromotionsPage() {
       setBusy(false);
     }
   }
+
+  const { selectedCommunityName } = useAuth();
+  const { communityName } = useModules();
+  const venueName = selectedCommunityName || communityName || 'Your venue';
 
   const live = promos.find((p) => p.status === 'live') ?? null;
   const totals = promos.reduce(
@@ -317,48 +324,14 @@ export default function ValetPromotionsPage() {
         <div className="lg:col-span-2 space-y-4">
           <div className="rounded-xl border border-gray-200 bg-white p-5">
             <p className="text-xs uppercase tracking-wider text-gray-400 mb-3">Live preview</p>
-            {/* The guest page is dark; previewing on white would flatter a
-                banner that will actually sit on #0D2535. */}
-            <div className="rounded-2xl bg-[#0D2535] p-4">
-              <p className="text-center text-sm text-white/70 mb-3">
-                Thank you for visiting
-              </p>
-              <div className="rounded-xl bg-white overflow-hidden">
-                {imagePreview ? (
-                  /* eslint-disable-next-line @next/next/no-img-element --
-                     an object URL for a file the browser already holds; next/image
-                     would want a loader and a remote host for something that never
-                     leaves this tab. */
-                  <img
-                    src={imagePreview}
-                    alt="Your banner, as a guest will see it"
-                    className="w-full aspect-[2/1] object-cover"
-                  />
-                ) : (
-                  <div className="h-24 bg-gray-100 flex items-center justify-center">
-                    <p className="text-[11px] text-gray-400">Your banner, 1200 × 600</p>
-                  </div>
-                )}
-                <div className="p-4">
-                  <p className="text-sm font-bold text-[#0D2535]">
-                    {headline || 'Your headline here'}
-                  </p>
-                  {body && <p className="mt-1 text-xs text-[#0D2535]/70">{body}</p>}
-                  {offerCode && (
-                    <p className="mt-2 text-[11px] text-[#0D2535]/60">
-                      Code <span className="font-mono font-bold text-[#0D2535]">
-                        {offerCode}-4K7QP2
-                      </span>
-                    </p>
-                  )}
-                  {buttonLabel && (
-                    <div className="mt-3 py-2 rounded-lg bg-amber-500 text-center text-xs font-bold text-[#0D2535]">
-                      {buttonLabel}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            <GuestPhonePreview
+              venueName={venueName}
+              imagePreview={imagePreview}
+              headline={headline}
+              body={body}
+              offerCode={offerCode}
+              buttonLabel={buttonLabel}
+            />
             <p className="text-[11px] text-gray-400 mt-3">
               Guests open this from their WhatsApp ticket. The page is kept light so it loads
               on weak signal.

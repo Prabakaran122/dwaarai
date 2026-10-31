@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import FaceCapture from '@/components/FaceCapture';
 import {
   ValetError, StaffMember, StaffRole, STAFF_ROLE_LABEL, Shift, SHIFT_REASON_LABEL,
-  listStaff, addStaff, retireStaff, enrolStaffFace, faceStatus, listShifts, editStaff,
+  listStaff, addStaff, retireStaff, enrolStaffFace, faceStatus, listShifts, editStaff, resetStaffPin,
   downloadShiftsCsv, dayRangeToInstants,
 } from '@/lib/valet';
 
@@ -302,6 +302,8 @@ export default function ValetStaffPage() {
   const [editName, setEditName] = useState('');
   const [editRole, setEditRole] = useState<StaffRole>('valet_manager');
   const [editUntil, setEditUntil] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [pinNotice, setPinNotice] = useState<string | null>(null);
 
   /* Who the camera is open for. Null means it is closed. */
   const [enrolling, setEnrolling] = useState<StaffMember | null>(null);
@@ -366,6 +368,22 @@ export default function ValetStaffPage() {
     setEditName(m.name);
     setEditRole(m.role);
     setEditUntil(m.until ? new Date(m.until).toISOString().slice(0, 10) : '');
+    setNewPin('');
+    setPinNotice(null);
+  }
+
+  async function onResetPin() {
+    if (!editing) return;
+    setBusy(true); setError(null); setPinNotice(null);
+    try {
+      await resetStaffPin(editing.id, newPin.trim());
+      setNewPin('');
+      setPinNotice(`New PIN saved. ${editing.name} signs in with their mobile number and this PIN.`);
+    } catch (err) {
+      setPinNotice(err instanceof ValetError ? err.message : 'Could not set that PIN');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function onSaveEdit() {
@@ -644,6 +662,23 @@ export default function ValetStaffPage() {
             <p className="text-xs text-gray-400 mt-1 mb-5">
               Leave blank for no end date.
             </p>
+
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 mb-5">
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Forgot their PIN?</label>
+              <p className="text-xs text-gray-500 mb-2">
+                PINs are stored scrambled, so the old one can&apos;t be shown. Set a new one and tell them.
+              </p>
+              <div className="flex gap-2">
+                <input value={newPin} onChange={(e) => setNewPin(e.target.value.replace(/\s/g, ''))}
+                  inputMode="numeric" maxLength={12} placeholder="New 4-digit PIN"
+                  className="input-glow flex-1 px-3 py-2 text-sm" />
+                <button onClick={onResetPin} disabled={busy || newPin.trim().length < 4}
+                  className="px-4 py-2 text-sm font-semibold border border-gray-300 bg-white rounded-lg disabled:opacity-40">
+                  Reset PIN
+                </button>
+              </div>
+              {pinNotice && <p className="text-xs text-gray-600 mt-2">{pinNotice}</p>}
+            </div>
 
             <div className="flex justify-end gap-3">
               <button onClick={() => setEditing(null)} disabled={busy}

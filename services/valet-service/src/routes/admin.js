@@ -2427,6 +2427,33 @@ router.post('/staff', admin, async (req, res) => {
   res.status(201).json({ added: true });
 });
 
+/**
+ * Sets a new app PIN for a member of staff who has forgotten theirs.
+ *
+ * Only a bcrypt hash is stored, so nobody -- the venue included -- can read
+ * the old one back; the only recovery is a new one. Before this the answer was
+ * remove-and-re-add, which orphans their shift history the same way a role
+ * change used to.
+ */
+router.post('/staff/:id/pin', admin, async (req, res) => {
+  const pin = String(req.body.pin ?? '').trim();
+  if (pin.length < 4 || pin.length > 12) {
+    return res.status(400).json({ error: 'invalid_pin', message: 'A PIN must be 4 to 12 characters' });
+  }
+
+  const hash = await bcrypt.hash(pin, 12);
+  const row = await queryOne(
+    `UPDATE residents SET password_hash = $3
+      WHERE id = $1 AND community_id = $2 AND type = 'guard'
+      RETURNING id`,
+    [req.params.id, req.user.community_id, hash]
+  );
+  // Scoped to the caller's property, like edit: another venue's id 404s.
+  if (!row) return res.status(404).json({ error: 'not_found' });
+
+  res.json({ reset: true });
+});
+
 /** Retires a member of staff. Deactivated, never deleted: their name is on tickets. */
 router.delete('/staff/:id', admin, async (req, res) => {
   await query(
