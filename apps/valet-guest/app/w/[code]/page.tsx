@@ -10,8 +10,10 @@ import { VALET_BASE } from '@/lib/api';
  * Deliberately not a wa.me link directly. A guest without WhatsApp — or one
  * who simply does not want to message a business — would scan that and land on
  * a "download WhatsApp" page holding nothing, which is worse than the printed
- * card they were not given. This page owns that moment and always offers a way
- * through.
+ * card they were not given. This page owns that moment. WhatsApp is the only
+ * door offered while a number is configured (the venue asked for no browser
+ * option); the browser stays as the fallback when none is, so there is always
+ * a way through.
  */
 export default function WhatsAppDoorPage() {
   const params = useParams();
@@ -98,13 +100,17 @@ export default function WhatsAppDoorPage() {
           </>
         ) : null}
 
-        <button
-          onClick={continueInBrowser}
-          disabled={busy}
-          className="mt-6 w-full py-3 rounded-xl ring-1 ring-white/20 text-white text-sm font-semibold disabled:opacity-40"
-        >
-          {busy ? 'Opening…' : 'Continue in the browser'}
-        </button>
+        {/* WhatsApp is the door. The browser is the fallback only when no
+            WhatsApp number is configured, so a guest is never left with no way in. */}
+        {!number && (
+          <button
+            onClick={continueInBrowser}
+            disabled={busy}
+            className="mt-6 w-full py-3 rounded-xl ring-1 ring-white/20 text-white text-sm font-semibold disabled:opacity-40"
+          >
+            {busy ? 'Opening…' : 'Continue in the browser'}
+          </button>
+        )}
 
         {error && (
           <p className="mt-5 text-sm text-amber-300/90" role="alert">

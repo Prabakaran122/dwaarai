@@ -487,8 +487,10 @@ a price change is a settings edit rather than a release.
 
 ### WhatsApp (the default way into a ticket)
 
-The intake QR opens `/valet/w/<claimCode>`, a page offering WhatsApp first and
-the browser second. It is deliberately not a raw `wa.me` QR: a guest without
+The intake QR opens `/valet/w/<claimCode>`, a page offering WhatsApp. The card
+page (`/valet/c/...`) does the same. Neither shows a "Continue in the browser"
+button while `WHATSAPP_NUMBER` is set (the venue asked for WhatsApp only); the
+browser door returns only as the fallback when no number is configured. It is deliberately not a raw `wa.me` QR: a guest without
 WhatsApp would scan that and land on a download page holding nothing, having
 been handed no card either.
 

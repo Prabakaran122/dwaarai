@@ -25,7 +25,15 @@ describe('the door a scanned QR opens', () => {
     expect(decodeURIComponent(href)).toContain('4K7QP2');
   });
 
-  it('always offers the browser too, so a guest without WhatsApp is not stranded', async () => {
+  it('offers only WhatsApp, with no browser option, while a number is configured', async () => {
+    render(<WhatsAppDoorPage />);
+
+    await screen.findByRole('link', { name: /whatsapp/i });
+    expect(screen.queryByRole('button', { name: /browser/i })).not.toBeInTheDocument();
+  });
+
+  it('falls back to the browser when no number is configured, so the guest is not stranded', async () => {
+    delete process.env.NEXT_PUBLIC_WHATSAPP_NUMBER;
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true, json: async () => ({ sessionToken: 'tok-1' }),
     }));
@@ -47,6 +55,7 @@ describe('the door a scanned QR opens', () => {
   });
 
   it('says so when the code does not resolve, rather than dead-ending', async () => {
+    delete process.env.NEXT_PUBLIC_WHATSAPP_NUMBER;
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
 
     render(<WhatsAppDoorPage />);

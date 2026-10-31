@@ -167,10 +167,10 @@ export default function CardPage() {
               </>
             )}
 
-            {/* Only once there is a ticket to open. Before that the browser has
-                nothing to show, and a spinner would be a worse answer than not
-                offering the door at all. */}
-            {sessionToken && (
+            {/* WhatsApp is the door. The browser is offered only when there is
+                no WhatsApp door to show (no number configured, or no card
+                reference yet), and only once there is a ticket to open. */}
+            {sessionToken && !(number && waRef) && (
               <button
                 onClick={() => router.replace(`/v/${sessionToken}`)}
                 className="mt-6 w-full py-3 rounded-xl ring-1 ring-white/20 text-white text-sm font-semibold"

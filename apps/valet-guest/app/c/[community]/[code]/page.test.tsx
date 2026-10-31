@@ -39,7 +39,16 @@ describe('the card the guard scanned, now shown to the guest', () => {
     expect(nav.replace).not.toHaveBeenCalled();
   });
 
-  it('opens the ticket for a guest who picks the browser', async () => {
+  it('offers only WhatsApp, with no browser option, while a number is configured', async () => {
+    render(<CardPage />);
+    await screen.findByRole('link', { name: /whatsapp/i });
+
+    expect(screen.queryByRole('button', { name: /browser/i })).not.toBeInTheDocument();
+  });
+
+  it('falls back to the browser when no number is configured', async () => {
+    delete process.env.NEXT_PUBLIC_WHATSAPP_NUMBER;
+
     render(<CardPage />);
     fireEvent.click(await screen.findByRole('button', { name: /browser/i }));
 
@@ -75,7 +84,8 @@ describe('the card the guard scanned, now shown to the guest', () => {
     expect(await screen.findByText(/your car is with us/i)).toBeInTheDocument();
   });
 
-  it('keeps checking, and offers the browser the moment check-in completes', async () => {
+  it('keeps checking, and offers the browser fallback the moment check-in completes', async () => {
+    delete process.env.NEXT_PUBLIC_WHATSAPP_NUMBER;
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ waRef: 'H7M2QP', sessionToken: null }) })
@@ -108,7 +118,7 @@ describe('a card bound to another phone', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     render(<CardPage />);
-    await screen.findByRole('button', { name: /browser/i });
+    await screen.findByRole('link', { name: /whatsapp/i });
     render(<CardPage />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
 
@@ -124,7 +134,7 @@ describe('a card bound to another phone', () => {
 
     render(<CardPage />);
 
-    expect(await screen.findByRole('button', { name: /browser/i })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /whatsapp/i })).toBeInTheDocument();
     expect((fetchMock.mock.calls[0][1].headers as Record<string, string>)['X-Valet-Device']).toBeTruthy();
     getItem.mockRestore();
   });
