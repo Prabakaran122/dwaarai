@@ -1,4 +1,5 @@
 jest.mock('expo-image-picker', () => ({
+  getCameraPermissionsAsync: jest.fn(),
   requestCameraPermissionsAsync: jest.fn(),
   launchCameraAsync: jest.fn(),
 }));
@@ -12,6 +13,8 @@ const granted = { granted: true, canAskAgain: true };
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Not yet granted by default, so the request path below is what most tests exercise.
+  (ImagePicker.getCameraPermissionsAsync as jest.Mock).mockResolvedValue({ granted: false, canAskAgain: true });
   (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockResolvedValue(granted);
   (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValue({
     canceled: false, assets: [{ uri: 'file://shot.jpg' }],
@@ -99,5 +102,32 @@ describe('openAppSettings', () => {
     (Linking.openSettings as jest.Mock).mockRejectedValue(new Error('no handler'));
 
     await expect(openAppSettings()).resolves.toBeUndefined();
+  });
+});
+
+describe('Android 16 on Pixels: never re-ask for a permission already held', () => {
+  // expo/expo#39480. On Pixels running Android 16, requesting a permission the
+  // app already has can return a promise that never settles ("No requestable
+  // permission in the request"). takePhoto asked on every tap, so the camera
+  // button hung -- no camera, no error -- until the app was backgrounded.
+
+  it('opens the camera without requesting when permission is already granted', async () => {
+    (ImagePicker.getCameraPermissionsAsync as jest.Mock).mockResolvedValue(granted);
+
+    await expect(takePhoto()).resolves.toEqual({ ok: true, uri: 'file://shot.jpg' });
+    expect(ImagePicker.requestCameraPermissionsAsync).not.toHaveBeenCalled();
+    expect(ImagePicker.launchCameraAsync).toHaveBeenCalled();
+  });
+
+  it('still asks when the permission has not been granted yet', async () => {
+    await expect(takePhoto()).resolves.toEqual({ ok: true, uri: 'file://shot.jpg' });
+    expect(ImagePicker.requestCameraPermissionsAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to asking if reading the permission fails', async () => {
+    (ImagePicker.getCameraPermissionsAsync as jest.Mock).mockRejectedValue(new Error('no activity'));
+
+    await expect(takePhoto()).resolves.toEqual({ ok: true, uri: 'file://shot.jpg' });
+    expect(ImagePicker.requestCameraPermissionsAsync).toHaveBeenCalledTimes(1);
   });
 });

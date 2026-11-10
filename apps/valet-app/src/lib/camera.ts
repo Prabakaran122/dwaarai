@@ -36,7 +36,18 @@ function describe(err: unknown): string {
 export async function takePhoto(): Promise<ShotResult> {
   let permission: ImagePicker.PermissionResponse;
   try {
-    permission = await ImagePicker.requestCameraPermissionsAsync();
+    // Read first, request only if not held. On Pixels running Android 16,
+    // requesting a permission the app already has can return a promise that
+    // never settles (expo/expo#39480), and asking on every tap left the
+    // camera button hanging until the app was backgrounded. A failed read
+    // falls through to the request, which is what this did before.
+    let current: ImagePicker.PermissionResponse | null = null;
+    try {
+      current = await ImagePicker.getCameraPermissionsAsync();
+    } catch {
+      current = null;
+    }
+    permission = current?.granted ? current : await ImagePicker.requestCameraPermissionsAsync();
   } catch (err) {
     return { ok: false, reason: 'failed', detail: describe(err) };
   }

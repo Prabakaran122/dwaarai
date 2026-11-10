@@ -81,6 +81,7 @@ export const translations: Dict = {
   valetShiftHint: { en: 'One photo, once per shift', hi: 'एक फोटो, प्रति शिफ्ट एक बार', kn: 'ಒಂದು ಫೋಟೋ, ಪ್ರತಿ ಶಿಫ್ಟ್‌ಗೆ ಒಮ್ಮೆ' },
   valetShiftTake: { en: 'Take photo', hi: 'फोटो लें', kn: 'ಫೋಟೋ ತೆಗೆದುಕೊಳ್ಳಿ' },
   valetShiftSkip: { en: 'Skip for now', hi: 'अभी छोड़ें', kn: 'ಸದ್ಯಕ್ಕೆ ಬಿಡಿ' },
+  valetShiftCameraFailed: { en: "The camera didn't start. Tap Skip for now to start your shift.", hi: 'कैमरा शुरू नहीं हुआ। शिफ्ट शुरू करने के लिए "अभी छोड़ें" दबाएँ।', kn: 'ಕ್ಯಾಮೆರಾ ಪ್ರಾರಂಭವಾಗಲಿಲ್ಲ. ಶಿಫ್ಟ್ ಪ್ರಾರಂಭಿಸಲು "ಸದ್ಯಕ್ಕೆ ಬಿಡಿ" ಒತ್ತಿರಿ.' },
   valetShiftNoCamera: { en: 'No camera available. You can still start your shift.', hi: 'कैमरा उपलब्ध नहीं। आप शिफ्ट शुरू कर सकते हैं।', kn: 'ಕ್ಯಾಮೆರಾ ಇಲ್ಲ. ನೀವು ಶಿಫ್ಟ್ ಪ್ರಾರಂಭಿಸಬಹುದು.' },
   valetScanRequired: { en: 'Scan the guest QR first', hi: 'पहले मेहमान का QR स्कैन करें', kn: 'ಮೊದಲು ಅತಿಥಿ QR ಸ್ಕ್ಯಾನ್ ಮಾಡಿ' },
   valetScanHint: { en: 'Point the camera at the QR on the guest\'s phone', hi: 'कैमरा मेहमान के फोन के QR पर रखें', kn: 'ಕ್ಯಾಮೆರಾವನ್ನು ಅತಿಥಿಯ ಫೋನ್‌ನ QR ಗೆ ಗುರಿಮಾಡಿ' },

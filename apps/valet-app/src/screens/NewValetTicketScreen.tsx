@@ -482,8 +482,11 @@ export default function NewValetTicketScreen({
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {error && <Text style={styles.error} testID="valet-error">{error}</Text>}
-        {cameraBlocked && (
+        {/* On the photo step the message moves down to the button: the ticket
+            handout fills the screen above it, so a camera failure reported up
+            here was off-screen and the tap looked like it did nothing. */}
+        {error && step !== 'photo' && <Text style={styles.error} testID="valet-error">{error}</Text>}
+        {cameraBlocked && step !== 'photo' && (
           <Pressable testID="valet-open-settings" style={styles.ghost} onPress={openAppSettings}>
             <Text style={styles.ghostText}>{t('valetOpenSettings')}</Text>
           </Pressable>
@@ -802,6 +805,12 @@ export default function NewValetTicketScreen({
           <>
             <TicketHandout created={created} t={t} />
 
+            {error && <Text style={styles.error} testID="valet-error">{error}</Text>}
+            {cameraBlocked && (
+              <Pressable testID="valet-open-settings" style={styles.ghost} onPress={openAppSettings}>
+                <Text style={styles.ghostText}>{t('valetOpenSettings')}</Text>
+              </Pressable>
+            )}
             <Pressable testID="valet-capture-photo" style={styles.cta} onPress={captureGuestPhoto}>
               <Text style={styles.ctaText}>{t('valetCapturePhoto')}</Text>
             </Pressable>

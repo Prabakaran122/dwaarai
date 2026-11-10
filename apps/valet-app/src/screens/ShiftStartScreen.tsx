@@ -22,11 +22,20 @@ import { startShift, listValetPoints } from '../api/valet';
  * still has cars to park, and stranding them is a worse failure than an
  * unverified sign-in.
  */
+/** How long a granted camera gets to show a picture before we say it failed. */
+const CAMERA_START_MS = 8000;
+
 export default function ShiftStartScreen({ onDone }: { onDone: () => void }) {
   const t = useT();
   const { permission, blocked: scannerBlocked, ask: askCamera, request: requestPermission } = useCameraAccess();
   const [busy, setBusy] = useState(false);
   const camera = useRef<CameraView>(null);
+  // Permission is not the same as a working camera. A phone can grant access
+  // and still have no front lens the library can open (seen on an emulator:
+  // "No available camera can be found"), which left a black box and a
+  // "Take photo" that started the shift with no photo and no word to the
+  // valet. The button waits for the camera to say it is ready.
+  const [camState, setCamState] = useState<'starting' | 'ready' | 'failed'>('starting');
 
   // Which door they are working. A venue with one entrance never defines any,
   // so this stays empty and the shift is recorded without one -- blocking a
@@ -60,6 +69,14 @@ export default function ShiftStartScreen({ onDone }: { onDone: () => void }) {
     if (!permission.granted && permission.canAskAgain) requestPermission();
   }, [permission?.granted, permission?.canAskAgain]);
 
+  // Some failures never raise an error, the preview just stays black. If the
+  // camera has not come up by then, say so rather than wait forever.
+  useEffect(() => {
+    if (permission?.granted !== true || camState !== 'starting') return;
+    const timer = setTimeout(() => setCamState((s) => (s === 'starting' ? 'failed' : s)), CAMERA_START_MS);
+    return () => clearTimeout(timer);
+  }, [permission?.granted, camState]);
+
   function finish() {
     if (finished.current) return;
     finished.current = true;
@@ -69,12 +86,26 @@ export default function ShiftStartScreen({ onDone }: { onDone: () => void }) {
   async function capture() {
     if (busy || finished.current) return;
     setBusy(true);
+    let photo: string | undefined;
     try {
       const shot = await camera.current?.takePictureAsync({ base64: true, quality: 0.6 });
+      photo = shot?.base64 || undefined;
+    } catch {
+      photo = undefined;
+    }
+    if (!photo) {
+      // No picture came back. Advancing here would record a "photo" shift
+      // with nothing in it, and the valet would never know. Say so; Skip is
+      // still right there, so the shift is never blocked.
+      setCamState('failed');
+      setBusy(false);
+      return;
+    }
+    try {
       // Sent even if the recogniser has nothing to compare it to: the record
       // of an attempt is worth keeping, and the service says which of the
       // outcomes it was.
-      await startShift(shot?.base64 ?? undefined, point ?? undefined);
+      await startShift(photo, point ?? undefined);
     } catch {
       // A failed capture or a failed upload is not a reason to keep someone
       // off their own shift.
@@ -98,7 +129,7 @@ export default function ShiftStartScreen({ onDone }: { onDone: () => void }) {
     }
   }
 
-  const canShoot = permission?.granted === true;
+  const canShoot = permission?.granted === true && camState !== 'failed';
 
   return (
     <View style={styles.root} testID="shift-start">
@@ -126,7 +157,18 @@ export default function ShiftStartScreen({ onDone }: { onDone: () => void }) {
 
       <View style={styles.frame}>
         {canShoot ? (
-          <CameraView ref={camera} testID="shift-camera" style={styles.camera} facing="front" />
+          <CameraView
+            ref={camera}
+            testID="shift-camera"
+            style={styles.camera}
+            facing="front"
+            onCameraReady={() => setCamState('ready')}
+            onMountError={() => setCamState('failed')}
+          />
+        ) : camState === 'failed' ? (
+          <View style={styles.placeholder} testID="shift-camera-failed">
+            <Text style={styles.placeholderText}>{t('valetShiftCameraFailed')}</Text>
+          </View>
         ) : (
           /* A labelled placeholder, not a blank box: the BRD asks for the
              flow never to be blocked by a missing permission, and a valet
@@ -149,7 +191,7 @@ export default function ShiftStartScreen({ onDone }: { onDone: () => void }) {
         <ActivityIndicator color={colors.actionPrimary} style={styles.spinner} />
       ) : (
         <>
-          {canShoot && (
+          {canShoot && camState === 'ready' && (
             <Pressable testID="shift-capture" style={styles.cta} onPress={capture}>
               <Text style={styles.ctaText}>{t('valetShiftTake')}</Text>
             </Pressable>

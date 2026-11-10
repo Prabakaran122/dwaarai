@@ -1,18 +1,25 @@
 import React from 'react';
-import { render, waitFor, fireEvent } from '@testing-library/react-native';
+import { render, waitFor, fireEvent, act } from '@testing-library/react-native';
 
 jest.mock('../api/valet', () => ({
   startShift: jest.fn(async () => ({ started: true })),
   listValetPoints: jest.fn(async () => ({ points: [] })),
 }));
+// How the fake camera behaves; each test resets it. By default it starts and
+// hands back a photo, like a working phone.
+let mockCamera: { start: 'ready' | 'error' | 'never'; shot: () => Promise<any> };
 jest.mock('expo-camera', () => {
   const React = require('react');
   const { View } = require('react-native');
   return {
     CameraView: React.forwardRef((props: any, ref: any) => {
       React.useImperativeHandle(ref, () => ({
-        takePictureAsync: async () => ({ base64: 'aGVsbG8=' }),
+        takePictureAsync: () => mockCamera.shot(),
       }));
+      React.useEffect(() => {
+        if (mockCamera.start === 'ready') props.onCameraReady?.();
+        if (mockCamera.start === 'error') props.onMountError?.({ message: 'No available camera can be found' });
+      }, []);
       return React.createElement(View, props);
     }),
     useCameraPermissions: () => [{ granted: true, canAskAgain: true }, jest.fn()],
@@ -22,8 +29,12 @@ jest.mock('expo-camera', () => {
 import ShiftStartScreen from './ShiftStartScreen';
 import { startShift, listValetPoints } from '../api/valet';
 
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockCamera = { start: 'ready', shot: async () => ({ base64: 'aGVsbG8=' }) };
+});
+
 describe('BRD Screen 1b — verify it is you', () => {
-  beforeEach(() => jest.clearAllMocks());
 
   it('sends the photo and advances on capture, with no continue tap', async () => {
     const onDone = jest.fn();
@@ -112,5 +123,49 @@ describe('which door the attendant is working', () => {
     fireEvent.press(getByTestId('shift-capture'));
 
     await waitFor(() => expect(onDone).toHaveBeenCalled());
+  });
+});
+
+describe('a camera that does not work', () => {
+  // Seen on an emulator with no front camera: permission granted, CameraX
+  // finds no front lens, and the screen showed a black box with a live
+  // "Take photo" that quietly started the shift with no photo.
+
+  it('says so when the camera fails to start, and offers only Skip', async () => {
+    mockCamera.start = 'error';
+    const { findByTestId, queryByTestId, getByTestId } = render(<ShiftStartScreen onDone={jest.fn()} />);
+
+    expect(await findByTestId('shift-camera-failed')).toBeTruthy();
+    expect(queryByTestId('shift-capture')).toBeNull();
+    expect(getByTestId('shift-skip')).toBeTruthy();
+  });
+
+  it('gives up waiting on a camera that never starts', async () => {
+    jest.useFakeTimers();
+    try {
+      mockCamera.start = 'never';
+      const { queryByTestId } = render(<ShiftStartScreen onDone={jest.fn()} />);
+      // Still starting: no button that would take a picture of nothing.
+      expect(queryByTestId('shift-capture')).toBeNull();
+
+      act(() => { jest.advanceTimersByTime(8000); });
+      expect(queryByTestId('shift-camera-failed')).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not start the shift on a capture that produced no photo', async () => {
+    mockCamera.shot = async () => { throw new Error('Camera is not running'); };
+    const onDone = jest.fn();
+    const { getByTestId, findByTestId } = render(<ShiftStartScreen onDone={onDone} />);
+
+    fireEvent.press(getByTestId('shift-capture'));
+
+    // The valet is told, and Skip is how they carry on -- a shift recorded
+    // as "photo taken" with no photo is the thing being fixed.
+    expect(await findByTestId('shift-camera-failed')).toBeTruthy();
+    expect(startShift).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
   });
 });

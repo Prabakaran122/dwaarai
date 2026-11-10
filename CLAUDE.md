@@ -407,7 +407,11 @@ unhandled rejection, so tapping capture did nothing at all — no camera, no
 error, nothing for a valet at a stand to report. It also separates a permanent
 refusal (`canAskAgain === false`, Android stops prompting after two denials)
 from a one-off one, since only the first needs the OS settings screen, and
-carries the underlying reason into the on-screen message.
+carries the underlying reason into the on-screen message. It **reads** the
+permission before requesting it: on Pixels running Android 16, requesting a
+permission already held can return a promise that never settles
+(expo/expo#39480), which hung the condition-photo button on Pixels only. The
+lasting fix is Expo SDK 54+ (React Native 0.81.5+).
 
 ### Shifts, valet points, ideas and promotions (063-066)
 
