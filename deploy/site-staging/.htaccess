@@ -1,0 +1,66 @@
+# staging.dwaarai.com only. Dotfiles are never promoted.
+#
+# PASSWORD PROTECTION LIVES IN THIS FILE. cPanel Directory Privacy appends its
+# AuthType/AuthName/AuthUserFile/Require lines here, and they must be kept.
+# Edit this file in place in File Manager; if you upload a replacement, paste
+# the Auth* block back in afterwards, then run check-routes.sh (it fails loudly
+# if staging is open to the world).
+
+Options -Indexes
+# index.php is for /promote/ (its folder has no index.html); the docroot has
+# no index.php, so the live mirror is unaffected.
+DirectoryIndex index.html index.php
+
+<IfModule mod_headers.c>
+  Header always set X-Robots-Tag "noindex, nofollow"
+  Header always set Content-Security-Policy "frame-ancestors 'none'"
+  Header always set X-Frame-Options "DENY"
+</IfModule>
+
+RewriteEngine On
+
+# Staging machinery
+RewriteRule ^robots\.txt$ _staging/robots.txt [L]
+RewriteRule ^lead$ _staging/lead.php [L]
+
+# ---- Mirror of the dwaarai.com nginx rules (communitygate.conf) ----
+# Checked against live by check-routes.sh; keep the two in step.
+RewriteCond %{THE_REQUEST} \s/index\.html[\s?] [NC]
+RewriteRule ^index\.html$ / [R=301,L]
+
+RewriteRule ^case-studies(\.html)?$ - [G,L]
+RewriteRule ^(how-it-works|solutions|resources|partners)$ / [R=301,L]
+RewriteRule ^solutions/ / [R=301,L]
+RewriteRule ^about$ /about.html [R=301,L]
+RewriteRule ^contact$ /contact-us.html [R=301,L]
+RewriteRule ^demo$ /book-a-demo.html [R=301,L]
+RewriteRule ^careers$ /careers/ [R=301,L]
+
+RewriteCond %{THE_REQUEST} \s/gate-automation-cost\.html[\s?] [NC]
+RewriteRule ^gate-automation-cost\.html$ /gate-automation-cost [R=301,L]
+RewriteRule ^gate-automation-cost$ gate-automation-cost.html [L]
+
+RewriteCond %{THE_REQUEST} \s/dwaar-ai-valet-book-a-demo\.html[\s?] [NC]
+RewriteRule ^dwaar-ai-valet-book-a-demo\.html$ /dwaar-ai-valet/book-a-demo [R=301,L]
+RewriteRule ^dwaar-ai-valet/book-a-demo$ dwaar-ai-valet-book-a-demo.html [L]
+
+RewriteCond %{THE_REQUEST} \s/dwaar-ai-valet-thank-you\.html[\s?] [NC]
+RewriteRule ^dwaar-ai-valet-thank-you\.html$ /dwaar-ai-valet/thank-you [R=301,L]
+RewriteRule ^dwaar-ai-valet/thank-you$ dwaar-ai-valet-thank-you.html [L]
+
+RewriteCond %{THE_REQUEST} \s/dwaar-ai-valet-blog\.html[\s?] [NC]
+RewriteRule ^dwaar-ai-valet-blog\.html$ /dwaar-ai-valet/blog [R=301,L]
+RewriteRule ^dwaar-ai-valet/blog/?$ dwaar-ai-valet-blog.html [L]
+
+RewriteCond %{THE_REQUEST} \s/dwaar-ai-valet-blog-valet-parking-liability-india-hotels\.html[\s?] [NC]
+RewriteRule ^dwaar-ai-valet-blog-valet-parking-liability-india-hotels\.html$ /dwaar-ai-valet/blog/valet-parking-liability-india-hotels [R=301,L]
+RewriteRule ^dwaar-ai-valet/blog/valet-parking-liability-india-hotels$ dwaar-ai-valet-blog-valet-parking-liability-india-hotels.html [L]
+
+RewriteRule ^dwaar-ai-valet/blog/images/valet-scratch-hero\.jpg$ dwaar-ai-valet-blog-valet-scratch-hero.jpg [L]
+RewriteRule ^dwaar-ai-valet/blog/images/valet-four-photo-condition-record\.png$ dwaar-ai-valet-blog-valet-four-photo-condition-record.png [L]
+
+# nginx: try_files $uri $uri.html $uri/index.html
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.html -f
+RewriteRule ^(.+)$ $1.html [L]

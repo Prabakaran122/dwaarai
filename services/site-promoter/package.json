@@ -1,0 +1,11 @@
+{
+  "name": "site-promoter",
+  "private": true,
+  "type": "module",
+  "description": "Promotes the staging marketing site onto dwaarai.com",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" }
+}
