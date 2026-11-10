@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { finishedVisits, valetFetch, valetPost, ValetError, STATUS_LABEL, NEEDS_ACTION, ValetStatus, formatStay,
   previewRange, listCards, registerCards, setCardActive, searchPlates,
   groupSlots, dayRangeToInstants, rupees, resolveValetBase, valetErrorMessage, PICK_PROPERTY_MESSAGE,
-  ticketStatusLabel, visitStatusCell } from './valet';
+  ticketStatusLabel, visitStatusCell, typedPinProblem } from './valet';
 
 const originalFetch = global.fetch;
 
@@ -433,5 +433,24 @@ describe('which visits a missing handover counts against', () => {
 
   it('treats an older server that sends no count as having none', () => {
     expect(finishedVisits({ visits: 4, stillOpen: 1 })).toBe(3);
+  });
+});
+
+describe('typedPinProblem', () => {
+  // The edit dialog's Save used to close without saving a PIN typed in the
+  // box next to it. A manager reset valet1 that way twice; the old PIN stayed.
+  it('an empty box is no problem: Save just saves the details', () => {
+    expect(typedPinProblem('')).toBeNull();
+    expect(typedPinProblem('   ')).toBeNull();
+  });
+
+  it('a PIN of 4 to 12 characters is accepted, whatever the characters', () => {
+    expect(typedPinProblem('1234')).toBeNull();
+    expect(typedPinProblem('Welcome@1234')).toBeNull();
+  });
+
+  it('a half-typed or overlong PIN is refused with a reason, not dropped', () => {
+    expect(typedPinProblem('12')).toMatch(/4 to 12/);
+    expect(typedPinProblem('1234567890123')).toMatch(/4 to 12/);
   });
 });

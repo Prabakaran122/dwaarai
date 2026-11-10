@@ -814,6 +814,18 @@ export const faceStatus = () =>
 export const enrolStaffFace = (id: string, imageBase64: string) =>
   valetPost<{ enrolled: boolean }>(`/admin/staff/${id}/face`, { imageBase64 });
 
+/**
+ * Why a PIN typed into the edit dialog cannot be saved, or null if it can (or
+ * the box is empty). Same 4-12 rule as the service, checked before Save so a
+ * half-typed PIN is reported instead of being silently dropped.
+ */
+export function typedPinProblem(pin: string): string | null {
+  const p = pin.trim();
+  if (!p) return null;
+  if (p.length < 4 || p.length > 12) return 'A PIN must be 4 to 12 characters. Finish it, or clear the box.';
+  return null;
+}
+
 /** A forgotten PIN cannot be read back (only a hash is kept), so it is replaced. */
 export const resetStaffPin = (id: string, pin: string) =>
   valetPost<{ reset: boolean }>(`/admin/staff/${id}/pin`, { pin });
@@ -1014,7 +1026,15 @@ export const topUpAds = (amountPaise: number) =>
   valetPost<{
     orderId: string; netPaise: number; gstPaise: number; totalPaise: number;
     paymentPlaceholder: boolean; credited: boolean;
+    /** Razorpay's public key id, for Checkout. Null in placeholder mode. */
+    keyId: string | null;
   }>('/admin/ads/topup', { amountPaise });
+
+/** Hands Checkout's success back to the server, which verifies and credits. */
+export const verifyAdTopUp = (orderId: string, paymentId: string, signature: string) =>
+  valetPost<{ orderId: string; credited: boolean }>(
+    '/admin/ads/topup/verify', { orderId, paymentId, signature }
+  );
 
 export const submitPromotion = (id: string) =>
   valetPost<{ id: string; status: PromotionStatus }>(`/admin/promotions/${id}/submit`, {});

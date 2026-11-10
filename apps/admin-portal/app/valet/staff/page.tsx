@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import FaceCapture from '@/components/FaceCapture';
 import {
   ValetError, StaffMember, StaffRole, STAFF_ROLE_LABEL, Shift, SHIFT_REASON_LABEL,
-  listStaff, addStaff, retireStaff, enrolStaffFace, faceStatus, listShifts, editStaff, resetStaffPin,
+  listStaff, addStaff, retireStaff, enrolStaffFace, faceStatus, listShifts, editStaff, resetStaffPin, typedPinProblem,
   downloadShiftsCsv, dayRangeToInstants,
 } from '@/lib/valet';
 
@@ -388,8 +388,24 @@ export default function ValetStaffPage() {
 
   async function onSaveEdit() {
     if (!editing) return;
+    // A PIN typed in the box is saved too. Save used to close the dialog and
+    // drop it, so a manager who never pressed "Reset PIN" walked away
+    // believing the PIN had changed.
+    const pin = newPin.trim();
+    const pinProblem = typedPinProblem(pin);
+    if (pinProblem) { setPinNotice(pinProblem); return; }
     setBusy(true); setError(null);
     try {
+      if (pin) {
+        try {
+          await resetStaffPin(editing.id, pin);
+        } catch (err) {
+          // Stay open: the details are not saved either, so nothing is half done.
+          setPinNotice(err instanceof ValetError ? err.message : 'Could not set that PIN');
+          return;
+        }
+        setNewPin('');
+      }
       await editStaff(editing.id, {
         name: editName.trim(),
         role: editRole,
