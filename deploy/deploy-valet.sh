@@ -62,7 +62,9 @@ for v in WHATSAPP_PROVIDER WHATSAPP_NUMBER WHATSAPP_COUNTRY_CODE \
          WHATSAPP_NOTIFY_STAGES WHATSAPP_DEBUG_INBOUND \
          WHATSAPP_TEMPLATE_CAR_READY WHATSAPP_TEMPLATE_CHECKED_IN \
          WHATSAPP_TEMPLATE_ON_THE_WAY WHATSAPP_TEMPLATE_REQUESTED \
-         COLLECTION_WINDOW_MINUTES ANPR_SERVICE_URL; do
+         WHATSAPP_TEMPLATE_MEDIA \
+         COLLECTION_WINDOW_MINUTES ANPR_SERVICE_URL \
+         RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET; do
   if [ -z "${!v:-}" ]; then
     printf -v "$v" '%s' "$(sudo sed -n "s/^Environment=$v=//p" "$VALET_UNIT" 2>/dev/null)"
   fi
@@ -208,10 +210,21 @@ Environment=WHATSAPP_TEMPLATE_CAR_READY=${WHATSAPP_TEMPLATE_CAR_READY:-car_ready
 Environment=WHATSAPP_TEMPLATE_CHECKED_IN=$WHATSAPP_TEMPLATE_CHECKED_IN
 Environment=WHATSAPP_TEMPLATE_ON_THE_WAY=$WHATSAPP_TEMPLATE_ON_THE_WAY
 Environment=WHATSAPP_TEMPLATE_REQUESTED=$WHATSAPP_TEMPLATE_REQUESTED
+# 1 = send the status picture as the template header. Read by the service but
+# never written here, so every deploy silently turned the pictures off.
+Environment=WHATSAPP_TEMPLATE_MEDIA=$WHATSAPP_TEMPLATE_MEDIA
 Environment=COLLECTION_WINDOW_MINUTES=${COLLECTION_WINDOW_MINUTES:-5}
 Environment=ANPR_SERVICE_URL=$ANPR_SERVICE_URL
 Environment=FACE_RECOGNITION_URL=$FACE_RECOGNITION_URL
 Environment=FACE_MATCH_THRESHOLD=${FACE_MATCH_THRESHOLD:-0.85}
+# Ad top-ups. Unset keys mean placeholder mode -- credit is recorded and no
+# money moves -- so a deploy that blanked them would quietly stop charging.
+# Inherited above for that reason. The webhook secret is the one typed into
+# the Razorpay dashboard for /valet-api/webhooks/razorpay; without it every
+# webhook is refused and a venue who closes the tab mid-payment is not credited.
+Environment=RAZORPAY_KEY_ID=$RAZORPAY_KEY_ID
+Environment=RAZORPAY_KEY_SECRET=$RAZORPAY_KEY_SECRET
+Environment=RAZORPAY_WEBHOOK_SECRET=$RAZORPAY_WEBHOOK_SECRET
 ExecStart=/usr/bin/node src/index.js
 Restart=always
 RestartSec=5

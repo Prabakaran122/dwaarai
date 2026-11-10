@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ValetError, AdsReport, getAds, topUpAds, rupees } from '@/lib/valet';
+import { ValetError, AdsReport, getAds, topUpAds, verifyAdTopUp, rupees } from '@/lib/valet';
+import { payWithRazorpay } from '@/lib/razorpayCheckout';
 
 /**
  * What a promotion costs, and what has been paid toward it.
@@ -43,11 +44,39 @@ export default function AdBudget({
     setBusy(true); setError(null); setNotice(null);
     try {
       const r = await topUpAds(Number(topUp));
-      setNotice(
-        r.paymentPlaceholder
-          ? `Recorded ${rupees(r.netPaise)} of ad credit. No money was collected — payments are not switched on for this account yet.`
-          : `Order ${r.orderId} created for ${rupees(r.totalPaise)}. Your balance updates once the payment settles.`
-      );
+      if (r.paymentPlaceholder || !r.keyId) {
+        setNotice(`Recorded ${rupees(r.netPaise)} of ad credit. No money was collected — payments are not switched on for this account yet.`);
+        await load();
+        return;
+      }
+
+      const paid = await payWithRazorpay({
+        keyId: r.keyId,
+        orderId: r.orderId,
+        amountPaise: r.totalPaise,
+        description: `Valet ad credit ${rupees(r.netPaise)} + GST`,
+      });
+      if (paid.kind === 'dismissed') {
+        setNotice('Payment cancelled. Nothing was charged.');
+        return;
+      }
+      if (paid.kind === 'failed') {
+        setError(`Payment failed: ${paid.reason}. Nothing was added to your balance.`);
+        return;
+      }
+
+      try {
+        await verifyAdTopUp(paid.orderId, paid.paymentId, paid.signature);
+        setNotice(`Paid ${rupees(r.totalPaise)}. ${rupees(r.netPaise)} of ad credit has been added.`);
+      } catch {
+        // The money moved; only the confirmation from this browser did not
+        // arrive. Razorpay's webhook credits the order regardless, so say
+        // that rather than "failed" -- a venue told it failed pays twice.
+        setNotice(
+          `Payment ${paid.paymentId} received. Your balance will update in a minute or two — ` +
+          'no need to pay again.'
+        );
+      }
       await load();
     } catch (err) {
       setError(err instanceof ValetError ? err.message : 'Could not start that top-up');

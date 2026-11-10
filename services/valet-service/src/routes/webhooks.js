@@ -5,6 +5,8 @@ import { phoneKey } from '../lib/phone.js';
 import { notifyGuest, notifyCardHeld } from '../lib/whatsapp-guest.js';
 import { normalizeClaimCode } from '../lib/claim-code.js';
 import { logEvent } from '../lib/events.js';
+import { verifyWebhookSignature } from '../lib/payments.js';
+import { settleAdOrder } from '../lib/ad-topups.js';
 
 const router = asyncRouter();
 
@@ -175,6 +177,37 @@ router.post('/whatsapp', async (req, res) => {
   if (!ticket) return res.status(200).json({ ok: true, unmatched: true });
 
   return handleTicket(res, ticket, message);
+});
+
+/**
+ * Razorpay: the payment for an ad top-up has been captured.
+ *
+ * The admin portal confirms a successful checkout itself, straight away; this
+ * is the path that still credits the venue who closed the tab mid-payment, or
+ * whose confirmation request never arrived. Both go through settleAdOrder(),
+ * so whichever is second changes nothing.
+ *
+ * Every signed delivery gets a 200, including events for orders that are not
+ * ad top-ups or are already paid: a non-200 makes Razorpay retry, and after
+ * enough failures it disables the webhook altogether.
+ */
+router.post('/razorpay', async (req, res) => {
+  if (!verifyWebhookSignature(req.rawBody, req.headers['x-razorpay-signature'])) {
+    return res.status(401).json({ error: 'invalid_signature' });
+  }
+
+  const event = req.body?.event;
+  const payment = req.body?.payload?.payment?.entity;
+  if ((event === 'payment.captured' || event === 'order.paid') && payment?.order_id && payment?.id) {
+    await settleAdOrder({
+      orderRef: payment.order_id,
+      paymentRef: payment.id,
+      // Settled only if Razorpay collected what the order asked for.
+      totalPaise: Number(payment.amount),
+    });
+  }
+
+  return res.status(200).json({ ok: true });
 });
 
 export default router;

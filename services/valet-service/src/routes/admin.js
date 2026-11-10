@@ -13,7 +13,10 @@ import { signMediaLink, verifyMediaLink, contentTypeFor, MEDIA_LINK_TTL_SECONDS 
 import {
   viewCostPaise, withGst, monthlyCeilingPaise, balanceFromLedger, splitSpend, quotaFor,
 } from '../lib/ads.js';
-import { createAdOrder, isPlaceholderMode } from '../lib/payments.js';
+import {
+  createAdOrder, isPlaceholderMode, getKeyId, verifyPaymentSignature,
+} from '../lib/payments.js';
+import { settleAdOrder } from '../lib/ad-topups.js';
 import { toDataUrl } from '../lib/qr.js';
 import { notifyGuest } from '../lib/whatsapp-guest.js';
 
@@ -2910,12 +2913,14 @@ async function promotionScope(user) {
 /**
  * Add to the ad balance.
  *
- * Mints an order and records the ledger row in the same request, which is
- * correct ONLY because placeholder orders cannot fail. When this goes live the
- * credit must move to the payment webhook -- crediting on intent rather than
- * on settlement would hand a venue a balance for a payment they abandoned.
- * The route refuses to pretend otherwise: in live mode it returns the order
- * and credits nothing.
+ * Placeholder mode mints an order and records the ledger row in the same
+ * request, which is correct ONLY because a placeholder order cannot fail.
+ *
+ * Live mode credits nothing here. It opens a Razorpay order, remembers it in
+ * valet_ad_orders, and hands the browser what Checkout needs. The credit lands
+ * in settleAdOrder() when the payment is confirmed -- by /ads/topup/verify or
+ * by the webhook, whichever is first. Crediting on intent rather than on
+ * settlement would hand a venue a balance for a payment they abandoned.
  */
 router.post('/ads/topup', admin, async (req, res) => {
   const amountPaise = parseInt(req.body.amountPaise, 10);
@@ -2949,6 +2954,15 @@ router.post('/ads/topup', admin, async (req, res) => {
        ON CONFLICT (order_ref) WHERE order_ref IS NOT NULL DO NOTHING`,
       [owner.id, amountPaise, order.id, 'Recorded in placeholder mode — no money collected']
     );
+  } else {
+    // The amounts are frozen here: a GST rate edited while the venue sits at
+    // the checkout must not change what their payment is worth.
+    await query(
+      `INSERT INTO valet_ad_orders
+         (order_ref, ${owner.column}, net_paise, gst_paise, total_paise, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [order.id, owner.id, totals.netPaise, totals.gstPaise, totals.totalPaise, req.user.sub ?? null]
+    );
   }
 
   res.status(201).json({
@@ -2956,7 +2970,46 @@ router.post('/ads/topup', admin, async (req, res) => {
     ...totals,
     paymentPlaceholder: order.placeholder,
     credited: order.placeholder,
+    // Checkout needs the public key id to open. Null in placeholder mode,
+    // where there is no checkout to open.
+    keyId: order.placeholder ? null : getKeyId(),
   });
+});
+
+/**
+ * Checkout reported success: confirm it and credit the balance now.
+ *
+ * The browser's word alone is worth nothing -- the signature is HMAC'd with
+ * the key secret, which only this server holds, so a forged success fails
+ * here. The webhook settles the same order independently, for the venue who
+ * closed the tab before this request was sent; settleAdOrder() makes the two
+ * idempotent against each other.
+ */
+router.post('/ads/topup/verify', admin, async (req, res) => {
+  const { orderId, paymentId, signature } = req.body ?? {};
+  if (!verifyPaymentSignature(orderId, paymentId, signature)) {
+    return res.status(400).json({ error: 'invalid_signature', message: 'That payment could not be confirmed' });
+  }
+
+  const credited = await settleAdOrder({
+    orderRef: orderId, paymentRef: paymentId, owner: adOwner(req.user),
+  });
+
+  // Not credited by this call is still a success when the order is already
+  // paid -- the webhook got there first. Anything else is an order this
+  // caller does not own, or one that does not exist.
+  if (!credited) {
+    const owner = adOwner(req.user);
+    const row = await queryOne(
+      `SELECT status FROM valet_ad_orders WHERE order_ref = $1 AND ${owner.column} = $2`,
+      [orderId, owner.id]
+    );
+    if (row?.status !== 'paid') {
+      return res.status(404).json({ error: 'order_not_found' });
+    }
+  }
+
+  res.json({ orderId, credited: true });
 });
 
 /**
